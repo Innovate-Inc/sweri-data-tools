@@ -124,7 +124,170 @@ def common_attributes_insert(connection, schema, postgres_table_name):
         sde.next_globalid()
         
     FROM {schema}.{postgres_table_name}
-    WHERE included = 'No';
+    WHERE included = 'yes';
+    
+    ''')
+    connection.commitTransaction()
+
+def inclusion_rules():
+    rule_0()
+    rule_1()
+    rule_2()
+    rule_3()
+    rule_4()
+    rule_5()
+    rule_6()
+    rule_7()
+    rule_8()
+    rule_9()
+    rule_10()
+
+def rule_0(connection, schema, postgres_table_name):
+    activity_exclusions = '''('Certification', 'Reforestation Need Change', 'Examination',
+        'Prescription', 'Diagnosis', 'Exam', 'Survey', 'Analysis', 'Delineation',
+        'Monitoring', 'Data', '(FIA)', 'Inventory', 'Permanent Plot', 'Remote Sensing',
+        'Administrative Changes', 'Cruising', 'Layout and Design', 'Cone Collection',
+        'Seed Collection', 'seed collecting', 'Seed Storage', 'Seed Extraction',
+        'Pollen', 'Scion', 'Cooler', 'Activity Review', 'TSI Need', 'Fences')'''
+    
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    SET included = 'no'
+    WHERE activity in {activity_exclusions}
+    AND included IS NULL;
+
+    ''')
+    connection.commitTransaction()
+
+def rule_1(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    SET included = 'yes'
+    WHERE fuels_keypoint_area in ('3', '6')
+    AND included IS NULL;
+
+    ''')
+    connection.commitTransaction()
+
+def rule_2(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    SET included = 'no'
+    WHERE 
+    included IS NULL
+    AND
+    (gis_acres <= 10 OR gis_acres IS NULL);
+    
+    ''')
+    connection.commitTransaction()
+    
+
+def rule_3():
+    print()
+
+def rule_4():
+    print()
+
+def rule_5(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    set included = 'no'
+    WHERE 
+    included IS NULL
+    AND
+    activity ILIKE '%wildfire%';
+    
+    ''')
+    connection.commitTransaction()
+
+def rule_6(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    set included = 'no'
+    WHERE 
+    included IS NULL
+    AND
+    activity ILIKE '%fish%'
+    AND
+    equipment NOT ILIKE '%logging%';
+    
+    ''')
+    connection.commitTransaction()
+
+def rule_7(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    SET included = 'yes'
+    WHERE 
+    included IS NULL
+    AND
+    activity ILIKE '%clearcut%'
+    AND
+    method not ILIKE ('%inventory%'|'%Designation%'|'%Marking%');
+    
+    ''')
+    connection.commitTransaction()
+
+def rule_8(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    set included = 'yes'
+    WHERE 
+    included IS NULL
+    AND
+    activity ILIKE '%burn%'
+    AND
+    method ILIKE ('%Fire%'|'%Manual%'|'%No method%');
+    
+    ''')
+    connection.commitTransaction()
+
+def rule_9(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    SET included = 'yes'
+    WHERE 
+    included IS NULL
+    AND
+    activity IN ('Drip Torch', 'Terra torch', 'Verray torch', 
+    'Ping pong balls', 'Aerial ignition device', 'Air Curtain Incinerator');
+    
+    ''')
+    connection.commitTransaction()
+
+
+def rule_10(connection, schema, postgres_table_name):
+    connection.beginTransaction()
+    connection.execute(f'''
+    
+    UPDATE {schema}.{postgres_table_name}
+    set included = 'yes'
+    WHERE 
+    included IS NULL
+    AND
+    activity ILIKE ('%Commercial Thin%'|'%Precommercial Thin%'") 
+    AND 
+    method IN ('Manual', 'No method', 'Power hand', 'Mechanical', 
+    'Logging Methods', 'Tractor Logging')
+    AND 
+    equipment IN ('No equipment', 'Chain saw', 'Feller Buncher', 
+    'Rubber tired skidder logging', 'Tractor logging');
     
     ''')
     connection.commitTransaction()
@@ -175,10 +338,13 @@ if __name__ == '__main__':
 
         arcpy.management.AddIndex(postgres_fc, 'activity', f'activity_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
         logging.info('index created on activity')
+        
+        arcpy.management.AddIndex(postgres_fc, 'gis_acres', f'activity_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
+        logging.info('index created on activity')
 
         facts_hazardous_fuels_exclusion(con, target_schema, table_name, hazardous_fuels_table)
 
-        #rules go here
+        inclusion_rules()
 
         common_attributes_insert(con, target_schema, table_name)
         
