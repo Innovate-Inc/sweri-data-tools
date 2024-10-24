@@ -98,9 +98,9 @@ class DownloadTests(TestCase):
     @patch('arcpy.conversion.JSONToFeatures')
     @patch('arcpy.management.DefineProjection')
     def test_fetch_create_new_fc(self, mock_project, mock_json_to_fc, mock_exists):
-        with patch('scripts.sweri_utils.download.get_ids') as get_ids_mock, patch(
-                'scripts.sweri_utils.download.get_all_features') as get_feat_mock, patch(
-            'scripts.sweri_utils.download.get_fields') as get_fields_mock:
+        with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
+                'sweri_utils.download.get_all_features') as get_feat_mock, patch(
+            'sweri_utils.download.get_fields') as get_fields_mock:
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
@@ -151,7 +151,7 @@ class DownloadTests(TestCase):
     @patch('arcpy.AddMessage')
     @patch('arcpy.AddError')
     def test_get_all_features(self, mock_add_error, mock_add_message):
-        with patch('scripts.sweri_utils.download.fetch_features') as ff_mock:
+        with patch('sweri_utils.download.fetch_features') as ff_mock:
             ff_mock.return_value = [{'attributes': {'hello': 'there'}}]
         r = yield get_all_features('http://some.url', ['a', 1, 'c', 'd'], 102100, ['id', 'color'], 2)
 
@@ -180,7 +180,7 @@ class DownloadTests(TestCase):
 class FilesTests(TestCase):
     @patch('arcpy.AddMessage')
     def test_export_gdb_zip(self, message_mock):
-        with patch('scripts.sweri_utils.files.create_zip') as cz:
+        with patch('sweri_utils.files.create_zip') as cz:
             cz.return_value = 'some_zip'
             s = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
             cz.assert_called()
@@ -194,7 +194,7 @@ class FilesTests(TestCase):
         self.assertTrue(p, 'dir\\test.gdb')
 
     def test_export_gdb(self):
-        with patch('scripts.sweri_utils.files.create_zip') as cz:
+        with patch('sweri_utils.files.create_zip') as cz:
             export_file_by_type('test', 'gdb', 'out_dir', 'test_gdb', 'any')
             cz.assert_called_once_with('any', 'out_dir', 'test_gdb')
 
@@ -207,7 +207,7 @@ class FilesTests(TestCase):
 
     @patch('arcpy.conversion.FeatureClassToShapefile')
     def test_export_shapefile(self, shp_mock):
-        with patch('scripts.sweri_utils.files.create_zip') as csh:
+        with patch('sweri_utils.files.create_zip') as csh:
             export_file_by_type('test', 'shapefile', 'out_dir', 'test', 'any')
             shp_mock.assert_called()
             csh.assert_called()

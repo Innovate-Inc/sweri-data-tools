@@ -12,8 +12,7 @@ import datetime as dt
 import os
 import sys
 ################ Local Path to sweri_utils directory, must be hard-coded when publishing #################
-# mod = r"C:\path_to_your_local_sweri_utils_directory"
-mod = r"C:\Users\Keaton Shennan\projects\Sweri\scripts\sweri_utils"
+mod = r"C:\path_to_your_local_sweri_utils_directory"
 ##########################################################################################################
 sys.path.append(mod)
 import files
