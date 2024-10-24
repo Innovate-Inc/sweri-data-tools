@@ -1,0 +1,30 @@
+name: Unit test python library
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/**
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches:
+      - main
+    paths:
+      - scripts/**
+jobs:
+  unit_test:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    runs-on: ubuntu-latest
+    name: unit test python lib
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.8
+      - name: install deps
+        run: pip install -r requirements.testing.txt
+      - name: run tests
+        run: pytest --cov=sweri_utils ./sweri_utils/tests.py
+
