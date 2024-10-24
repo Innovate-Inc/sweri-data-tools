@@ -4,14 +4,10 @@ on:
   push:
     branches:
       - main
-    paths:
-      - scripts/**
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
-    paths:
-      - scripts/**
 jobs:
   unit_test:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
