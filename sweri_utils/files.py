@@ -1,5 +1,6 @@
 import os
 import arcpy
+from urllib.parse import urljoin
 import zipfile
 import requests
 
@@ -37,6 +38,25 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     return outfile
 
 
+def get_disclaimer(out_dir):
+    try:
+        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://gis.reshapewildfire.org/cms/api/v2/'
+        file_name = os.path.join(out_dir, 'disclaimer.html')
+
+        response = requests.get(urljoin(url, 'snippets/download_disclaimer/'))
+        if response.status_code == 200:
+            response_dict = response.json()
+
+            disclaimer_file = open(file_name, 'w')
+            disclaimer_file.write(response_dict['content'])
+            disclaimer_file.close()
+
+            return file_name
+        else:
+            raise requests.exceptions.RequestException(response.status_code)
+    except requests.exceptions.RequestException as e:
+        return None
+
 def create_zip(out_dir, zip_dir, name):
     """
     creates a zip file from files in the zip_dir directory
@@ -49,6 +69,7 @@ def create_zip(out_dir, zip_dir, name):
     arcpy.AddMessage(f'creating zip file {out_path}')
     zip_f = zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED)
     abs_src = os.path.abspath(zip_dir)
+    get_disclaimer(abs_src)
     for root, dirs, files in os.walk(zip_dir):
         for file in files:
             if not file.endswith('.lock'):
