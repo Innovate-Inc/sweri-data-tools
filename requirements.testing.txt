@@ -1,0 +1,4 @@
+requests
+pytest
+pytest-cov
+git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
