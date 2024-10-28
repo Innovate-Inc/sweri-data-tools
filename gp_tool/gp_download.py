@@ -20,7 +20,6 @@ import download
 
 
 if __name__ == "__main__":
-
     # get params
     url = arcpy.GetParameterAsText(0)
     fc = arcpy.GetParameterAsText(1)
@@ -48,15 +47,16 @@ if __name__ == "__main__":
     except Exception as e:
         arcpy.AddError(e.args[0])
         raise e
+
     # output the result file
     try:
-
         result_file = files.export_file_by_type(save_features, filetype, out_dir, out_name, arcpy.env.scratchFolder)
         arcpy.AddMessage(result_file)
         # remove the scratch FC after creating the file
     except Exception as e:
         arcpy.AddError(e.args[0])
         raise e
+
     # return it
     arcpy.SetParameterAsText(6, result_file)
 

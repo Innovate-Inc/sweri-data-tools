@@ -19,8 +19,9 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     arcpy.AddMessage(f'creating {out_name_ext}')
     try:
         if filetype == 'csv':
-            # just return the csv
-            outfile = arcpy.conversion.ExportTable(fc_path, os.path.join(tmp_path, out_name_ext))
+            # create the csv and return zip with disclaimer
+            arcpy.conversion.ExportTable(fc_path, os.path.join(out_dir, out_name_ext))
+            outfile = create_zip(tmp_path, out_dir, out_name)
         elif filetype == 'gdb':
             # just save directly to new out directory
             outfile = create_zip(tmp_path, out_dir, out_name)
@@ -29,8 +30,9 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
             arcpy.conversion.FeatureClassToShapefile(fc_path, out_dir)
             outfile = create_zip(tmp_path, out_dir, out_name)
         elif filetype == 'geojson':
-            # just return the geojson file
-            outfile = arcpy.conversion.FeaturesToJSON(fc_path, os.path.join(tmp_path, out_name_ext), geoJSON='GEOJSON')
+            # create the geojson file and return zip with disclaimer
+            arcpy.conversion.FeaturesToJSON(fc_path, os.path.join(out_dir, out_name_ext), geoJSON='GEOJSON')
+            outfile = create_zip(tmp_path, out_dir, out_name)
         else:
             raise ValueError('invalid or missing file type')
     except Exception as e:
