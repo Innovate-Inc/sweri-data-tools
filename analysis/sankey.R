@@ -6,54 +6,115 @@ library(tidyverse)
 library(plotly)
 library(networkD3)
 library(RColorBrewer)
+library(sortable)
 
 # define "not in" operator
 `%ni%` <- Negate(`%in%`)
 
-# read in all facts data
-# from here: https://cfri.app.box.com/file/1638491149802
+# read in non-hf facts data
+# from tidy_facts.R
+# rule 0 (gis_acres > 5) is already applied
 facts_all <- read_csv("tidy_facts.csv")
+# ~ 5 million records, 9 columns
 
-# rule 0: some activities are rejected immediately ####
-# define list of exclusions
-# excluded based on activity code alone - no inspection of polygons
-exclusions <- c("Certification",
-                "Reforestation Need Change",
-                "Examination",
-                "Prescription",
-                "Diagnosis",
-                "Exam",
-                "Survey",
-                "Analysis",
-                "Delineation",
-                "Monitoring",
-                "Data",
-                "(FIA)",
-                "Inventory",
-                "Permanent Plot",
-                "Remote Sensing",
-                "Administrative Changes",
-                "Cruising",
-                "Layout and Design",
-                "Cone Collection",
-                "Seed Collection",
-                "seed collecting",
-                "Seed Storage",
-                "Seed Extraction",
-                "Pollen",
-                "Scion",
-                "Cooler",
-                "Activity Review",
-                "TSI Need",
-                "Fences")
+# lists of 'valid' methods and equipment
+logging_methods <- read_csv("logging_methods.csv") %>%
+  filter(include == TRUE) %>%
+  pull(method)
+logging_equip <- read_csv("logging_equipment.csv") %>%
+  filter(include == TRUE) %>%
+  pull(equipment)
+fire_methods <- read_csv("fire_methods.csv") %>%
+  filter(include == TRUE) %>%
+  pull(method)
+fire_equip <- read_csv("fire_equipment.csv") %>%
+  filter(include == TRUE) %>%
+  pull(equipment)
+fuel_methods <- read_csv("fuel_methods.csv") %>%
+  filter(include == TRUE) %>%
+  pull(method)
+fuel_equip <- read_csv("fuel_equipment.csv") %>%
+  filter(include == TRUE) %>%
+  pull(equipment)
+other_methods <- read_csv("other_methods.csv") %>%
+  filter(include == TRUE) %>%
+  pull(method)
+other_equip <- read_csv("other_equipment.csv") %>%
+  filter(include == TRUE) %>%
+  pull(equipment)
+special_exclusions <- read_csv("special_exclusions.csv") %>%
+  filter(include == TRUE) %>%
+  pull(activity)
 
-# apply rule 0 filter and tidy data for sankey diagram
+
+facts_all <- facts_all %>%
+  mutate(
+    # rule 2 ####
+    # logging-associated activities are conditionally included
+    r2 = case_when(
+      str_detect(activity, "Thin|thin|Cut|cut") &
+        (method %in% logging_methods | is.na(method)) &
+        (equipment %in% logging_equip | is.na(equipment))
+      ~ "PASS",
+      .default = "FAIL"
+    ),
+    # rule 3 ####
+    # fire-associated activities are conditionally included
+    r3 = case_when(
+      str_detect(activity, "Burn|burn|Fire|fire") &
+        (method %in% fire_methods | is.na(method)) &
+        (equipment %in% fire_equip | is.na(equipment))
+      ~ "PASS",
+      .default = "FAIL"
+    ),
+    # rule 4 ####
+    # fuel-associated activities are conditionally included
+    r4 = case_when(
+      str_detect(activity, "Fuel|fuel") &
+        (method %in% fuel_methods | is.na(method)) &
+        (equipment %in% fuel_equip | is.na(equipment))
+      ~ "PASS",
+      .default = "FAIL"
+    ),
+    # rule 5 ####
+    # other activities are conditionally included. method AND equipment are
+    # required.
+    r5 = case_when(
+      !str_detect(activity, "Thin|thin|Cut|cut|Burn|burn|Fire|fire") &
+        !is.na(method) & !is.na(equipment) &
+        method != "No method" & equipment != "No equipment" &
+        method %in% other_methods &
+        equipment %in% other_equip
+      ~ "PASS",
+      .default = "FAIL"
+    ),
+    # rule 6 ####
+    # some logging, fire, and fuels-related activities with NA methods and
+    # equipment sneak through the filters. these activities require manual
+    # exclusion.
+    r6 = case_when(
+      (r2 == "PASS" | r3 == "PASS" | r4 == "PASS") &
+        activity %in% special_exclusions
+      ~ "PASS",
+      .default = "FAIL"
+    ),
+
+    # final determination of inclusion
+    included = case_when(
+      ((r2 == "PASS" | r3 == "PASS" | r4 == "PASS") & r6 == "PASS") |
+        (r5 == "PASS")
+      ~ "YES",
+      .default = "NO"
+    )
+  )
+
+# tidy data for sankey diagram
 facts <- facts_all %>%
-  # apply Rule 0
-  filter(!str_detect(activity, str_c(exclusions, collapse = "|"))) %>%
   # select only the relevant columns
-  select(activity, method, equipment, fka, acres) %>%
-  # clean up method, equipment, and fka (fuels keypoint area) columns
+  select(
+    activity, method, equipment, r2, r3, r4, r5, r6, included, acres = gis_acres
+  ) %>%
+  # clean up method and equipment columns
   # values must be unqiue: can't have same value in both methods and equipment
   # or Sankey diagram will break
   mutate(
@@ -68,81 +129,20 @@ facts <- facts_all %>%
                           equipment == "Mobile Ground" ~
                             "Mobile Ground equipment",
                           .default = equipment),
-    fka = as.character(fka)
   )
 
-# identify categories with low counts (see Rule 4)
-rare_a <- facts %>% count(activity) %>% filter(n < 20)
-rare_m <- facts %>% count(method) %>% filter(n < 20)
-rare_e <- facts %>% count(equipment) %>% filter(n < 20)
+# define labels for sorting sankey columns
+labels <- c("activity", "method", "equipment", "included")
 
-# # check included/excluded tables after applying Rule 0
-# facts_excluded <- facts_all %>%
-#  filter(str_detect(activity, str_c(exclusions, collapse = "|")))
-# facts %>% count(activity) %>% arrange(desc(n)) %>% print(n = 100)
-# facts_excluded %>% count(activity) %>% arrange(desc(n)) %>% print(n = 100)
-
-# Apply rules 1:10
-facts <- facts %>%
-  mutate(
-    included =
-      case_when(
-
-        # rule 1: fka 3 and 6 always in ####
-        fka %in% c("3", "6") ~ "YES",
-
-        # rule 2: must have acres >= 10 ####
-        acres <= 10 | is.na(acres) ~ "NO",
-
-        # rule 3: No method and equipment, no inclusion (some exceptions) ####
-        method == "No method" &
-          equipment == "No equipment" &
-          !str_detect(activity, "Thin|thin|Cut|cut|Burn|burn|Fuel|fuel") ~ "NO",
-
-        # rule 4: must not be a rare activity, method, or equipment ####
-        activity %in% rare_a$activity ~ "NO",
-        method %in% rare_m$method ~ "NO",
-        equipment %in% rare_e$equipment ~ "NO",
-
-        # rule 5: Wildfire is always out ####
-        str_detect(activity, "Wildfire") ~ "NO",
-
-        # rule 6: Fish stuff is always out, unless its logging ####
-        str_detect(activity, "Fish") & !str_detect(equipment, "logging") ~ "NO",
-
-        # rule 7: Clearcut almost always in
-        str_detect(activity, "Clearcut") &
-          !str_detect(method, "Inventory|Designation|Marking") ~ "YES",
-
-        # rule 8: Burning activities are in, if method checks out ####
-        str_detect(activity, "Burn|burn") &
-          str_detect(method, "Fire|Manual|No method") ~ "YES",
-
-        # rule 9: equipment that burns stuff is in ####
-        equipment %in% c("Drip Torch", "Terra torch", "Verray torch",
-                         "Ping pong balls", "Aerial ignition device",
-                         "Air Curtain Incinerator") ~ "YES",
-
-        # rule 10: "Thin" activity is in, barring weird methods/equipment ####
-        str_detect(activity,
-                   "Commercial Thin|Precommercial Thin| Precommercial thin") &
-          method %in% c("Manual", "No method", "Power hand", "Mechanical",
-                        "Logging Methods", "Tractor Logging") &
-          equipment %in% c("No equipment", "Chain saw", "Feller Buncher",
-                           "Rubber tired skidder logging", "Tractor logging")
-        ~ "YES",
-
-        # everything else: undecided ####
-        .default = "undecided"
-      ))
 
 ## shiny ui ####
 
 ui <- fluidPage(
 
   tags$h2("Explore FACTS Data"),
-  actionButton("saveFilterButton","Save Filter Values"),
-  actionButton("loadFilterButton","Load Filter Values"),
+  tags$h3("v1.0 2024/10/28"),
+  actionButton("saveFilterButton", "Save Filter Values"),
+  actionButton("loadFilterButton", "Load Filter Values"),
   radioButtons(
     inputId = "dataset",
     label = "Data:",
@@ -153,6 +153,12 @@ ui <- fluidPage(
   ),
 
   filter_data_ui("filtering", max_height = NULL),
+
+  rank_list_basic <- rank_list(
+    text = "Sankey column order",
+    labels = labels,
+    input_id = "rank_list_basic"
+  ),
 
   progressBar(
     id = "pbar", value = 100,
@@ -166,22 +172,22 @@ ui <- fluidPage(
 ## shiny server ####
 
 server <- function(input, output, session) {
-  savedFilterValues <- reactiveVal()
+  saved_filter_values <- reactiveVal()
   data <- reactive({
     facts
   })
 
   vars <- reactive({
-      NULL
+    NULL
   })
 
-  observeEvent(input$saveFilterButton,{
-    savedFilterValues <<- res_filter$values()
-  },ignoreInit = T)
+  observeEvent(input$saveFilterButton, {
+    saved_filter_values <<- res_filter$values()
+  }, ignoreInit = T)
 
   defaults <- reactive({
     input$loadFilterButton
-    savedFilterValues
+    saved_filter_values
   })
 
   res_filter <- filter_data_server(
@@ -208,19 +214,34 @@ server <- function(input, output, session) {
     reactable::reactable(res_filter$filtered())
   })
 
+## ordered list ###
+  varlist <- reactive({
+    input$rank_list_basic
+  })
+
+  output$varlist <- renderPrint({
+    varlist()
+  })
+  output$varlist_1 <- renderPrint({
+    varlist()[1]
+  })
   # sankey diagram
   output$sankey <- renderPlotly({
 
+
     data <- res_filter$filtered()
+    vlist <- varlist()
     df_toplevel <- data %>%
-      group_by(activity, method) %>%
+      # group_by(activity, method) %>%
+      group_by(!!sym(vlist[[1]]), !!sym(vlist[2])) %>%
       summarize(counts = n()) %>%
       ungroup()
     names(df_toplevel)[1] <- "Source Name"
     names(df_toplevel)[2] <- "Target Name"
 
     df_midlevel <- data %>%
-      group_by(method, equipment) %>%
+      # group_by(method, equipment) %>%
+      group_by(!!sym(vlist[2]), !!sym(vlist[3])) %>%
       summarize(counts = n()) %>%
       ungroup()
     names(df_midlevel)[1] <- "Source Name"
@@ -235,7 +256,8 @@ server <- function(input, output, session) {
     # names(df_midlowlevel)[2] <- "Target Name"
 
     df_lowlevel <- data %>%
-      group_by(equipment, included) %>%
+      # group_by(equipment, included) %>%
+      group_by(!!sym(vlist[3]), !!sym(vlist[4])) %>%
       summarize(counts = n()) %>%
       ungroup()
     # df_lowlevel <- data %>%
@@ -302,6 +324,4 @@ server <- function(input, output, session) {
 
 }
 
-if (interactive())
-  shinyApp(ui, server)
-
+shinyApp(ui, server)
