@@ -186,7 +186,7 @@ class FilesTests(TestCase):
 
     @patch('arcpy.management.CreateFileGDB')
     def test_create_gdb(self, mock_gdb):
-        p = create_gdb('test', 'dir')
+        p = create_gdb('test', 'out_dir')
         self.assertTrue(mock_gdb.called_once_with('out_dir', 'test.gdb'))
         self.assertEqual(p, os.path.join('out_dir', 'test.gdb'))
 
