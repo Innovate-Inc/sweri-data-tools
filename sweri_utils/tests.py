@@ -187,12 +187,12 @@ class FilesTests(TestCase):
     @patch('arcpy.management.CreateFileGDB')
     def test_create_gdb(self, mock_gdb):
         p = create_gdb('test', 'dir')
-        self.assertTrue(mock_gdb.called_once_with('dir', 'test.gdb'))
-        self.assertTrue(p, 'dir\\test.gdb')
+        self.assertTrue(mock_gdb.called_once_with('out_dir', 'test.gdb'))
+        self.assertEqual(p, os.path.join('out_dir', 'test.gdb'))
 
     def test_export_gdb(self):
-        g = export_file_by_type('test', 'gdb', 'out_dir', 'test_gdb', 'any')
-        self.assertEqual(g, 'out_dir\\test_gdb.gdb')
+        g = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
+        self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):
