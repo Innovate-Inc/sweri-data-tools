@@ -178,14 +178,11 @@ class DownloadTests(TestCase):
 
 
 class FilesTests(TestCase):
-    @patch('arcpy.AddMessage')
-    def test_export_gdb_zip(self, message_mock):
-        with patch('sweri_utils.files.create_zip') as cz:
-            cz.return_value = 'some_zip'
-            s = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
-            cz.assert_called()
-            # should return whatever the mock returns
-            self.assertEqual(s, 'some_zip')
+    @patch('zipfile.ZipFile')
+    def test_export_zip(self, zip_mock):
+        z = create_zip('zip_dir', 'test')
+        zip_mock.assert_called()
+        self.assertEqual(z, 'test.zip')
 
     @patch('arcpy.management.CreateFileGDB')
     def test_create_gdb(self, mock_gdb):
@@ -194,31 +191,25 @@ class FilesTests(TestCase):
         self.assertTrue(p, 'dir\\test.gdb')
 
     def test_export_gdb(self):
-        with patch('sweri_utils.files.create_zip') as cz:
-            export_file_by_type('test', 'gdb', 'out_dir', 'test_gdb', 'any')
-            cz.assert_called_once_with('any', 'out_dir', 'test_gdb')
+        g = export_file_by_type('test', 'gdb', 'out_dir', 'test_gdb', 'any')
+        self.assertEqual(g, 'out_dir\\test_gdb.gdb')
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):
         table_mock.return_value = 'new_table'
-        with patch('sweri_utils.files.create_zip') as cz:
-            export_file_by_type('test', 'csv', 'out_dir', 'test_csv', 'any')
-            cz.assert_called_once_with('any', 'out_dir', 'test_csv')
-            table_mock.assert_called()
+        s = export_file_by_type('test', 'csv', 'out_dir', 'test', 'any')
+        table_mock.assert_called()
+        self.assertEqual(s, 'new_table')
 
     @patch('arcpy.conversion.FeatureClassToShapefile')
     def test_export_shapefile(self, shp_mock):
-        with patch('sweri_utils.files.create_zip') as cz:
-            export_file_by_type('test', 'shapefile', 'out_dir', 'test', 'any')
-            shp_mock.assert_called()
-            cz.assert_called()
+        export_file_by_type('test', 'shapefile', 'out_dir', 'test', 'any')
+        shp_mock.assert_called()
 
     @patch('arcpy.conversion.FeaturesToJSON')
     def test_export_geojson(self, ftj_mock):
-        with patch('sweri_utils.files.create_zip') as cz:
-            export_file_by_type('test', 'geojson', 'out_dir', 'test', 'any')
-            ftj_mock.assert_called()
-            cz.assert_called_once_with('any', 'out_dir', 'test')
+        export_file_by_type('test', 'geojson', 'out_dir', 'test', 'any')
+        ftj_mock.assert_called()
 
     def test_export_throws_error(self):
         try:

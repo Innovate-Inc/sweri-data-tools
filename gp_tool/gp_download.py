@@ -52,11 +52,18 @@ if __name__ == "__main__":
     try:
         result_file = files.export_file_by_type(save_features, filetype, out_dir, out_name, arcpy.env.scratchFolder)
         arcpy.AddMessage(result_file)
+        # get disclaimer and put it in the same directory as the result file
+        arcpy.AddMessage('retrieving disclaimer')
+        files.get_disclaimer(out_dir)
+        # return zip file containing both
+        arcpy.AddMessage('creating zip of result file and disclaimer')
+        zip_file = files.create_zip(out_dir, out_name)
+        arcpy.AddMessage(zip_file)
         # remove the scratch FC after creating the file
     except Exception as e:
         arcpy.AddError(e.args[0])
         raise e
 
     # return it
-    arcpy.SetParameterAsText(6, result_file)
+    arcpy.SetParameterAsText(6, zip_file)
 
