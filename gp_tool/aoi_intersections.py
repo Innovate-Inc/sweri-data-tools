@@ -22,8 +22,6 @@ if __name__ == '__main__':
 
     intersection_features = os.path.join(sde_connection_file, f'sweri.{schema}.intersection_features')
 
-    # connection = arcpy.ArcSDESQLExecute(sde_connection_file)
-
     source_feature = {'source_key': 'custom', 'source_value': aoi}
     _, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
     for target_key, target_value in intersect_targets.items():
@@ -48,11 +46,10 @@ if __name__ == '__main__':
     j = records.JSON
     with open(csv_export, 'w') as f:
         f.write(j)
-    # arcpy.conversion.FeaturesToJSON(target_table, csv_export, geoJSON='GEOJSON')
+
     # s3 = boto3.client('s3')
     # s3.upload_file(csv_export, s3_bucket, csv_export)
 
     arcpy.SetParameter(4, csv_filename)
     os.remove(arcpy.env.scratchFolder)
-    # del connection
 
