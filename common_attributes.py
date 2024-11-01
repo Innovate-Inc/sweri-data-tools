@@ -45,39 +45,218 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
     arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)
     logger.info(f'{postgres_table_location} now in geodatabase')
 
-    # #Remove gdb
-    # shutil.rmtree(gdb_path)
-    # logger.info(f'{gdb_path} deleted')
+    #Remove gdb
+    arcpy.Delete_management(gdb_path)
+    logger.info(f'{gdb_path} deleted')
 
 def add_postgres_column(connection, schema, postgres_table_name, column_name, data_type):
     connection.startTransaction()
     connection.execute(f'''
+                       
     ALTER TABLE {schema}.{postgres_table_name}
     ADD COLUMN {column_name} {data_type};
+
     ''')
     connection.commitTransaction()
-    logging.info(f'{column_name} added to {schema}.{postgres_table_name}')
+    logging.info(f'{column_name} column added to {schema}.{postgres_table_name}')
 
 
-def facts_hazardous_fuels_exclusion(connection, schema, table, facts_haz_table):
+def exclude_facts_hazardous_fuels(connection, schema, table, facts_haz_table):
     # Do Not Included Entries Already Being Included via Hazardous Fuels
     connection.execute(f'''
                    
     UPDATE {schema}.{table}
-    SET included = 'No'
+    set included = 'haz'
     WHERE 
     event_cn IN(
         SELECT activity_cn FROM {schema}.{facts_haz_table}
-    )
+        )
+        
+    ''')
+    logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
+
+def exclude_by_acreage(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    DELETE FROM {schema}.{table}
+    WHERE
+    gis_acres <= 5 OR
+    gis_acres IS NULL; 
     
     ''')
-    logging.info(f'Hazardous Fuels Entries Excluded from {schema}.{table}')
+    connection.commitTransaction()
+    logging.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
-def inclusion_rules():
-    #TODO after Anson rules final
-    test = 'test'
+def include_logging_activities(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r2 = 'PASS'
+    WHERE
+    (activity ILIKE '%thin%'
+    OR
+    activity ILIKE '%cut%')
+    AND
+    (method IN (
+        SELECT value from {schema}.common_attributes_lookup
+        WHERE activity = 'logging' 
+        AND filter = 'method'
+        AND include = 'TRUE') 
+    OR method IS NULL)
+    AND
+    (equipment IN (
+        SELECT value FROM {schema}.common_attributes_lookup 
+        WHERE activity = 'logging' 
+        AND filter = 'equipment'
+        AND include = 'TRUE')
+    OR equipment IS NULL);
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
+    
+def include_fire_activites(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r3 = 'PASS'
+    WHERE
+    (activity ILIKE '%burn%'
+    OR
+    activity ILIKE '%fire%')
+    AND
+    (method IN (
+        SELECT value from {schema}.common_attributes_lookup
+        WHERE activity = 'fire' 
+        AND filter = 'method'
+        AND include = 'TRUE') 
+    OR method IS NULL)
+    AND
+    (equipment IN (
+        SELECT value FROM {schema}.common_attributes_lookup 
+        WHERE activity = 'fire' 
+        AND filter = 'equipment'
+        AND include = 'TRUE')
+    OR method IS NULL);
 
-def common_attributes_insert(connection, schema, postgres_table_name):
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
+
+def include_fuel_activities(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r4 = 'PASS'
+    WHERE
+    activity ILIKE '%fuel%'
+    AND
+    (method IN (
+        SELECT value from {schema}.common_attributes_lookup
+        WHERE activity = 'fuel' 
+        AND filter = 'method'
+        AND include = 'TRUE') 
+    OR method IS NULL)
+    AND
+    (equipment IN (
+        SELECT value FROM {schema}.common_attributes_lookup 
+        WHERE activity = 'fuel' 
+        AND filter = 'equipment'
+        AND include = 'TRUE')
+    OR method IS NULL);
+
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
+
+def special_exclusions(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r6 = 'PASS'
+    WHERE
+    (r2 = 'PASS'
+    OR 
+    r3 = 'PASS'
+    OR
+    r4 = 'PASS')
+    AND
+    activity IN (
+        SELECT value 
+        FROM {schema}.common_attributes_lookup
+        WHERE filter = 'special_exclusions'
+        AND include = 'TRUE'
+    );
+
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"included set to 'no' for special exclusions{schema}.{table}")
+
+def include_other_activites(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r5 = 'PASS'
+    WHERE
+    activity NOT ILIKE '%thin%'
+    AND
+    activity NOT ILIKE '%cut%'
+    AND
+    activity NOT ILIKE '%burn%'
+    AND
+    activity NOT ILIKE '%fire%'
+    AND
+    method IS NOT NULL
+    AND
+    equipment IS NOT NULL
+    AND 
+    method != 'No method'
+    AND
+    equipment != 'No equipment'
+    AND
+    method IN (
+        SELECT value from {schema}.common_attributes_lookup
+        WHERE activity = 'other' 
+        AND filter = 'method'
+        AND include = 'TRUE')
+    AND
+    equipment IN (
+        SELECT value FROM {schema}.common_attributes_lookup 
+        WHERE activity = 'other' 
+        AND filter = 'equipment'
+        AND include = 'TRUE');
+
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+
+def set_included(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET included = 'yes'
+    WHERE
+    included is null
+    AND
+    r5 = 'PASS'
+    OR
+    ((r2 = 'PASS' OR r3 = 'PASS' OR r4 = 'PASS') AND r6 = 'PASS');
+    
+    ''')
+    connection.commitTransaction()    
+
+def common_attributes_insert(connection, schema, table):
     #Need to figure out state and dates outside of date completed
     connection.startTransaction()
     connection.execute(f'''
@@ -123,174 +302,15 @@ def common_attributes_insert(connection, schema, postgres_table_name):
         shape, 
         sde.next_globalid()
         
-    FROM {schema}.{postgres_table_name}
-    WHERE included = 'yes';
-    
-    ''')
-    connection.commitTransaction()
-
-def inclusion_rules():
-    rule_0()
-    rule_1()
-    rule_2()
-    rule_3()
-    rule_4()
-    rule_5()
-    rule_6()
-    rule_7()
-    rule_8()
-    rule_9()
-    rule_10()
-
-def rule_0(connection, schema, postgres_table_name):
-    activity_exclusions = '''('Certification', 'Reforestation Need Change', 'Examination',
-        'Prescription', 'Diagnosis', 'Exam', 'Survey', 'Analysis', 'Delineation',
-        'Monitoring', 'Data', '(FIA)', 'Inventory', 'Permanent Plot', 'Remote Sensing',
-        'Administrative Changes', 'Cruising', 'Layout and Design', 'Cone Collection',
-        'Seed Collection', 'seed collecting', 'Seed Storage', 'Seed Extraction',
-        'Pollen', 'Scion', 'Cooler', 'Activity Review', 'TSI Need', 'Fences')'''
-    
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    SET included = 'no'
-    WHERE activity in {activity_exclusions}
-    AND included IS NULL;
+    FROM {schema}.{table}
+    WHERE included = 'yes'
+    OR 
+    included = 'haz';
 
     ''')
     connection.commitTransaction()
+    logger.info(f"{schema}.{table} inserted into {schema}.treatment_index_common_attributes whre included = 'yes'")
 
-def rule_1(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    SET included = 'yes'
-    WHERE fuels_keypoint_area in ('3', '6')
-    AND included IS NULL;
-
-    ''')
-    connection.commitTransaction()
-
-def rule_2(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    SET included = 'no'
-    WHERE 
-    included IS NULL
-    AND
-    (gis_acres <= 10 OR gis_acres IS NULL);
-    
-    ''')
-    connection.commitTransaction()
-    
-
-def rule_3():
-    print()
-
-def rule_4():
-    print()
-
-def rule_5(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    set included = 'no'
-    WHERE 
-    included IS NULL
-    AND
-    activity ILIKE '%wildfire%';
-    
-    ''')
-    connection.commitTransaction()
-
-def rule_6(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    set included = 'no'
-    WHERE 
-    included IS NULL
-    AND
-    activity ILIKE '%fish%'
-    AND
-    equipment NOT ILIKE '%logging%';
-    
-    ''')
-    connection.commitTransaction()
-
-def rule_7(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    SET included = 'yes'
-    WHERE 
-    included IS NULL
-    AND
-    activity ILIKE '%clearcut%'
-    AND
-    method not ILIKE ('%inventory%'|'%Designation%'|'%Marking%');
-    
-    ''')
-    connection.commitTransaction()
-
-def rule_8(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    set included = 'yes'
-    WHERE 
-    included IS NULL
-    AND
-    activity ILIKE '%burn%'
-    AND
-    method ILIKE ('%Fire%'|'%Manual%'|'%No method%');
-    
-    ''')
-    connection.commitTransaction()
-
-def rule_9(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    SET included = 'yes'
-    WHERE 
-    included IS NULL
-    AND
-    activity IN ('Drip Torch', 'Terra torch', 'Verray torch', 
-    'Ping pong balls', 'Aerial ignition device', 'Air Curtain Incinerator');
-    
-    ''')
-    connection.commitTransaction()
-
-
-def rule_10(connection, schema, postgres_table_name):
-    connection.beginTransaction()
-    connection.execute(f'''
-    
-    UPDATE {schema}.{postgres_table_name}
-    set included = 'yes'
-    WHERE 
-    included IS NULL
-    AND
-    activity ILIKE ('%Commercial Thin%'|'%Precommercial Thin%'") 
-    AND 
-    method IN ('Manual', 'No method', 'Power hand', 'Mechanical', 
-    'Logging Methods', 'Tractor Logging')
-    AND 
-    equipment IN ('No equipment', 'Chain saw', 'Feller Buncher', 
-    'Rubber tired skidder logging', 'Tractor logging');
-    
-    ''')
-    connection.commitTransaction()
 
 if __name__ == '__main__':
     load_dotenv()
@@ -303,7 +323,9 @@ if __name__ == '__main__':
     table_name = 'common_attributes'
     hazardous_fuels_table = 'facts_haz_3857_2'
     con = arcpy.ArcSDESQLExecute(sde_connection_file)
-    con.execute(f'TRUNCATE {target_schema}.treatment_index_common_attributes')
+    insert_table = f'{target_schema}.treatment_index_common_attributes'
+    insert_table_path = os.path.join(sde_connection_file, insert_table)
+    con.execute(f'TRUNCATE {insert_table}')
 
     urls = [
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
@@ -319,36 +341,62 @@ if __name__ == '__main__':
     
 
     for url in urls:
+        print(url)
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
-        gdb_to_postgres(url, gdb, target_projection, common_attributes_fc_name, table_name, sde_connection_file, target_schema)
-        add_postgres_column(con, target_schema, table_name, 'included', 'TEXT')
         postgres_fc = os.path.join(sde_connection_file, table_name)
 
-        logging.info('postgres column added')
+
+        gdb_to_postgres(url, gdb, target_projection, common_attributes_fc_name, table_name, sde_connection_file, target_schema)
+        arcpy.management.AddField(postgres_fc,'included', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'included', f'included_idx_{region_number}', ascending="ASCENDING")
+
+        arcpy.management.AddField(postgres_fc,'r2', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'r2', f'r2_idx_{region_number}', ascending="ASCENDING")
+
+        arcpy.management.AddField(postgres_fc,'r3', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'r3', f'r3_idx_{region_number}',  ascending="ASCENDING")
+
+    
+        arcpy.management.AddField(postgres_fc,'r4', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'r4', f'r4_idx_{region_number}', ascending="ASCENDING")
+
+        arcpy.management.AddField(postgres_fc,'r5', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'r5', f'r5_idx_{region_number}',  ascending="ASCENDING")
+
+        arcpy.management.AddField(postgres_fc,'r6', 'TEXT')
+        arcpy.management.AddIndex(postgres_fc, 'r6', f'r6_idx_{region_number}',  ascending="ASCENDING")
+
+
         arcpy.management.AddIndex(postgres_fc, 'event_cn', f'event_cn_idx_{region_number}', unique="UNIQUE", ascending="ASCENDING")
-        logging.info('index created on event_cn')
+        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
 
-        arcpy.management.AddIndex(postgres_fc, 'method', f'method_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
-        logging.info('index created on method')
+        arcpy.management.AddIndex(postgres_fc, 'gis_acres', f'gis_acres_idx_{region_number}', ascending="ASCENDING")
+        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
 
-        arcpy.management.AddIndex(postgres_fc, 'equipment', f'equipment_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
-        logging.info('index created on equipment')
+        arcpy.management.AddIndex(postgres_fc, 'activity', f'activity_idx_{region_number}', ascending="ASCENDING")
+        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
 
-        arcpy.management.AddIndex(postgres_fc, 'activity', f'activity_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
-        logging.info('index created on activity')
-        
-        arcpy.management.AddIndex(postgres_fc, 'gis_acres', f'activity_idx_{region_number}', unique="NON_UNIQUE", ascending="ASCENDING")
-        logging.info('index created on activity')
+        arcpy.management.AddIndex(postgres_fc, 'equipment', f'equipment_idx_{region_number}', ascending="ASCENDING")
+        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
 
-        facts_hazardous_fuels_exclusion(con, target_schema, table_name, hazardous_fuels_table)
+        arcpy.management.AddIndex(postgres_fc, 'method', f'method_idx_{region_number}', ascending="ASCENDING")
+        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
 
-        inclusion_rules()
+        exclude_by_acreage(con, target_schema, table_name)
+        # exclude_facts_hazardous_fuels(con, target_schema, table_name, hazardous_fuels_table)
 
-        common_attributes_insert(con, target_schema, table_name)
-        
-    #Strip Out Hazardous Fuels
-    #Rules
-    #Insert
+        include_logging_activities(con, target_schema, table_name)
+        include_fire_activites(con, target_schema, table_name)
+        include_fuel_activities(con, target_schema, table_name)
+        special_exclusions(con, target_schema, table_name)
+
+        include_other_activites(con, target_schema, table_name)
+
+        set_included(con, target_schema, table_name)
+
+        # common_attributes_insert(con, target_schema, table_name)
+
+
 
