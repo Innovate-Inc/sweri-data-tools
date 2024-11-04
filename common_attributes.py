@@ -4,8 +4,6 @@ import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import logging
-import shutil
-import zipfile
 import re
 import watchtower
 
@@ -49,30 +47,71 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
     arcpy.Delete_management(gdb_path)
     logger.info(f'{gdb_path} deleted')
 
-def add_postgres_column(connection, schema, postgres_table_name, column_name, data_type):
+       
+def trim_whitespace(connection, schema, table):
     connection.startTransaction()
     connection.execute(f'''
-                       
-    ALTER TABLE {schema}.{postgres_table_name}
-    ADD COLUMN {column_name} {data_type};
-
+                   
+    UPDATE {schema}.{table}
+    SET
+    activity = TRIM(activity),
+    method = TRIM(method),
+    equipment = TRIM(equipment);
+    
     ''')
     connection.commitTransaction()
-    logging.info(f'{column_name} column added to {schema}.{postgres_table_name}')
+    logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
+
+def add_fields_and_indexes(feature_class, region):
+    arcpy.management.AddField(feature_class,'included', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'included', f'included_idx_{region}', ascending="ASCENDING")
+
+    arcpy.management.AddField(feature_class,'r2', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'r2', f'r2_idx_{region}', ascending="ASCENDING")
+
+    arcpy.management.AddField(feature_class,'r3', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'r3', f'r3_idx_{region}',  ascending="ASCENDING")
+
+
+    arcpy.management.AddField(feature_class,'r4', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'r4', f'r4_idx_{region}', ascending="ASCENDING")
+
+    arcpy.management.AddField(feature_class,'r5', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'r5', f'r5_idx_{region}',  ascending="ASCENDING")
+
+    arcpy.management.AddField(feature_class,'r6', 'TEXT')
+    arcpy.management.AddIndex(feature_class, 'r6', f'r6_idx_{region}',  ascending="ASCENDING")
+
+
+    arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
+    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
+
+    arcpy.management.AddIndex(feature_class, 'gis_acres', f'gis_acres_idx_{region}', ascending="ASCENDING")
+    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
+
+    arcpy.management.AddIndex(feature_class, 'activity', f'activity_idx_{region}', ascending="ASCENDING")
+    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
+
+    arcpy.management.AddIndex(feature_class, 'equipment', f'equipment_idx_{region}', ascending="ASCENDING")
+    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
+
+    arcpy.management.AddIndex(feature_class, 'method', f'method_idx_{region}', ascending="ASCENDING")
+    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
 
 
 def exclude_facts_hazardous_fuels(connection, schema, table, facts_haz_table):
     # Do Not Included Entries Already Being Included via Hazardous Fuels
+    connection.startTransaction()
     connection.execute(f'''
                    
-    UPDATE {schema}.{table}
-    set included = 'haz'
+    DELETE FROM {schema}.{table}
     WHERE 
     event_cn IN(
         SELECT activity_cn FROM {schema}.{facts_haz_table}
         )
         
     ''')
+    connection.commitTransaction()
     logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 def exclude_by_acreage(connection, schema, table):
@@ -198,7 +237,7 @@ def special_exclusions(connection, schema, table):
     
     ''')
     connection.commitTransaction()
-    logging.info(f"included set to 'no' for special exclusions{schema}.{table}")
+    logging.info(f"included set to 'no' for special exclusions in {schema}.{table}")
 
 def include_other_activites(connection, schema, table):
     connection.startTransaction()
@@ -263,43 +302,21 @@ def common_attributes_insert(connection, schema, table):
                    
     INSERT INTO {schema}.treatment_index_common_attributes(
 
-        objectid, 
-        name, 
-        date_current,
-        actual_completion_date, 
-        acres, 
-        type, 
-        category, 
-        fund_code, 
-        cost_per_uom,
-        identifier_database, 
-        unique_id,
-        uom, state, activity, 
-        treatment_date,
-        date_source, 
-        shape, 
-        globalid
+        objectid, name, date_current, actual_completion_date, acres, 
+        type, category, fund_code, cost_per_uom, identifier_database, 
+        unique_id, uom, state, activity, treatment_date, date_source, 
+        shape, globalid
 
     )
     SELECT
 
         sde.next_rowid('{schema}', 'treatment_index_common_attributes'),
-        name AS name,
-        act_modified_date AS date_current,
-        date_completed AS actual_completion_date, 
-        gis_acres AS acres,
-        nfpors_treatment AS type, 
-        nfpors_category AS category, 
-        fund_codes as fund_code, 
-        cost_per_unit as cost_per_uom,
-        'FACTS Common Attributes' AS identifier_database, 
-        event_cn AS unique_id,
-        uom as uom, 
-        state_abbr AS state, 
-        activity as activity, 
-        date_completed as treatment_date,
-        'date_completed' as date_source, 
-        shape, 
+        name AS name, act_modified_date AS date_current, 
+        date_completed AS actual_completion_date, gis_acres AS acres, 
+        nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
+        cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
+        event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity, 
+        date_completed as treatment_date, 'date_completed' as date_source, shape, 
         sde.next_globalid()
         
     FROM {schema}.{table}
@@ -349,40 +366,9 @@ if __name__ == '__main__':
 
 
         gdb_to_postgres(url, gdb, target_projection, common_attributes_fc_name, table_name, sde_connection_file, target_schema)
-        arcpy.management.AddField(postgres_fc,'included', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'included', f'included_idx_{region_number}', ascending="ASCENDING")
 
-        arcpy.management.AddField(postgres_fc,'r2', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'r2', f'r2_idx_{region_number}', ascending="ASCENDING")
-
-        arcpy.management.AddField(postgres_fc,'r3', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'r3', f'r3_idx_{region_number}',  ascending="ASCENDING")
-
-    
-        arcpy.management.AddField(postgres_fc,'r4', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'r4', f'r4_idx_{region_number}', ascending="ASCENDING")
-
-        arcpy.management.AddField(postgres_fc,'r5', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'r5', f'r5_idx_{region_number}',  ascending="ASCENDING")
-
-        arcpy.management.AddField(postgres_fc,'r6', 'TEXT')
-        arcpy.management.AddIndex(postgres_fc, 'r6', f'r6_idx_{region_number}',  ascending="ASCENDING")
-
-
-        arcpy.management.AddIndex(postgres_fc, 'event_cn', f'event_cn_idx_{region_number}', unique="UNIQUE", ascending="ASCENDING")
-        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
-
-        arcpy.management.AddIndex(postgres_fc, 'gis_acres', f'gis_acres_idx_{region_number}', ascending="ASCENDING")
-        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
-
-        arcpy.management.AddIndex(postgres_fc, 'activity', f'activity_idx_{region_number}', ascending="ASCENDING")
-        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
-
-        arcpy.management.AddIndex(postgres_fc, 'equipment', f'equipment_idx_{region_number}', ascending="ASCENDING")
-        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
-
-        arcpy.management.AddIndex(postgres_fc, 'method', f'method_idx_{region_number}', ascending="ASCENDING")
-        logging.info(f'index event_cn_idx_{region_number} created on table {target_schema}.{table_name}')
+        trim_whitespace(con, target_schema, table_name)
+        add_fields_and_indexes(postgres_fc, region_number, target_schema) 
 
         exclude_by_acreage(con, target_schema, table_name)
         # exclude_facts_hazardous_fuels(con, target_schema, table_name, hazardous_fuels_table)
@@ -391,12 +377,11 @@ if __name__ == '__main__':
         include_fire_activites(con, target_schema, table_name)
         include_fuel_activities(con, target_schema, table_name)
         special_exclusions(con, target_schema, table_name)
-
         include_other_activites(con, target_schema, table_name)
 
         set_included(con, target_schema, table_name)
 
-        # common_attributes_insert(con, target_schema, table_name)
+        common_attributes_insert(con, target_schema, table_name)
 
 
 
