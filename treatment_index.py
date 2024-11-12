@@ -7,7 +7,7 @@ import watchtower
 
 from sweri_utils.sql import rename_postgres_table
 from sweri_utils.download import get_ids, fetch_and_create_featureclass
-from sweri_utils.files import download_file_from_url, extract_and_remove_zip_file
+from sweri_utils.files import download_file_from_url, extract_and_remove_zip_file, gdb_to_postgres
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -44,40 +44,6 @@ def update_nfpors(connection, schema, sde_file, wkid, exclusion_ids, chunk_size 
         pass
 
     logger.info('NFPORS up to date')
-
-def update_facts_hazardous_fuels(schema, sde_file, projection):
-    
-    # Download GDB from link to local folder
-    facts_gdb_url = os.getenv('FACTS_GDB_URL')
-    facts_zip_file = 'facts_haz.zip'
-
-    #Download and extract gdb file
-    logger.info('Downloading FACTS Hazardous Fuels')
-    download_file_from_url(facts_gdb_url, facts_zip_file)
-
-    logger.info('Extracting FACTS Hazardous Fuels')
-    extract_and_remove_zip_file(facts_zip_file)
-
-    #Set Workspace to Downloaded GDB and set paths for feature class and reprojection
-    facts_gdb = os.path.join(os.getcwd(),'S_USA.Activity_HazFuelTrt_PL.gdb')
-    fc_path = os.path.join(facts_gdb,'Activity_HazFuelTrt_PL')
-    proj_fc = os.path.join(facts_gdb, 'facts_haz_3857_2')
-    facts_postgres = os.path.join(sde_file, f'sweri.{schema}.facts_haz_3857_2')
-
-
-    #Reproject layer
-    arcpy.Project_management(fc_path, proj_fc, projection)
-    logger.info('layer reprojected')
-
-    #Clear space in postgres for table
-    if(arcpy.Exists(facts_postgres)):
-        arcpy.management.Delete(facts_postgres)
-        logger.info("facts_haz_3857_2 deleted")
-
-    #Upload fc to postgres
-    arcpy.conversion.FeatureClassToGeodatabase(proj_fc, sde_file)
-    logger.info('FACTS Hazardous Fuels now in geodatabase')
-
 
 def insert_nfpors_additions(connection, schema):
     common_fields = '''
@@ -396,11 +362,18 @@ if __name__ == "__main__":
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     exluded_ids = os.getenv('EXCLUSION_IDS')
+    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    facts_haz_gdb = 'S_USA.Activity_HazFuelTrt_PL.gdb'
+    facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
+    facts_haz_pg_table = 'facts_haz_3857_2'
+
+
     
     con = arcpy.ArcSDESQLExecute(sde_connection_file)
 
     update_nfpors(con, target_schema, sde_connection_file, out_wkid, exluded_ids)
-    update_facts_hazardous_fuels(target_schema, sde_connection_file, target_projection)
+    #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
+    gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, facts_haz_pg_table, sde_connection_file, target_schema)
 
     #Clear out overall treatment index insert destination table while maintaining globalids and versioning
     con.execute(f'TRUNCATE {target_schema}.treatment_index_facts_nfpors_temp;')

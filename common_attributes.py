@@ -1,4 +1,4 @@
-from sweri_utils.files import download_file_from_url, extract_and_remove_zip_file
+from sweri_utils.files import gdb_to_postgres
 import arcpy
 import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
@@ -10,57 +10,6 @@ import watchtower
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./common_attributes.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 # logger.addHandler(watchtower.CloudWatchLogHandler())
-
-def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema):
-    # Downloads a gdb with a single feature class
-    # And uploads that featureclass to postgres
-    zip_file = f'{postgres_table_name}.zip'
-
-    #Download and extract gdb file
-    logger.info(f'Downloading {url}')
-    download_file_from_url(url, zip_file)
-
-    logger.info(f'Extracting {zip_file}')
-    extract_and_remove_zip_file(zip_file)
-
-    #Set Workspace to Downloaded GDB and set paths for feature class and reprojection
-    gdb_path = os.path.join(os.getcwd(),gdb_name)
-    feature_class = os.path.join(gdb_path,fc_name)
-    reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
-    postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
-
-    #Reproject layer
-    logger.info(f'reprojecting {feature_class}')
-    arcpy.Project_management(feature_class, reprojected_fc, projection)
-    logger.info('layer reprojected')
-
-    #Clear space in postgres for table
-    if(arcpy.Exists(postgres_table_location)):
-        arcpy.management.Delete(postgres_table_location)
-        logger.info(f'{postgres_table_name} has been deleted')
-
-    #Upload fc to postgres
-    arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)
-    logger.info(f'{postgres_table_location} now in geodatabase')
-
-    #Remove gdb
-    arcpy.Delete_management(gdb_path)
-    logger.info(f'{gdb_path} deleted')
-
-       
-def trim_whitespace(connection, schema, table):
-    connection.startTransaction()
-    connection.execute(f'''
-                   
-    UPDATE {schema}.{table}
-    SET
-    activity = TRIM(activity),
-    method = TRIM(method),
-    equipment = TRIM(equipment);
-    
-    ''')
-    connection.commitTransaction()
-    logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 def add_fields_and_indexes(feature_class, region):
     arcpy.management.AddField(feature_class,'included', 'TEXT')
@@ -84,21 +33,11 @@ def add_fields_and_indexes(feature_class, region):
 
 
     arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
-    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
-
     arcpy.management.AddIndex(feature_class, 'gis_acres', f'gis_acres_idx_{region}', ascending="ASCENDING")
-    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
-
     arcpy.management.AddIndex(feature_class, 'activity', f'activity_idx_{region}', ascending="ASCENDING")
-    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
-
     arcpy.management.AddIndex(feature_class, 'equipment', f'equipment_idx_{region}', ascending="ASCENDING")
-    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
-
     arcpy.management.AddIndex(feature_class, 'method', f'method_idx_{region}', ascending="ASCENDING")
-    logging.info(f'index event_cn_idx_{region} created on table {feature_class}')
-
-
+       
 def exclude_facts_hazardous_fuels(connection, schema, table, facts_haz_table):
     # Do Not Included Entries Already Being Included via Hazardous Fuels
     connection.startTransaction()
@@ -108,8 +47,8 @@ def exclude_facts_hazardous_fuels(connection, schema, table, facts_haz_table):
     WHERE 
     event_cn IN(
         SELECT activity_cn FROM {schema}.{facts_haz_table}
-        )
-        
+    )
+          
     ''')
     connection.commitTransaction()
     logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
@@ -126,6 +65,20 @@ def exclude_by_acreage(connection, schema, table):
     ''')
     connection.commitTransaction()
     logging.info(f"deleted Entries <= 5 acres {schema}.{table}")
+
+def trim_whitespace(connection, schema, table):
+    connection.startTransaction()
+    connection.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET
+    activity = TRIM(activity),
+    method = TRIM(method),
+    equipment = TRIM(equipment);
+    
+    ''')
+    connection.commitTransaction()
+    logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 def include_logging_activities(connection, schema, table):
     connection.startTransaction()
@@ -179,7 +132,7 @@ def include_fire_activites(connection, schema, table):
         WHERE activity = 'fire' 
         AND filter = 'equipment'
         AND include = 'TRUE')
-    OR method IS NULL);
+    OR equipment IS NULL);
 
     
     ''')
@@ -207,7 +160,7 @@ def include_fuel_activities(connection, schema, table):
         WHERE activity = 'fuel' 
         AND filter = 'equipment'
         AND include = 'TRUE')
-    OR method IS NULL);
+    OR equipment IS NULL);
 
     
     ''')
@@ -333,15 +286,18 @@ if __name__ == '__main__':
     load_dotenv()
     out_wkid = 3857
     target_projection = arcpy.SpatialReference(out_wkid)
+
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
-    table_name = 'common_attributes'
     hazardous_fuels_table = 'facts_haz_3857_2'
+
     con = arcpy.ArcSDESQLExecute(sde_connection_file)
+
     insert_table = f'{target_schema}.treatment_index_common_attributes'
     insert_table_path = os.path.join(sde_connection_file, insert_table)
+
     con.execute(f'TRUNCATE {insert_table}')
 
     urls = [
@@ -364,14 +320,14 @@ if __name__ == '__main__':
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
         postgres_fc = os.path.join(sde_connection_file, table_name)
 
-
         gdb_to_postgres(url, gdb, target_projection, common_attributes_fc_name, table_name, sde_connection_file, target_schema)
 
-        trim_whitespace(con, target_schema, table_name)
-        add_fields_and_indexes(postgres_fc, region_number, target_schema) 
+        add_fields_and_indexes(postgres_fc, region_number) 
 
         exclude_by_acreage(con, target_schema, table_name)
-        # exclude_facts_hazardous_fuels(con, target_schema, table_name, hazardous_fuels_table)
+        exclude_facts_hazardous_fuels(con, target_schema, table_name, hazardous_fuels_table)
+
+        trim_whitespace(con, target_schema, table_name)
 
         include_logging_activities(con, target_schema, table_name)
         include_fire_activites(con, target_schema, table_name)
@@ -382,6 +338,5 @@ if __name__ == '__main__':
         set_included(con, target_schema, table_name)
 
         common_attributes_insert(con, target_schema, table_name)
-
 
 
