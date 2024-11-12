@@ -24,9 +24,9 @@ if __name__ == '__main__':
     arcpy.env.overwriteOutput = True
     aoi = arcpy.GetParameterAsText(0) # AOI
     schema = arcpy.GetParameterAsText(1)
-    # sde_connection_file = 'Z:\\home\\arcgis\\sweri-staging\\sweri-data-tools\\sweri_staging.sde'
-    sde_connection_file = arcpy.GetParameterAsText(2)
-
+    sde_connection_file = 'Z:\\home\\arcgis\\sweri-staging\\sweri-data-tools\\sweri_staging.sde'
+    # sde_connection_file = arcpy.GetParameterAsText(2)
+    arcpy.AddMessage('Configuring Data Sources')
     treatment_intersections = path.join(sde_connection_file, 'sweri.{}.intersections'.format(schema))
     target_table = CreateTable(arcpy.env.scratchGDB, 'intersections', template=treatment_intersections)
 
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     _, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
     for target_key, target_value in intersect_targets.items():
         tv = target_value['name'] if 'name' in target_value else target_key
-        arcpy.AddMessage('Calculating intersections for ' + tv)
+        arcpy.AddMessage('Calculating Intersections for ' + tv)
         target_where = "feat_source = '{}'".format(target_key)
         target_layer = arcpy.management.MakeFeatureLayer(intersection_features, where_clause=target_where)
 
@@ -49,6 +49,7 @@ if __name__ == '__main__':
                                                      area_unit='ACRES_US')
         arcpy.management.Append(intersect_output, target_table, 'NO_TEST')
 
+    arcpy.AddMessage('Generating Output')
     filename = '{}.json'.format(uuid4())
     export = path.join(arcpy.env.scratchFolder, filename)
     records = arcpy.RecordSet(target_table)
