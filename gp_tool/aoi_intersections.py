@@ -1,9 +1,7 @@
-import urllib.parse
 import arcpy
-from os import getenv, path
+from os import path
 import sys, os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
-# import boto3
 from uuid import uuid4
 from arcpy.management import CreateTable
 
@@ -16,7 +14,7 @@ from arcpy.management import CreateTable
 #                         stderrToServer=True)
 #########################################################map
 
-tools = r"C:\Users\Keaton Shennan\projects\sweri-data-tools\sweri_utils"
+tools = r"C:\path\to\sweri_utils"
 sys.path.append(tools)
 from intersections import configure_intersection_sources, update_schema_for_intersections_insert
 
@@ -24,8 +22,7 @@ if __name__ == '__main__':
     arcpy.env.overwriteOutput = True
     aoi = arcpy.GetParameterAsText(0) # AOI
     schema = arcpy.GetParameterAsText(1)
-    sde_connection_file = 'Z:\\home\\arcgis\\sweri-staging\\sweri-data-tools\\sweri_staging.sde'
-    # sde_connection_file = arcpy.GetParameterAsText(2)
+    sde_connection_file = arcpy.GetParameterAsText(2)
     arcpy.AddMessage('Configuring Data Sources')
     treatment_intersections = path.join(sde_connection_file, 'sweri.{}.intersections'.format(schema))
     target_table = CreateTable(arcpy.env.scratchGDB, 'intersections', template=treatment_intersections)
