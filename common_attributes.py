@@ -295,10 +295,10 @@ if __name__ == '__main__':
 
     con = arcpy.ArcSDESQLExecute(sde_connection_file)
 
-    insert_table = f'{target_schema}.treatment_index_common_attributes'
+    insert_table = f'treatment_index_common_attributes'
     insert_table_path = os.path.join(sde_connection_file, insert_table)
 
-    con.execute(f'TRUNCATE {insert_table}')
+    con.execute(f'TRUNCATE {target_schema}.{insert_table}')
 
     urls = [
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
@@ -310,13 +310,14 @@ if __name__ == '__main__':
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region08.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region09.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
+
     ]
     
 
     for url in urls:
         print(url)
         region_number = re.sub("\D", "", url)
-        table_name = f'common_attributes_{region_number}'
+        table_name = f'common_attributes_region_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
         postgres_fc = os.path.join(sde_connection_file, table_name)
 
@@ -338,5 +339,6 @@ if __name__ == '__main__':
         set_included(con, target_schema, table_name)
 
         common_attributes_insert(con, target_schema, table_name)
+        arcpy.management.Delete(postgres_fc)
 
 
