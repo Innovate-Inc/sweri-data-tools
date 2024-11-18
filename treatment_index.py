@@ -636,6 +636,48 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
 
+def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
+    common_attributes_fc_name = 'Actv_CommonAttribute_PL'
+    urls = [
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region06.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region08.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region09.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
+
+    ]
+    
+
+    for url in urls:
+        print(url)
+        region_number = re.sub("\D", "", url)
+        table_name = f'common_attributes_{region_number}'
+        gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
+        postgres_fc = os.path.join(sde_file, table_name)
+
+        gdb_to_postgres(url, gdb, projection, common_attributes_fc_name, table_name, sde_file, schema)
+
+        add_fields_and_indexes(postgres_fc, region_number) 
+
+        exclude_by_acreage(cursor, schema, table_name)
+        exclude_facts_hazardous_fuels(cursor, schema, table_name, facts_haz_table)
+
+        trim_whitespace(cursor, schema, table_name)
+
+        include_logging_activities(cursor, schema, table_name)
+        include_fire_activites(cursor, schema, table_name)
+        include_fuel_activities(cursor, schema, table_name)
+        special_exclusions(cursor, schema, table_name)
+        include_other_activites(cursor, schema, table_name)
+
+        set_included(cursor, schema, table_name)
+
+        common_attributes_insert(cursor, schema, table_name, treatment_index)
+        common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
 
 
 if __name__ == "__main__":
@@ -655,59 +697,14 @@ if __name__ == "__main__":
     facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_haz_3857_2'
 
-    common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
-    common_attributes_fc_name = 'Actv_CommonAttribute_PL'
-
     #This is the path of the final table, _temp and _backup of this table must also exist
-    insert_table = f'treatment_index_common_attributes'
-    insert_table_path = os.path.join(sde_connection_file, insert_table)
+    insert_table = f'treatment_index_facts_nfpors'
 
     cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
-    urls = [
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region06.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region08.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region09.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
-
-    ]
-    
-
-    for url in urls:
-        print(url)
-        region_number = re.sub("\D", "", url)
-        table_name = f'common_attribute_{region_number}'
-        gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
-        postgres_fc = os.path.join(sde_connection_file, table_name)
-
-        gdb_to_postgres(url, gdb, target_projection, common_attributes_fc_name, table_name, sde_connection_file, target_schema)
-
-        add_fields_and_indexes(postgres_fc, region_number) 
-
-        exclude_by_acreage(cur, target_schema, table_name)
-        exclude_facts_hazardous_fuels(cur, target_schema, table_name, hazardous_fuels_table)
-
-        trim_whitespace(cur, target_schema, table_name)
-
-        include_logging_activities(cur, target_schema, table_name)
-        include_fire_activites(cur, target_schema, table_name)
-        include_fuel_activities(cur, target_schema, table_name)
-        special_exclusions(cur, target_schema, table_name)
-        include_other_activites(cur, target_schema, table_name)
-
-        set_included(cur, target_schema, table_name)
-
-        common_attributes_insert(cur, target_schema, table_name, insert_table)
-        common_attributes_treatment_date(cur, target_schema, table_name, insert_table)
-
-
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, exluded_ids)
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
@@ -735,6 +732,3 @@ if __name__ == "__main__":
     # Newly populated treatment_index_temp -> current treatment_index
     # backup_temp -> treatment_index_temp for next run
     treatment_index_renames(cur, target_schema, insert_table)
-
-
-    
