@@ -3,7 +3,7 @@ import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import logging
-# import watchtower
+import watchtower
 import re
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
@@ -12,7 +12,7 @@ from sweri_utils.files import gdb_to_postgres
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def update_nfpors(cursor, schema, sde_file, wkid, exclusion_ids, chunk_size = 70):
 
