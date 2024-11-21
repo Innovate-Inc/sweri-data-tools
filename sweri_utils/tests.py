@@ -178,25 +178,21 @@ class DownloadTests(TestCase):
 
 
 class FilesTests(TestCase):
-    @patch('arcpy.AddMessage')
-    def test_export_gdb_zip(self, message_mock):
-        with patch('sweri_utils.files.create_zip') as cz:
-            cz.return_value = 'some_zip'
-            s = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
-            cz.assert_called()
-            # should return whatever the mock returns
-            self.assertEqual(s, 'some_zip')
+    @patch('zipfile.ZipFile')
+    def test_export_zip(self, zip_mock):
+        z = create_zip('zip_dir', 'test')
+        zip_mock.assert_called()
+        self.assertEqual(z, 'test.zip')
 
     @patch('arcpy.management.CreateFileGDB')
     def test_create_gdb(self, mock_gdb):
-        p = create_gdb('test', 'dir')
-        self.assertTrue(mock_gdb.called_once_with('dir', 'test.gdb'))
-        self.assertTrue(p, 'dir\\test.gdb')
+        p = create_gdb('test', 'out_dir')
+        self.assertTrue(mock_gdb.called_once_with('out_dir', 'test.gdb'))
+        self.assertEqual(p, os.path.join('out_dir', 'test.gdb'))
 
     def test_export_gdb(self):
-        with patch('sweri_utils.files.create_zip') as cz:
-            export_file_by_type('test', 'gdb', 'out_dir', 'test_gdb', 'any')
-            cz.assert_called_once_with('any', 'out_dir', 'test_gdb')
+        g = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
+        self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):
@@ -207,10 +203,8 @@ class FilesTests(TestCase):
 
     @patch('arcpy.conversion.FeatureClassToShapefile')
     def test_export_shapefile(self, shp_mock):
-        with patch('sweri_utils.files.create_zip') as csh:
-            export_file_by_type('test', 'shapefile', 'out_dir', 'test', 'any')
-            shp_mock.assert_called()
-            csh.assert_called()
+        export_file_by_type('test', 'shapefile', 'out_dir', 'test', 'any')
+        shp_mock.assert_called()
 
     @patch('arcpy.conversion.FeaturesToJSON')
     def test_export_geojson(self, ftj_mock):
