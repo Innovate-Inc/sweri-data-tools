@@ -5,46 +5,67 @@ from dotenv import load_dotenv
 import logging
 import watchtower
 import re
+from arcgis.features import FeatureLayer
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
-from sweri_utils.download import fetch_and_create_featureclass
+from sweri_utils.download import get_ids
 from sweri_utils.files import gdb_to_postgres
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 logger.addHandler(watchtower.CloudWatchLogHandler())
 
-def update_nfpors(cursor, schema, sde_file, wkid, exclusion_ids, chunk_size = 70):
-
-    max_modifiedon = cursor.execute(f'select max(modifiedon) from {schema}.nfpors;')
-    logger.info(f'max datetime in NFPORS: {max_modifiedon}')
-
+def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
+    cursor.execute(f'TRUNCATE {schema}.nfpors')
     nfpors_url = os.getenv('NFPORS_URL')
-    nfpors_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors')
+    exclusion_ids = os.getenv('EXCLUSION_IDS')
     nfpors_additions_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors_additions')
-    where_clause = f"modifiedon > TIMESTAMP '{max_modifiedon}'"
 
+
+    # #Query all entries since our most recent data and save to feature class
+    nfpors_fl = FeatureLayer(nfpors_url)
+    start = 0
+    chunk_size = 70
+    where_clause = f"1=1"
     exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
     if len(exlusion_ids_tuple) > 0:
         where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
 
-    # fetch_and_create_featureclass returns an exception if no features are 
-    # returned, in that case, nfpors is up to date, log exception and continue
-    try:
-        nfpors_additions_fc = fetch_and_create_featureclass(nfpors_url, where_clause, arcpy.env.scratchGDB, 'nfpors_additions', geometry=None, geom_type=None, out_sr=wkid,
-                                    out_fields=None, chunk_size = chunk_size)
-        logger.info('Uploading additions to postgress')
-        arcpy.conversion.FeatureClassToGeodatabase(nfpors_additions_fc, sde_connection_file)
-        logger.info("additions uploaded to postgrees")
+    ids = get_ids(nfpors_url, where=where_clause)
+    str_ids = [str(i) for i in ids]
 
-        logger.info(f'inserting {nfpors_additions_postgres} into {nfpors_postgres}')
-        insert_nfpors_additions(cursor, schema)
-        logger.info("additions appended to nfpors")
-    except Exception as e:
-        logger.error(e)
-        pass
+    #If there is new data, make last addition a backup, add the current addition to our nfpors data
+    while start < len(ids):
 
-    logger.info('NFPORS up to date')
+        #find most recent entry in our nfpors data
+        id_list = ','.join(str_ids[start:start + chunk_size])
+        logger.info(f'start: {start} ids: {str_ids[start:start + chunk_size]} of {len(ids)}')
+
+        nfpors_fl_query = nfpors_fl.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        nfpors_additions_fc = nfpors_fl_query.save(arcpy.env.scratchGDB, 'nfpors_additions')
+        count = int(arcpy.management.GetCount(nfpors_additions_fc)[0])
+        logger.info(f'{count} additions to NFPORS')
+
+        if (count > 0):
+            try:
+                #make space for nfpors additions table
+                if(arcpy.Exists(nfpors_additions_postgres)):
+                    arcpy.management.Delete(nfpors_additions_postgres)
+                    logger.info("additions table deleted")
+
+                #upload current addition to postgres
+                arcpy.conversion.FeatureClassToGeodatabase(nfpors_additions_fc, sde_file)
+                logger.info("new additions table uploaded to postgres")
+
+                #insert new postgres table of additions to nfpors
+                logger.info(f'inserting {nfpors_additions_postgres} into nfpors')
+                insert_nfpors_additions(cursor, schema)
+                
+                logger.info("additions appended to nfpors")
+            except Exception as e:
+                logger.error(e.args[0])
+                raise e
+        start+=chunk_size
 
 def insert_nfpors_additions(cursor, schema):
     common_fields = '''
@@ -56,7 +77,7 @@ def insert_nfpors_additions(cursor, schema):
         plan_int_dt, unit_id, agency, trt_id, created_by, edited_by,
         projectname, regionname, projectid, keypointarea, unitname,
         deptname, countyname, statename, regioncode, districtname,
-        isbil, bilfunding, gdb_geomattr_data, shape
+        isbil, bilfunding, shape
     '''
 
     cursor.execute('BEGIN;')
@@ -704,8 +725,8 @@ if __name__ == "__main__":
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, exluded_ids)
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
 
