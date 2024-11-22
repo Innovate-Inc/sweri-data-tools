@@ -56,6 +56,8 @@ def calculate_intersections_update_area(intersect_sources, intersect_targets, ne
                                             f'{source_key}_{target_key}', workspace)
             add_area_and_update_intersections(intersect, new_intersections_table, new_intersections_name, source_key, target_key, connection, schema)
             logger.info(f'completed intersections on {source_key} and {target_key}')
+            arcpy.management.Delete(intersect)
+            logger.info(f'deleted {intersect}')
 
 
 def fetch_all_features_to_intersect(intersect_sources, pg_cursor, schema, insert_table='intersection_features',
@@ -222,16 +224,6 @@ if __name__ == '__main__':
         logger.error(e)
         pass
 
-    # describe the new dataset and check archiving and globalids 
-    desc = arcpy.Describe(postgres_target_table)
-    
-    if not desc.IsArchived:
-        logger.info(f'enabling archiving on {postgres_target_table}')
-        arcpy.management.EnableArchiving(postgres_target_table)
-
-    if not desc.hasGlobalID:
-        logger.info(f'adding GlobalIDs to {postgres_target_table}')
-        arcpy.management.AddGlobalIDs(postgres_target_table)
     # swap current intersections with new intersections
     swap_intersection_tables(connection, schema)
 
