@@ -13,7 +13,7 @@ def configure_intersection_sources(sde_connection_file, schema):
     intersect_targets = {}
     domains = fetch_domains(sde_connection_file, path.join(sde_connection_file, 'sweri.{}.intersections_source_list'.format(schema)))
     fields = ['source', 'id_source', 'uid_fields', 'use_as_target', 'source_type', 'name']
-    with SearchCursor(path.join(sde_connection_file, 'sweri.{}.intersections_source_list'.format(schema)),
+    with arcpy.da.SearchCursor(path.join(sde_connection_file, 'sweri.{}.intersections_source_list'.format(schema)),
                                field_names=fields, sql_clause=(None, "ORDER BY source_type ASC")) as source_cursor:
         for r in source_cursor:
             s = {'source': r[0], 'id': r[2],  'source_type': r[4]}
