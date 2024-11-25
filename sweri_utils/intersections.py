@@ -1,4 +1,3 @@
-from arcpy.da import SearchCursor
 from os import path
 import arcpy
 

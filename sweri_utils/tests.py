@@ -1,7 +1,6 @@
 from typing import cast
-from unittest import TestCase, main
+from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-
 from .analysis import layer_intersections
 from .download import *
 from .files import *
