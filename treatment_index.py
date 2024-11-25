@@ -1,15 +1,15 @@
-import arcpy
 import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
+import arcpy
 from dotenv import load_dotenv
 import logging
-import watchtower
 import re
 from arcgis.features import FeatureLayer
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids
 from sweri_utils.files import gdb_to_postgres
+import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
