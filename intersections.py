@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from sweri_utils.analysis import  layer_intersections, calculate_area_overlap_and_insert
 from sweri_utils.conversion import insert_json_into_fc, insert_from_db
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table
+from sweri_utils.intersections import update_schema_for_intersections_insert, configure_intersection_sources
 import watchtower
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./intersections.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -32,11 +33,11 @@ def calculate_intersections_update_area(intersect_sources, intersect_targets, ne
             if target_key == source_key:
                 continue
             logger.info(f'performing intersections on {source_key} and {target_key}')
-
             intersect = layer_intersections(intersection_features,
                                             source_key, target_key,
                                             f'{source_key}_{target_key}', workspace)
             add_area_and_update_intersections(intersect, new_intersections_table, new_intersections_name, source_key, target_key, connection, schema)
+            arcpy.management.Delete(intersect)
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 
@@ -198,15 +199,6 @@ if __name__ == '__main__':
 
     # describe the new dataset and check archiving and globalids 
     desc = arcpy.Describe(postgres_target_table)
-    
-    if not desc.IsArchived:
-        logger.info(f'enabling archiving on {postgres_target_table}')
-        arcpy.management.EnableArchiving(postgres_target_table)
-
-    if not desc.hasGlobalID:
-        logger.info(f'adding GlobalIDs to {postgres_target_table}')
-        arcpy.management.AddGlobalIDs(postgres_target_table)
-    # swap current intersections with new intersections
     swap_intersection_tables(connection, schema)
 
     logger.info(f'INTERSECTIONS UPDATES COMPLETE')
