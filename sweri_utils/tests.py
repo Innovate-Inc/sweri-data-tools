@@ -1,11 +1,13 @@
 from typing import cast
 from unittest import TestCase, main
-from unittest.mock import patch, Mock, call
+from unittest.mock import patch, Mock, call, PropertyMock, MagicMock
 
 from .analysis import layer_intersections
 from .download import *
 from .files import *
 from .conversion import *
+from .intersections import update_schema_for_intersections_insert, fetch_domains
+from .sql import rename_postgres_table
 
 
 class DownloadTests(TestCase):
@@ -279,7 +281,8 @@ class ConversionTests(TestCase):
 class AnalysisTests(TestCase):
     @patch('arcpy.management.MakeFeatureLayer')
     @patch('arcpy.analysis.PairwiseIntersect')
-    def test_layer_intersect(self, intersect_mock, make_layer_mock):
+    @patch('arcpy.management.Delete')
+    def test_layer_intersect(self,delete_mock, intersect_mock, make_layer_mock):
         layer_intersections('intersection_features', 'source', 'target', 'out_name', 'gdb', 'something')
         make_layer_mock.side_effect = ['source_fl', 'target_fl']
         make_layer_mock.assert_has_calls(
@@ -289,3 +292,63 @@ class AnalysisTests(TestCase):
             ]
         )
         intersect_mock.assert_called()
+        delete_mock.assert_called()
+
+
+class SqlTests(TestCase):
+    def test_rename_postgres_table(self):
+        # Mock the connection object
+        mock_connection = Mock()
+        mock_connection.execute.return_value = "Success"
+
+        # Call the function with test data
+        result = rename_postgres_table(mock_connection, "public", "old_table", "new_table")
+
+        # Assert the execute method was called with the correct SQL
+        mock_connection.execute.assert_called_once_with("ALTER TABLE public.old_table RENAME TO new_table;")
+        # Assert the result is as expected
+        self.assertEqual(result, "Success")
+
+class IntersectionsTest(TestCase):
+    @patch('arcpy.management.AlterField')
+    @patch('arcpy.management.CalculateField')
+    def test_update_schema_for_intersections_insert(self, mock_calc, mock_alter):
+        update_schema_for_intersections_insert('intersect_result', 'fc_1_name', 'fc_2_name')
+        mock_alter.assert_has_calls(
+            [
+                call('intersect_result', 'unique_id', 'id_1', 'id_1'),
+                call('intersect_result', 'unique_id_1', 'id_2', 'id_2'),
+                call('intersect_result', 'feat_source', 'id_1_source', 'id_1_source'),
+                call('intersect_result', 'feat_source_1', 'id_2_source', 'id_2_source')
+            ]
+        )
+        mock_calc.assert_has_calls(
+            [
+                call('intersect_result', 'id_1_source', f"'fc_1_name'", 'PYTHON3'),
+                call('intersect_result', 'id_2_source', f"'fc_2_name'", 'PYTHON3')
+            ]
+        )
+
+    @patch('sweri_utils.intersections.arcpy.da.ListDomains')
+    @patch('sweri_utils.intersections.arcpy.ListFields')
+    def test_fetch_domains(self, mock_list_fields, mock_list_domains):
+        # Mock the return value of ListDomains
+        mock_domain = MagicMock()
+        mock_domain.name = 'test_domain'
+        mock_domain.codedValues = {'key1': 'value1', 'key2': 'value2'}
+        mock_list_domains.return_value = [mock_domain]
+
+        # Mock the return value of ListFields
+        mock_field = MagicMock()
+        mock_field.name = 'test_field'
+        mock_field.domain = 'test_domain'
+        mock_list_fields.return_value = [mock_field]
+
+        # Call the function
+        sde_connection_file = 'fake_sde_connection_file'
+        in_table = 'fake_in_table'
+        result = fetch_domains(sde_connection_file, in_table)
+
+        # Assert the result
+        expected_result = {'test_field': {'key1': 'value1', 'key2': 'value2'}}
+        self.assertEqual(result, expected_result)

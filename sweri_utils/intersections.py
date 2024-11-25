@@ -1,5 +1,4 @@
 from arcpy.da import SearchCursor
-from arcpy.management import AlterField, CalculateField
 from os import path
 import arcpy
 
@@ -28,13 +27,13 @@ def configure_intersection_sources(sde_connection_file, schema):
 
 def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_name):
     # update existing fields with new id column names
-    AlterField(intersect_result, 'unique_id', 'id_1', 'id_1')
-    AlterField(intersect_result, 'unique_id_1', 'id_2', 'id_2')
-    AlterField(intersect_result, 'feat_source', 'id_1_source', 'id_1_source')
-    AlterField(intersect_result, 'feat_source_1', 'id_2_source', 'id_2_source')
+    arcpy.management.AlterField(intersect_result, 'unique_id', 'id_1', 'id_1')
+    arcpy.management.AlterField(intersect_result, 'unique_id_1', 'id_2', 'id_2')
+    arcpy.management.AlterField(intersect_result, 'feat_source', 'id_1_source', 'id_1_source')
+    arcpy.management.AlterField(intersect_result, 'feat_source_1', 'id_2_source', 'id_2_source')
     # add field names
-    CalculateField(intersect_result, 'id_1_source', f"'{fc_1_name}'", 'PYTHON3')
-    CalculateField(intersect_result, 'id_2_source', f"'{fc_2_name}'", 'PYTHON3')
+    arcpy.management.CalculateField(intersect_result, 'id_1_source', f"'{fc_1_name}'", 'PYTHON3')
+    arcpy.management.CalculateField(intersect_result, 'id_2_source', f"'{fc_2_name}'", 'PYTHON3')
 
 def fetch_domains(sde_connection_file, in_table):
     """
