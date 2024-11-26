@@ -108,7 +108,7 @@ def add_area_and_update_intersections(intersect_result, intersections_table, int
                                       intersections_table_name,
                                       connection,
                                       schema,
-                                      ['objectid','globalid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                      ['objectid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       'acre_overlap')
 
@@ -197,8 +197,6 @@ if __name__ == '__main__':
         logger.error(e)
         pass
 
-    # describe the new dataset and check archiving and globalids 
-    desc = arcpy.Describe(postgres_target_table)
     swap_intersection_tables(connection, schema)
 
     logger.info(f'INTERSECTIONS UPDATES COMPLETE')
