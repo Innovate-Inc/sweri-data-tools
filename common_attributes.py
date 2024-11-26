@@ -295,7 +295,7 @@ if __name__ == '__main__':
 
     con = arcpy.ArcSDESQLExecute(sde_connection_file)
 
-    insert_table = f'treatment_index_common_attributes'
+    insert_table = f'treatment_index_facts_nfpors'
     insert_table_path = os.path.join(sde_connection_file, insert_table)
 
     con.execute(f'TRUNCATE {target_schema}.{insert_table}')
