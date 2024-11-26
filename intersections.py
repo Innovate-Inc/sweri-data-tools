@@ -125,7 +125,7 @@ def add_area_and_update_intersections(intersect_result, intersections_table, int
                                       intersections_table_name,
                                       connection,
                                       schema,
-                                      ['objectid','globalid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                      ['objectid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       'acre_overlap')
 
