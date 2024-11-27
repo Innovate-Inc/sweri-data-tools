@@ -8,29 +8,12 @@ from dotenv import load_dotenv
 from sweri_utils.analysis import  layer_intersections, calculate_area_overlap_and_insert
 from sweri_utils.conversion import insert_json_into_fc, insert_from_db
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table
+from sweri_utils.intersections import update_schema_for_intersections_insert, configure_intersection_sources
 import watchtower
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./intersections.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 logger.addHandler(watchtower.CloudWatchLogHandler())
 
-def configure_intersection_sources(sde_connection_file, schema):
-    """
-    configures intersection sources fetched from intersection source list
-    :param sde_connection_file: sde connection file path
-    :param schema: target schema
-    :return: intersection sources and intersection targets dictionaries
-    """
-    intersect_sources = {}
-    intersect_targets = {}
-    fields = ['source', 'id_source', 'uid_fields', 'use_as_target', 'source_type']
-    with arcpy.da.SearchCursor(path.join(sde_connection_file, f'sweri.{schema}.intersections_source_list'),
-                               field_names=fields, sql_clause=(None, "ORDER BY source_type ASC")) as source_cursor:
-        for r in source_cursor:
-            s = {'source': r[0], 'id': r[2],  'source_type': r[4]}
-            intersect_sources[r[1]] = s
-            if r[3] == 1:
-                intersect_targets[r[1]] = s
-    return intersect_sources, intersect_targets
 
 
 def calculate_intersections_update_area(intersect_sources, intersect_targets, new_intersections_table, new_intersections_name, connection,
@@ -50,11 +33,11 @@ def calculate_intersections_update_area(intersect_sources, intersect_targets, ne
             if target_key == source_key:
                 continue
             logger.info(f'performing intersections on {source_key} and {target_key}')
-
             intersect = layer_intersections(intersection_features,
                                             source_key, target_key,
                                             f'{source_key}_{target_key}', workspace)
             add_area_and_update_intersections(intersect, new_intersections_table, new_intersections_name, source_key, target_key, connection, schema)
+            arcpy.management.Delete(intersect)
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 
@@ -125,20 +108,12 @@ def add_area_and_update_intersections(intersect_result, intersections_table, int
                                       intersections_table_name,
                                       connection,
                                       schema,
-                                      ['objectid','globalid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                      ['objectid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                       'acre_overlap')
 
 
-def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_name):
-    # update existing fields with new id column names
-    AlterField(intersect_result, 'unique_id', 'id_1', 'id_1')
-    AlterField(intersect_result, 'unique_id_1', 'id_2', 'id_2')
-    AlterField(intersect_result, 'feat_source', 'id_1_source', 'id_1_source')
-    AlterField(intersect_result, 'feat_source_1', 'id_2_source', 'id_2_source')
-    # add field names
-    CalculateField(intersect_result, 'id_1_source', f"'{fc_1_name}'", 'PYTHON3')
-    CalculateField(intersect_result, 'id_2_source', f"'{fc_2_name}'", 'PYTHON3')
+
 
 
 def swap_intersection_tables(connection, schema):
@@ -222,17 +197,6 @@ if __name__ == '__main__':
         logger.error(e)
         pass
 
-    # describe the new dataset and check archiving and globalids 
-    desc = arcpy.Describe(postgres_target_table)
-    
-    if not desc.IsArchived:
-        logger.info(f'enabling archiving on {postgres_target_table}')
-        arcpy.management.EnableArchiving(postgres_target_table)
-
-    if not desc.hasGlobalID:
-        logger.info(f'adding GlobalIDs to {postgres_target_table}')
-        arcpy.management.AddGlobalIDs(postgres_target_table)
-    # swap current intersections with new intersections
     swap_intersection_tables(connection, schema)
 
     logger.info(f'INTERSECTIONS UPDATES COMPLETE')
