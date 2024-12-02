@@ -2,3 +2,6 @@
 *.log
 .idea
 sweri_utils/__pycache__/*
+*.csv
+/analysis/*.csv
+/analysis/raw/

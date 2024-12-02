@@ -1,11 +1,12 @@
 from typing import cast
-from unittest import TestCase, main
-from unittest.mock import patch, Mock, call
-
+from unittest import TestCase
+from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from .analysis import layer_intersections
 from .download import *
 from .files import *
 from .conversion import *
+from .intersections import update_schema_for_intersections_insert, fetch_domains, configure_intersection_sources
+from .sql import rename_postgres_table
 
 
 class DownloadTests(TestCase):
@@ -217,6 +218,23 @@ class FilesTests(TestCase):
         except ValueError:
             self.assertTrue(True)
 
+    @patch('requests.get')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_download_file_from_url(self, mock_open, mock_get):
+        # Arrange
+        url = 'http://example.com/file'
+        destination_path = 'path/to/destination/file'
+        mock_response = mock_get.return_value
+        mock_response.content = b'Test content'
+        mock_response.status_code = 200
+
+        # Act
+        download_file_from_url(url, destination_path)
+
+        # Assert
+        mock_get.assert_called_once_with(url)
+        mock_open.assert_called_once_with(destination_path, 'wb')
+        mock_open().write.assert_called_once_with(b'Test content')
 
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
@@ -279,7 +297,8 @@ class ConversionTests(TestCase):
 class AnalysisTests(TestCase):
     @patch('arcpy.management.MakeFeatureLayer')
     @patch('arcpy.analysis.PairwiseIntersect')
-    def test_layer_intersect(self, intersect_mock, make_layer_mock):
+    @patch('arcpy.management.Delete')
+    def test_layer_intersect(self,delete_mock, intersect_mock, make_layer_mock):
         layer_intersections('intersection_features', 'source', 'target', 'out_name', 'gdb', 'something')
         make_layer_mock.side_effect = ['source_fl', 'target_fl']
         make_layer_mock.assert_has_calls(
@@ -289,3 +308,97 @@ class AnalysisTests(TestCase):
             ]
         )
         intersect_mock.assert_called()
+        delete_mock.assert_called()
+
+
+class SqlTests(TestCase):
+    def test_rename_postgres_table(self):
+        # Mock the connection object
+        mock_connection = Mock()
+        mock_connection.execute.return_value = "Success"
+
+        # Call the function with test data
+        result = rename_postgres_table(mock_connection, "public", "old_table", "new_table")
+
+        # Assert the execute method was called with the correct SQL
+        mock_connection.execute.assert_called_once_with("ALTER TABLE public.old_table RENAME TO new_table;")
+        # Assert the result is as expected
+        self.assertEqual(result, "Success")
+
+class IntersectionsTest(TestCase):
+    @patch('arcpy.management.AlterField')
+    @patch('arcpy.management.CalculateField')
+    def test_update_schema_for_intersections_insert(self, mock_calc, mock_alter):
+        update_schema_for_intersections_insert('intersect_result', 'fc_1_name', 'fc_2_name')
+        mock_alter.assert_has_calls(
+            [
+                call('intersect_result', 'unique_id', 'id_1', 'id_1'),
+                call('intersect_result', 'unique_id_1', 'id_2', 'id_2'),
+                call('intersect_result', 'feat_source', 'id_1_source', 'id_1_source'),
+                call('intersect_result', 'feat_source_1', 'id_2_source', 'id_2_source')
+            ]
+        )
+        mock_calc.assert_has_calls(
+            [
+                call('intersect_result', 'id_1_source', f"'fc_1_name'", 'PYTHON3'),
+                call('intersect_result', 'id_2_source', f"'fc_2_name'", 'PYTHON3')
+            ]
+        )
+
+    @patch('sweri_utils.intersections.arcpy.da.ListDomains')
+    @patch('sweri_utils.intersections.arcpy.ListFields')
+    def test_fetch_domains(self, mock_list_fields, mock_list_domains):
+        # Mock the return value of ListDomains
+        mock_domain = MagicMock()
+        mock_domain.name = 'test_domain'
+        mock_domain.codedValues = {'key1': 'value1', 'key2': 'value2'}
+        mock_list_domains.return_value = [mock_domain]
+
+        # Mock the return value of ListFields
+        mock_field = MagicMock()
+        mock_field.name = 'test_field'
+        mock_field.domain = 'test_domain'
+        mock_list_fields.return_value = [mock_field]
+
+        # Call the function
+        sde_connection_file = 'fake_sde_connection_file'
+        in_table = 'fake_in_table'
+        result = fetch_domains(sde_connection_file, in_table)
+
+        # Assert the result
+        expected_result = {'test_field': {'key1': 'value1', 'key2': 'value2'}}
+        self.assertEqual(result, expected_result)
+
+    @patch('arcpy.da.SearchCursor')
+    @patch('sweri_utils.intersections.fetch_domains')
+    def test_configure_intersection_sources(self, mock_fetch_domains, mock_search_cursor):
+        # Mock the return value of fetch_domains
+        mock_fetch_domains.return_value = {
+            'name': {
+                'source_name_1': 'Source Name 1',
+                'source_name_2': 'Source Name 2'
+            }
+        }
+
+        # Mock the SearchCursor to return specific rows
+        mock_search_cursor.return_value.__enter__.return_value = [
+            ('source_1', 'id_1', 'uid_1', 1, 'type_1', 'source_name_1'),
+            ('source_2', 'id_2', 'uid_2', 0, 'type_2', 'source_name_2')
+        ]
+
+        sde_connection_file = 'fake_sde_connection_file'
+        schema = 'fake_schema'
+
+        intersect_sources, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
+
+        expected_sources = {
+            'id_1': {'source': 'source_1', 'id': 'uid_1', 'source_type': 'type_1', 'name': 'Source Name 1'},
+            'id_2': {'source': 'source_2', 'id': 'uid_2', 'source_type': 'type_2', 'name': 'Source Name 2'}
+        }
+
+        expected_targets = {
+            'id_1': {'source': 'source_1', 'id': 'uid_1', 'source_type': 'type_1', 'name': 'Source Name 1'}
+        }
+
+        self.assertEqual(intersect_sources, expected_sources)
+        self.assertEqual(intersect_targets, expected_targets)
