@@ -34,7 +34,7 @@ def calculate_area_overlap_and_insert(fc_area_calc, insert_table_path, insert_ta
                    schema,
                    insert_table_name, insert_fields,
                    fc_area_calc_table, fc_area_calc_from_fields,
-                   True)
+                   False)
 
     updated_count = int(arcpy.management.GetCount(insert_table_path)[0])
     logging.info(f'{updated_count} features now in  {arcpy.Describe(insert_table_path).name}\n')
