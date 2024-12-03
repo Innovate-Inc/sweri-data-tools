@@ -91,7 +91,7 @@ def retry(retries, on_failure):
                         try:
                             on_failure(func, *args, **kwargs)
                         except Exception as e:
-                            raise Exception('Retries exceeded')
+                            raise Exception(f'Retries exceeded: {e}')
 
         return wrapper
 
