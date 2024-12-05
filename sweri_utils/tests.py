@@ -39,7 +39,8 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {"objectIds": ["peach", "orange"]}
         mockresponse.status_code = 200
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query', {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'}]
+        expected_args = ['http://test.url/query',
+                         {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'}]
         r = get_ids('http://test.url', '46=2')
         self.assertTrue(mock_post.called_once_with(expected_args))
         self.assertEqual(r, ["peach", "orange"])
@@ -100,14 +101,15 @@ class DownloadTests(TestCase):
     @patch('arcpy.management.DefineProjection')
     def test_fetch_create_new_fc(self, mock_project, mock_json_to_fc, mock_exists):
         with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
-                'sweri_utils.download.get_all_features') as get_feat_mock, patch(
-            'sweri_utils.download.get_fields') as get_fields_mock:
+            'sweri_utils.download.get_all_features') as get_feat_mock, patch(
+                'sweri_utils.download.get_fields') as get_fields_mock:
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
             out_fc = 'some_path_to_fc'
             get_ids_mock.return_value = [1, 2, 3]
-            get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {'attributes': {'another': 'feature'}}]
+            get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {
+                'attributes': {'another': 'feature'}}]
 
             get_fields_mock.return_value = []
 
@@ -119,8 +121,10 @@ class DownloadTests(TestCase):
                                               geom, 'polygon', 102100)
             mock_project.assert_called()
             self.assertEqual(r, out_fc)
-            self.assertTrue(get_feat_mock.called_once_with(url, where, 102100, None))
-            self.assertTrue(get_ids_mock.called_once_with(url, where, geom, 'polygon', ))
+            self.assertTrue(get_feat_mock.called_once_with(
+                url, where, 102100, None))
+            self.assertTrue(get_ids_mock.called_once_with(
+                url, where, geom, 'polygon', ))
             self.assertTrue(get_fields_mock.called_once_with(url))
             self.assertTrue(mock_exists.called_once_with(out_fc))
 
@@ -171,7 +175,8 @@ class DownloadTests(TestCase):
     @patch('requests.post')
     def test_fetch_features(self, mock_post, mock_add_error, mock_add_warning):
         mockresponse = Mock()
-        f = [{"attributes": {'something': 'hello'}}, {"attributes": {'something': 'new'}}]
+        f = [{"attributes": {'something': 'hello'}},
+             {"attributes": {'something': 'new'}}]
         mockresponse.json = lambda: {"features": f}
         mock_post.return_value = mockresponse
         r = fetch_features('http://test.url/query', {'where': '1=1'})
@@ -236,6 +241,7 @@ class FilesTests(TestCase):
         mock_open.assert_called_once_with(destination_path, 'wb')
         mock_open().write.assert_called_once_with(b'Test content')
 
+
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
     @patch('arcpy.management.Project')
@@ -248,7 +254,8 @@ class ConversionTests(TestCase):
         self.assertEqual(project, new_fc)
 
     def test_array_to_dict(self):
-        fields = ['text_field', 'number_field', 'none_field', 'nested_dict', 'nested_arr']
+        fields = ['text_field', 'number_field',
+                  'none_field', 'nested_dict', 'nested_arr']
         row = ['yellow', 123, None, {'hello': 'world'}, ['apples', 'bananas']]
         actual = array_to_dict(fields, row)
         expected = {
@@ -298,12 +305,14 @@ class AnalysisTests(TestCase):
     @patch('arcpy.management.MakeFeatureLayer')
     @patch('arcpy.analysis.PairwiseIntersect')
     @patch('arcpy.management.Delete')
-    def test_layer_intersect(self,delete_mock, intersect_mock, make_layer_mock):
-        layer_intersections('intersection_features', 'source', 'target', 'out_name', 'gdb', 'something')
+    def test_layer_intersect(self, delete_mock, intersect_mock, make_layer_mock):
+        layer_intersections('intersection_features', 'source',
+                            'target', 'out_name', 'gdb', 'something')
         make_layer_mock.side_effect = ['source_fl', 'target_fl']
         make_layer_mock.assert_has_calls(
             [
-                call('intersection_features', where_clause="something = 'source'"),
+                call('intersection_features',
+                     where_clause="something = 'source'"),
                 call('intersection_features', where_clause="something = 'target'")
             ]
         )
@@ -315,33 +324,42 @@ class SqlTests(TestCase):
     def test_rename_postgres_table(self):
         # Mock the connection object
         mock_connection = Mock()
-        mock_connection.execute.return_value = "Success"
 
         # Call the function with test data
-        result = rename_postgres_table(mock_connection, "public", "old_table", "new_table")
+        rename_postgres_table(
+            mock_connection, "public", "old_table", "new_table")
 
         # Assert the execute method was called with the correct SQL
-        mock_connection.execute.assert_called_once_with("ALTER TABLE public.old_table RENAME TO new_table;")
-        # Assert the result is as expected
-        self.assertEqual(result, "Success")
+        mock_connection.execute.assert_has_calls(
+            [
+                call("BEGIN;"),
+                call("ALTER TABLE public.old_table RENAME TO new_table;"),
+                call("COMMIT;")
+            ]
+        )
 
 class IntersectionsTest(TestCase):
     @patch('arcpy.management.AlterField')
     @patch('arcpy.management.CalculateField')
     def test_update_schema_for_intersections_insert(self, mock_calc, mock_alter):
-        update_schema_for_intersections_insert('intersect_result', 'fc_1_name', 'fc_2_name')
+        update_schema_for_intersections_insert(
+            'intersect_result', 'fc_1_name', 'fc_2_name')
         mock_alter.assert_has_calls(
             [
                 call('intersect_result', 'unique_id', 'id_1', 'id_1'),
                 call('intersect_result', 'unique_id_1', 'id_2', 'id_2'),
-                call('intersect_result', 'feat_source', 'id_1_source', 'id_1_source'),
-                call('intersect_result', 'feat_source_1', 'id_2_source', 'id_2_source')
+                call('intersect_result', 'feat_source',
+                     'id_1_source', 'id_1_source'),
+                call('intersect_result', 'feat_source_1',
+                     'id_2_source', 'id_2_source')
             ]
         )
         mock_calc.assert_has_calls(
             [
-                call('intersect_result', 'id_1_source', f"'fc_1_name'", 'PYTHON3'),
-                call('intersect_result', 'id_2_source', f"'fc_2_name'", 'PYTHON3')
+                call('intersect_result', 'id_1_source',
+                     f"'fc_1_name'", 'PYTHON3'),
+                call('intersect_result', 'id_2_source',
+                     f"'fc_2_name'", 'PYTHON3')
             ]
         )
 
@@ -389,7 +407,8 @@ class IntersectionsTest(TestCase):
         sde_connection_file = 'fake_sde_connection_file'
         schema = 'fake_schema'
 
-        intersect_sources, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
+        intersect_sources, intersect_targets = configure_intersection_sources(
+            sde_connection_file, schema)
 
         expected_sources = {
             'id_1': {'source': 'source_1', 'id': 'uid_1', 'source_type': 'type_1', 'name': 'Source Name 1'},
