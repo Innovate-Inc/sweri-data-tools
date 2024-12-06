@@ -2,3 +2,4 @@
 *.log
 .idea
 sweri_utils/__pycache__/*
+.vscode/settings.json
