@@ -30,7 +30,7 @@ if __name__ == '__main__':
     sweri_treatment_index_url = os.getenv('TREATMENT_INDEX_URL')
     arcpy.env.workspace = arcpy.env.scratchGDB
 
-    haz_fields = ['activity_sub_unit_name','etl_modified_date_haz','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','activity_cn','uom','state_abbr','activity','shape']
+    haz_fields = ['activity_cn', 'activity_sub_unit_name','etl_modified_date_haz','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity','@SHAPE']
 
     cur.execute('''
         SELECT unique_id
@@ -42,22 +42,26 @@ if __name__ == '__main__':
     rows = cur.fetchall()
     ids = [str(row[0]) for row in rows]
 
-    if ids:  # Ensure there are IDs to process
-        id_list = ', '.join(f"'{i}'" for i in ids)  # Add quotes around each ID
+    if ids: 
+        id_list = ', '.join(f"'{i}'" for i in ids)  
         hazardous_fuels_where_clause = f"activity_cn IN ({id_list})"
         sweri_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
     else:
-        where_clause = "activity_cn IN ()"  # Avoid invalid SQL when no IDs are present
+        where_clause = "activity_cn IN ()" 
     
 
     hazardous_fuels_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_where_clause, arcpy.env.scratchGDB, 
                                   'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
                                   out_fields=None, chunk_size = 100)
     
-    hazardous_fuels_fs_fc = fetch_and_create_featureclass(hazardous_fuels_url, hazardous_fuels_where_clause, arcpy.env.scratchGDB, 
+
+    with arcpy.da.SearchCursor(hazardous_fuels_sweri_fc, ['unique_id', 'name', 'date_current', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']) as haz_cursor:
+        for row in haz_cursor:
+            hazardous_fuels_where_clause = f"activity_cn = '{row[0]}'"
+            hazardous_fuels_fs_fc = fetch_and_create_featureclass(hazardous_fuels_url, hazardous_fuels_where_clause, arcpy.env.scratchGDB, 
                                   'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
                                   out_fields=haz_fields, chunk_size = 100)
-    
+            print('row[0]')
     
 
     cur.execute('''
@@ -70,12 +74,12 @@ if __name__ == '__main__':
     rows = cur.fetchall()
     ids = [str(row[0]) for row in rows]
 
-    if ids:  # Ensure there are IDs to process
-        id_list = ', '.join(f"'{i}'" for i in ids)  # Add quotes around each ID
+    if ids: 
+        id_list = ', '.join(f"'{i}'" for i in ids)  
         common_attributes_where_clause = f"event_cn IN ({id_list})"
         sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
     else:
-        common_attributes_where_clause = "event_cn IN ()"  # Avoid invalid SQL when no IDs are present
+        common_attributes_where_clause = "event_cn IN ()" 
         sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
     
 
@@ -100,12 +104,12 @@ if __name__ == '__main__':
     nfpors_id_pairs = [row[0].split('-') for row in rows]
 
 
-    if ids:  # Ensure there are IDs to process
-        sweri_ids = ', '.join(f"'{i}'" for i in ids)  # Add quotes around each ID
+    if ids:  
+        sweri_ids = ', '.join(f"'{i}'" for i in ids) 
         nfpors_where_clause = ' OR '.join(f"f(nfporsfid = '{nfporsfid} AND trt_id = '{trt_id}')" for nfporsfid, trt_id in nfpors_id_pairs)
         sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({sweri_ids})"
     else:
-        nfpors_where_clause = "1=0"  # Avoid invalid SQL when no IDs are present
+        nfpors_where_clause = "1=0"  
         sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
     
 
