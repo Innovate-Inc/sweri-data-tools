@@ -119,7 +119,7 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
 
     #Reproject layer
     logging.info(f'reprojecting {feature_class}')
-    arcpy.Project_management(feature_class, reprojected_fc, projection)
+    arcpy.management.Project(feature_class, reprojected_fc, projection)
     logging.info('layer reprojected')
 
     #Clear space in postgres for table
@@ -132,5 +132,5 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
     logging.info(f'{postgres_table_location} now in geodatabase')
 
     #Remove gdb
-    arcpy.Delete_management(gdb_path)
+    arcpy.management.Delete(gdb_path)
     logging.info(f'{gdb_path} deleted')

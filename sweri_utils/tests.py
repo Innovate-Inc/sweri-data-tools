@@ -241,6 +241,42 @@ class FilesTests(TestCase):
         mock_open.assert_called_once_with(destination_path, 'wb')
         mock_open().write.assert_called_once_with(b'Test content')
 
+    @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    @patch('arcpy.management.Delete')
+    @patch('arcpy.Exists')
+    @patch('arcpy.management.Project')
+    def test_gdb_to_postgres(self, mock_project, mock_exist, mock_delete, mock_fc_gdb):
+        with patch('sweri_utils.files.download_file_from_url') as download_file_mock, patch(
+            'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
+            mock_exist.return_value = True
+            sde_file = 'fake_sde_connection_file'
+            gdb_name = 'test_gdb'
+            gdb_path = os.path.join(os.getcwd(),gdb_name)
+            projection = arcpy.SpatialReference(3857)
+            postgres_table_name = 'test_table'
+            schema = 'test_schema'
+            postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
+            fc_name = 'Activity_HazFuelTrt_PL'
+
+            feature_class = os.path.join(gdb_path,fc_name)
+            reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
+            url = 'http://test.url'
+            zip_file = f'{postgres_table_name}.zip'
+
+            gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
+            
+            
+            download_file_mock.assert_called_once_with(url, zip_file)
+            extract_zip_mock.assert_called_once_with(zip_file)
+            mock_project.assert_called_once_with(feature_class, reprojected_fc, projection)
+            mock_exist.assert_called_once_with(postgres_table_location)
+            mock_delete.assert_has_calls(
+                [
+                    call(postgres_table_location),
+                    call(gdb_path)
+                ]
+            )
+            mock_fc_gdb.assert_called_once_with(reprojected_fc, sde_file)
 
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
