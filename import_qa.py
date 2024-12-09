@@ -4,9 +4,10 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 import requests
 import json
 import arcpy
+from datetime import datetime
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
-from sweri_utils.download import fetch_and_create_featureclass   
+from sweri_utils.download import fetch_and_create_featureclass, fetch_features   
 
 #Get Counts of Input Layers vs What we have in the database
 def get_count(service_url):
@@ -30,7 +31,7 @@ if __name__ == '__main__':
     sweri_treatment_index_url = os.getenv('TREATMENT_INDEX_URL')
     arcpy.env.workspace = arcpy.env.scratchGDB
 
-    haz_fields = ['activity_cn', 'activity_sub_unit_name','etl_modified_date_haz','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity','@SHAPE']
+    haz_fields = ['activity_cn', 'activity_sub_unit_name','etl_modified_date_haz','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
 
     cur.execute('''
         SELECT unique_id
@@ -56,13 +57,33 @@ if __name__ == '__main__':
     
 
     with arcpy.da.SearchCursor(hazardous_fuels_sweri_fc, ['unique_id', 'name', 'date_current', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']) as haz_cursor:
+       
         for row in haz_cursor:
             hazardous_fuels_where_clause = f"activity_cn = '{row[0]}'"
-            hazardous_fuels_fs_fc = fetch_and_create_featureclass(hazardous_fuels_url, hazardous_fuels_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=haz_fields, chunk_size = 100)
-            print('row[0]')
-    
+            params = {'f': 'json', 'outSR': 3857, 'outFields': ','.join(haz_fields), 'returnGeometry': 'true',
+            'where': hazardous_fuels_where_clause}
+            hazardous_fuels_feature = fetch_features(hazardous_fuels_url +'/query', params)
+            hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ']/1000)
+            hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED']/1000)
+
+            if len(hazardous_fuels_feature) == 0 or len(hazardous_fuels_feature) > 1:
+                pass
+            
+            else:
+                iterator = 0
+                key_equal = {}
+                value_compare = {}
+                for key in hazardous_fuels_feature[0]['attributes']:
+                    key_equal[key] = hazardous_fuels_feature[0]['attributes'][key] == row[iterator]
+                    value_compare[hazardous_fuels_feature[0]['attributes'][key]] = row[iterator]
+                
+                    print(hazardous_fuels_feature[0]['attributes'][key])
+                    print(row[iterator])
+                    iterator += 1
+                    
+
+                if(row[-1] != None):
+                    geom_equals = arcpy.AsShape(hazardous_fuels_feature[0]['geometry'],True).equals(row[-1]) 
 
     cur.execute('''
         SELECT unique_id
