@@ -15,28 +15,26 @@ logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 logger.addHandler(watchtower.CloudWatchLogHandler())
 
+
+
 def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
+
+    #clear data from the nfpors table
     cursor.execute(f'TRUNCATE {schema}.nfpors')
+
     nfpors_url = os.getenv('NFPORS_URL')
-    exclusion_ids = os.getenv('EXCLUSION_IDS')
-    nfpors_additions_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors_additions')
-
-
-    # #Query all entries since our most recent data and save to feature class
     nfpors_fl = FeatureLayer(nfpors_url)
-    start = 0
-    where_clause = f"1=1"
-    exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
-    if len(exlusion_ids_tuple) > 0:
-        where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
+    nfpors_additions_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors_additions')
+    
+    where_clause = create_nfpors_where_clause()
 
+    #fetches all ids that will be added
     ids = get_ids(nfpors_url, where=where_clause)
     str_ids = [str(i) for i in ids]
+    start = 0
 
-    #If there is new data, make last addition a backup, add the current addition to our nfpors data
     while start < len(ids):
 
-        #find most recent entry in our nfpors data
         id_list = ','.join(str_ids[start:start + chunk_size])
         logger.info(f'start: {start} ids: {str_ids[start:start + chunk_size]} of {len(ids)}')
 
@@ -65,6 +63,17 @@ def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
                 logger.error(e.args[0])
                 raise e
         start+=chunk_size
+
+def create_nfpors_where_clause():
+    #some ids break download, those will be excluded
+    exclusion_ids = os.getenv('EXCLUSION_IDS')
+    exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
+
+    where_clause = f"1=1"
+    if len(exlusion_ids_tuple) > 0:
+        where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
+    
+    return where_clause
 
 def insert_nfpors_additions(cursor, schema):
     common_fields = '''
