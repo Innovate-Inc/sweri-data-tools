@@ -25,7 +25,6 @@ def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
     # #Query all entries since our most recent data and save to feature class
     nfpors_fl = FeatureLayer(nfpors_url)
     start = 0
-    chunk_size = 70
     where_clause = f"1=1"
     exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
     if len(exlusion_ids_tuple) > 0:
@@ -57,7 +56,7 @@ def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
                 arcpy.conversion.FeatureClassToGeodatabase(nfpors_additions_fc, sde_file)
                 logger.info("new additions table uploaded to postgres")
 
-                #insert new postgres table of additions to nfpors
+                #insert additions to nfpors
                 logger.info(f'inserting {nfpors_additions_postgres} into nfpors')
                 insert_nfpors_additions(cursor, schema)
                 
@@ -375,31 +374,16 @@ def rename_treatment_points(schema, sde_file, cursor, treatment_index):
 # BEGIN Common Attributes Functions
 
 def add_fields_and_indexes(feature_class, region):
-    arcpy.management.AddField(feature_class,'included', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'included', f'included_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r2', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r2', f'r2_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r3', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r3', f'r3_idx_{region}',  ascending="ASCENDING")
-
-
-    arcpy.management.AddField(feature_class,'r4', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r4', f'r4_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r5', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r5', f'r5_idx_{region}',  ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r6', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r6', f'r6_idx_{region}',  ascending="ASCENDING")
-
+    new_fields = ('included', 'r2', 'r3', 'r4','r5', 'r6')
+    for field in new_fields:
+        arcpy.management.AddField(feature_class, field, 'TEXT')
+        arcpy.management.AddIndex(feature_class, field, f'{field}_idx_{region}', ascending="ASCENDING")
 
     arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'gis_acres', f'gis_acres_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'activity', f'activity_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'equipment', f'equipment_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'method', f'method_idx_{region}', ascending="ASCENDING")
+
+    new_indexes = ('gis_acres', 'activity', 'equipment', 'method')
+    for index in new_indexes: 
+            arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
        
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Do Not Included Entries Already Being Included via Hazardous Fuels
@@ -674,7 +658,6 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
     
 
     for url in urls:
-        print(url)
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
