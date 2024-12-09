@@ -65,6 +65,8 @@ if __name__ == '__main__':
             hazardous_fuels_feature = fetch_features(hazardous_fuels_url +'/query', params)
             hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ']/1000)
             hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED']/1000)
+            hazardous_fuels_feature[0]['attributes']['GIS_ACRES'] = hazardous_fuels_feature[0]['attributes']['GIS_ACRES']
+
 
             if len(hazardous_fuels_feature) == 0 or len(hazardous_fuels_feature) > 1:
                 pass
@@ -73,6 +75,7 @@ if __name__ == '__main__':
                 iterator = 0
                 key_equal = {}
                 value_compare = {}
+                total_compare = True
                 for key in hazardous_fuels_feature[0]['attributes']:
                     key_equal[key] = hazardous_fuels_feature[0]['attributes'][key] == row[iterator]
                     value_compare[hazardous_fuels_feature[0]['attributes'][key]] = row[iterator]
@@ -80,10 +83,12 @@ if __name__ == '__main__':
                     print(hazardous_fuels_feature[0]['attributes'][key])
                     print(row[iterator])
                     iterator += 1
+                    total_compare = total_compare and key_equal[key]
                     
 
                 if(row[-1] != None):
                     geom_equals = arcpy.AsShape(hazardous_fuels_feature[0]['geometry'],True).equals(row[-1]) 
+                    total_compare = total_compare and geom_equals
 
     cur.execute('''
         SELECT unique_id
