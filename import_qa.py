@@ -4,10 +4,15 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 import requests
 import json
 import arcpy
+import logging
 from datetime import datetime
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import fetch_and_create_featureclass, fetch_features   
+
+logger = logging.getLogger(__name__)
+logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./import_qa.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 #Get Counts of Input Layers vs What we have in the database
 def get_count(service_url):
@@ -31,7 +36,7 @@ if __name__ == '__main__':
     sweri_treatment_index_url = os.getenv('TREATMENT_INDEX_URL')
     arcpy.env.workspace = arcpy.env.scratchGDB
 
-    haz_fields = ['activity_cn', 'activity_sub_unit_name','etl_modified_date_haz','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
+    haz_fields = ['activity_cn', 'activity_sub_unit_name','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
 
     cur.execute('''
         SELECT unique_id
@@ -56,16 +61,23 @@ if __name__ == '__main__':
                                   out_fields=None, chunk_size = 100)
     
 
-    with arcpy.da.SearchCursor(hazardous_fuels_sweri_fc, ['unique_id', 'name', 'date_current', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']) as haz_cursor:
-       
+    with arcpy.da.SearchCursor(hazardous_fuels_sweri_fc, ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']) as haz_cursor:
+        same = 0
+        modified = 0
+        different = 0
+
         for row in haz_cursor:
+            
+            
             hazardous_fuels_where_clause = f"activity_cn = '{row[0]}'"
             params = {'f': 'json', 'outSR': 3857, 'outFields': ','.join(haz_fields), 'returnGeometry': 'true',
             'where': hazardous_fuels_where_clause}
+            logging.info(params)
             hazardous_fuels_feature = fetch_features(hazardous_fuels_url +'/query', params)
-            hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['ETL_MODIFIED_DATE_HAZ']/1000)
-            hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED']/1000)
-            hazardous_fuels_feature[0]['attributes']['GIS_ACRES'] = hazardous_fuels_feature[0]['attributes']['GIS_ACRES']
+
+            if hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] != None:
+                hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED']/1000)
+
 
 
             if len(hazardous_fuels_feature) == 0 or len(hazardous_fuels_feature) > 1:
@@ -80,70 +92,81 @@ if __name__ == '__main__':
                     key_equal[key] = hazardous_fuels_feature[0]['attributes'][key] == row[iterator]
                     value_compare[hazardous_fuels_feature[0]['attributes'][key]] = row[iterator]
                 
-                    print(hazardous_fuels_feature[0]['attributes'][key])
-                    print(row[iterator])
-                    iterator += 1
                     total_compare = total_compare and key_equal[key]
-                    
+                    iterator += 1
 
                 if(row[-1] != None):
                     geom_equals = arcpy.AsShape(hazardous_fuels_feature[0]['geometry'],True).equals(row[-1]) 
                     total_compare = total_compare and geom_equals
+            
+            logging.info(value_compare)
+            logging.info(key_equal)
+            if total_compare == True:
+                same += 1
+            elif total_compare == False and key_equal['ETL_MODIFIED_DATE_HAZ'] == False:
+                modified += 1
+            else:
+                different += 1
 
-    cur.execute('''
-        SELECT unique_id
-        FROM staging.treatment_index_common_attributes
-        tablesample system (1)
-	    where identifier_database = 'FACTS Common Attributes'
-        limit 575;
-    ''')
-    rows = cur.fetchall()
-    ids = [str(row[0]) for row in rows]
+   
+print(f'same: {same}')
+print(f'modified: {modified}')
+print(f'different: {different}')
 
-    if ids: 
-        id_list = ', '.join(f"'{i}'" for i in ids)  
-        common_attributes_where_clause = f"event_cn IN ({id_list})"
-        sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
-    else:
-        common_attributes_where_clause = "event_cn IN ()" 
-        sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
+    # cur.execute('''
+    #     SELECT unique_id
+    #     FROM staging.treatment_index_common_attributes
+    #     tablesample system (1)
+	#     where identifier_database = 'FACTS Common Attributes'
+    #     limit 575;
+    # ''')
+    # rows = cur.fetchall()
+    # ids = [str(row[0]) for row in rows]
+
+    # if ids: 
+    #     id_list = ', '.join(f"'{i}'" for i in ids)  
+    #     common_attributes_where_clause = f"event_cn IN ({id_list})"
+    #     sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
+    # else:
+    #     common_attributes_where_clause = "event_cn IN ()" 
+    #     sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
     
 
-    common_attributes_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 100)
+    # common_attributes_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_where_clause, arcpy.env.scratchGDB, 
+    #                               'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
+    #                               out_fields=None, chunk_size = 100)
     
-    common_attributes_fs_fc = fetch_and_create_featureclass(common_attributes_service, common_attributes_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 100)
-    print('test')
+    # common_attributes_fs_fc = fetch_and_create_featureclass(common_attributes_service, common_attributes_where_clause, arcpy.env.scratchGDB, 
+    #                               'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
+    #                               out_fields=None, chunk_size = 100)
+    # print('test')
 
-    cur.execute('''
-        SELECT unique_id
-        FROM staging.treatment_index_common_attributes
-        tablesample system (1)
-	    where identifier_database = 'NFPORS'
-        limit 575;
-    ''')
-    rows = cur.fetchall()
-    sweri_ids = [str(row[0]) for row in rows]
-    nfpors_id_pairs = [row[0].split('-') for row in rows]
+    # cur.execute('''
+    #     SELECT unique_id
+    #     FROM staging.treatment_index_common_attributes
+    #     tablesample system (1)
+	#     where identifier_database = 'NFPORS'
+    #     limit 575;
+    # ''')
+    # rows = cur.fetchall()
+    # sweri_ids = [str(row[0]) for row in rows]
+    # nfpors_id_pairs = [row[0].split('-') for row in rows]
 
 
-    if ids:  
-        sweri_ids = ', '.join(f"'{i}'" for i in ids) 
-        nfpors_where_clause = ' OR '.join(f"f(nfporsfid = '{nfporsfid} AND trt_id = '{trt_id}')" for nfporsfid, trt_id in nfpors_id_pairs)
-        sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({sweri_ids})"
-    else:
-        nfpors_where_clause = "1=0"  
-        sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
+    # if ids:  
+    #     sweri_ids = ', '.join(f"'{i}'" for i in ids) 
+    #     nfpors_where_clause = ' OR '.join(f"f(nfporsfid = '{nfporsfid} AND trt_id = '{trt_id}')" for nfporsfid, trt_id in nfpors_id_pairs)
+    #     sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({sweri_ids})"
+    # else:
+    #     nfpors_where_clause = "1=0"  
+    #     sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
     
 
-    nfpors_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_nfpors_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 100)
+    # nfpors_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_nfpors_where_clause, arcpy.env.scratchGDB, 
+    #                               'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
+    #                               out_fields=None, chunk_size = 100)
     
-    nfpors_fc = fetch_and_create_featureclass(nfpors_url, nfpors_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 100)
-    print('test')
+    # nfpors_fc = fetch_and_create_featureclass(nfpors_url, nfpors_where_clause, arcpy.env.scratchGDB, 
+    #                               'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
+    #                               out_fields=None, chunk_size = 100)
+    # print('test')
