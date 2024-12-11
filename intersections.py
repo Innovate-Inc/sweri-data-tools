@@ -15,14 +15,33 @@ logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='
 logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
+def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
+    logger.info(f'beginning intersections on {source_key} and {target_key}')
+    query = f""" insert into sweri.intersections (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
+         select 
+         sde.next_rowid('{schema}', '{insert_table}'),
+         ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
+         a.unique_id as id_1, 
+         a.feat_source as id_1_source, 
+         b.unique_id as id_2, 
+         b.feat_source as id_2_source
+         from sweri.intersection_features a, sweri.intersection_features b
+         where ST_INTERSECTS (a.shape, b.shape) 
+         and a.feat_source = '{source_key}'
+         and b.feat_source = '{target_key}';"""
+    cursor.execute('BEGIN;')
+    cursor.execute(query)
+    cursor.execute('COMMIT;')
+    logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {insert_table} ')
 
-def calculate_intersections_update_area(intersect_sources, intersect_targets, new_intersections_table, new_intersections_name, connection,
-                                        schema, workspace, intersection_features):
+
+def calculate_intersections_update_area(intersect_sources, intersect_targets, new_intersections_name, connection,
+                                        schema):
     """
     calculates intersections and acreage of intersections
     :param intersect_sources: intersect sources dictionary
     :param intersect_targets: intersect targets dictionary
-    :param new_intersections_table: new intersections table path 
+    :param new_intersections_table: new intersections table path
     :param new_intersections_name: new intersections table name in enterprise geodatabase
     :param connection: ArcSDESQLExecute connection
     :param schema: target schema
@@ -33,12 +52,7 @@ def calculate_intersections_update_area(intersect_sources, intersect_targets, ne
             if target_key == source_key:
                 continue
             logger.info(f'performing intersections on {source_key} and {target_key}')
-            intersect = layer_intersections(intersection_features,
-                                            source_key, target_key,
-                                            f'{source_key}_{target_key}', workspace)
-            add_area_and_update_intersections(intersect, new_intersections_table, new_intersections_name, source_key, target_key, connection, schema)
-            arcpy.management.Delete(intersect)
-            logger.info(f'deleted {intersect}')
+            calculate_intersections_and_insert(connection, schema, new_intersections_name, source_key, target_key)
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 
@@ -82,39 +96,6 @@ def setup_intersection_features_table(sde_connection_file, schema, treatment_int
     if arcpy.Exists(intersect_features_backup_temp):
         arcpy.management.Delete(intersect_features_backup_temp)
     return new_intersections_table
-
-
-def add_area_and_update_intersections(intersect_result, intersections_table, intersections_table_name, fc_1_name, fc_2_name,
-                                      connection, schema):
-    """
-    calculated acre overlap and maps fields to intersection table schema
-    :param intersect_result: result of pairwise intersect
-    :param intersections_table: intersections table path to append features
-    :param intersections_table_name: intersections table name to append features
-    :param fc_1_id: id field of first feature class
-    :param fc_2_id: id field of second feature class
-    :param fc_1_name: name of first feature class to put in intersection table
-    :param fc_2_name: name of second feature class to put in intersection table
-    :param connection: ArcSDESQLExecute connection
-    :param schema: schema to use
-    :return: None
-    """
-
-    # update the schema to match the intersections table
-    update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_name)
-
-    # calculate geometry attributes and insert it
-    calculate_area_overlap_and_insert(intersect_result,
-                                      intersections_table,
-                                      intersections_table_name,
-                                      connection,
-                                      schema,
-                                      ['objectid','id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-                                      ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-                                      'acre_overlap')
-
-
-
 
 
 def swap_intersection_tables(connection, schema):
@@ -188,6 +169,7 @@ if __name__ == '__main__':
     calculate_intersections_update_area(intersect_sources, intersect_targets,
                                         new_intersections_table, 'new_intersections', connection, schema,
                                         arcpy.env.workspace, intersection_features)
+
     # add Index
     try:
         arcpy.management.AddIndex(postgres_target_table, ['id_1'])
