@@ -9,17 +9,16 @@ from sweri_utils.analysis import  layer_intersections, calculate_area_overlap_an
 from sweri_utils.conversion import insert_json_into_fc, insert_from_db
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table
 from sweri_utils.intersections import update_schema_for_intersections_insert, configure_intersection_sources
-import watchtower
+# import watchtower
 logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./intersections.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
 def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
     logger.info(f'beginning intersections on {source_key} and {target_key}')
-    query = f""" insert into sweri.intersections (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
-         select 
-         sde.next_rowid('{schema}', '{insert_table}'),
+    query = f""" insert into sweri.{insert_table} (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
+         select sde.next_rowid('{schema}', '{insert_table}'),
          ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
          a.unique_id as id_1, 
          a.feat_source as id_1_source, 
@@ -72,13 +71,17 @@ def fetch_all_features_to_intersect(intersect_sources, pg_cursor, schema, insert
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
 
-def setup_intersection_features_table(sde_connection_file, schema, treatment_intersections):
+def setup_new_intersections_and_intersection_features_table(sde_connection_file, schema, treatment_intersections):
     new_intersections_table = os.path.join(sde_connection_file, f'sweri.{schema}.new_intersections')
     if arcpy.Exists(new_intersections_table):
         connection.execute(f'DROP TABLE IF EXISTS {schema}.new_intersections')
     new_intersections_table = CreateTable(arcpy.env.workspace, f'sweri.{schema}.new_intersections',
                                           template=treatment_intersections)
 
+    #setup_intersection_features_table(sde_connection_file, schema)
+    return new_intersections_table
+
+def setup_intersection_features_table(sde_connection_file, schema):
     intersect_features_backup = path.join(sde_connection_file, f'sweri.{schema}.intersection_features_backup')
     intersect_features_backup_temp = path.join(sde_connection_file, f'sweri.{schema}.intersection_features_backup_temp')
 
@@ -89,13 +92,12 @@ def setup_intersection_features_table(sde_connection_file, schema, treatment_int
     # current to backup
     arcpy.management.Rename(f'sweri.{schema}.intersection_features', f'sweri.{schema}.intersection_features_backup')
     # fresh copy
-    fc = CreateFeatureclass(arcpy.env.workspace, f'sweri.{schema}.intersection_features',
+    CreateFeatureclass(arcpy.env.workspace, f'sweri.{schema}.intersection_features',
                        # create a fresh copy
                        template=f'sweri.{schema}.intersection_features_backup',
                        spatial_reference=arcpy.SpatialReference(wkid))
     if arcpy.Exists(intersect_features_backup_temp):
         arcpy.management.Delete(intersect_features_backup_temp)
-    return new_intersections_table
 
 
 def swap_intersection_tables(connection, schema):
@@ -151,7 +153,7 @@ if __name__ == '__main__':
     treatment_intersections = path.join(sde_connection_file, f'sweri.{schema}.intersections')
     logger.info('updating new_intersections')
     # create fresh intersections table
-    new_intersections_table = setup_intersection_features_table(sde_connection_file, schema, treatment_intersections)
+    new_intersections_table = setup_new_intersections_and_intersection_features_table(sde_connection_file, schema, treatment_intersections)
     intersection_features = os.path.join(sde_connection_file, f'sweri.{schema}.intersection_features')
     logger.info('intersection features table updated')
     postgres_target_table = path.join(sde_connection_file, f'sweri.{schema}.new_intersections')
@@ -162,13 +164,12 @@ if __name__ == '__main__':
     intersect_targets = intersects[1]
 
     # get all the features and put them into the intersection_features table
-    fetch_all_features_to_intersect(intersect_sources, pg_cursor, schema, wkid=3857)
+    #fetch_all_features_to_intersect(intersect_sources, pg_cursor, schema, wkid=3857)
     # update spatial index
     arcpy.management.RebuildIndexes(sde_connection_file, "NO_SYSTEM", f"sweri.{schema}.intersection_features", "ALL")
     # run pairwise intersections and calculate acre overlap
     calculate_intersections_update_area(intersect_sources, intersect_targets,
-                                        new_intersections_table, 'new_intersections', connection, schema,
-                                        arcpy.env.workspace, intersection_features)
+                                        'new_intersections', pg_cursor, schema)
 
     # add Index
     try:
