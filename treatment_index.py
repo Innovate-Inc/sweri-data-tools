@@ -154,7 +154,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
         uom, state_abbr AS state, activity, date_completed as treatment_date,
         'date_completed' as date_source, method as method, equipment as equipment,
-        ownership_code as agency, shape, sde.next_globalid()
+        'USFS' as agency, shape, sde.next_globalid()
         
     FROM {schema}.facts_haz_3857_2;
     
@@ -628,7 +628,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
         event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity, 
         date_completed as treatment_date, 'date_completed' as date_source, 
-        method as method, equipment as equipment, ownership as agency, shape, sde.next_globalid()
+        method as method, equipment as equipment, 'USFS' as agency, shape, sde.next_globalid()
         
     FROM {schema}.{table}
     WHERE included = 'yes'
