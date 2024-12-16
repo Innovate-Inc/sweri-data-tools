@@ -1,0 +1,8 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: win-64
+
+psycopg2==2.9.9
+python-dotenv==1.0.1
+geopandas==0.14.4
+watchtower==3.3.1
