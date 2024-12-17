@@ -25,8 +25,8 @@ RUN apt-get update  \
 
 RUN mkdir -p /docker-entrypoint-initdb.d
 
-COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
-COPY ./update-postgis.sh /usr/local/bin
+COPY initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
+COPY update-postgis.sh /usr/local/bin
 
 FROM --platform=linux/amd64 python:3.11-bullseye
 
@@ -35,18 +35,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 
 # Set the working directory
-WORKDIR /app
+WORKDIR .
 
 # Copy the requirements file
-COPY package-list.txt .
+COPY . .
 
 RUN apt-get update \
     && apt-get install -y binutils libproj-dev gdal-bin \
-    && python3 -m pip install -r package-list.txt --no-cache-dir
+    && python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
-
-COPY . .
-
-ENTRYPOINT ["python"]
 # Set the default command to run PostgreSQL
-CMD ["python", "intersections-postgis.py"]
+CMD ["python3", "intersections-postgis.py"]
