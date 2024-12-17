@@ -12,7 +12,7 @@ ENV POSTGIS_MAJOR 3
 ENV POSTGIS_VERSION 3.5.0+dfsg-1.pgdg110+1
 
 RUN apt-get update  \
-      && apt-get install -y gdal-bin libgdal-dev && \
+      && apt-get install -y gdal-bin libgdal-dev \
       && apt-cache showpkg postgresql-$PG_MAJOR-postgis-$POSTGIS_MAJOR \
       && apt-get install -y --no-install-recommends \
            # ca-certificates: for accessing remote raster files;
@@ -28,7 +28,7 @@ RUN mkdir -p /docker-entrypoint-initdb.d
 COPY ./initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
 COPY ./update-postgis.sh /usr/local/bin
 
-FROM python:3.11-alpine
+FROM --platform=linux/amd64 python:3.11-bullseye
 
 # Set environment variables to avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -40,9 +40,9 @@ WORKDIR /app
 # Copy the requirements file
 COPY package-list.txt .
 
-RUN apk update && \
-    apk add postgresql-dev gcc python3-dev musl-dev && \
-    python3 -m pip install -r package-list.txt --no-cache-dir
+RUN apt-get update \
+    && apt-get install -y binutils libproj-dev gdal-bin \
+    && python3 -m pip install -r package-list.txt --no-cache-dir
 
 
 COPY . .
