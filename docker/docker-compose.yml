@@ -1,5 +1,7 @@
 services:
   db:
+#    env_file:
+#      - "./docker/.docker.env"
     image: postgres:15
     environment:
       POSTGRES_DB: ${DB_NAME}

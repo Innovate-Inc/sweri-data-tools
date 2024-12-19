@@ -41,7 +41,9 @@ WORKDIR .
 COPY . .
 
 RUN apt-get update \
-    && apt-get install -y binutils libproj-dev gdal-bin \
+    && apt-get install -y binutils libpq5=12.2 libpq-dev libproj-dev gdal-bin \
+    && python3 -m pip install GDAL==3.3.0\
+    && python3 -m pip install osgeo \
     && python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
 # Set the default command to run PostgreSQL
