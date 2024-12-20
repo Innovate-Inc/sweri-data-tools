@@ -5,7 +5,7 @@ import requests
 import json
 import arcpy
 import logging
-from datetime import datetime
+import datetime
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import fetch_and_create_featureclass, fetch_features   
@@ -14,159 +14,200 @@ logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./import_qa.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 # logger.addHandler(watchtower.CloudWatchLogHandler())
 
-#Get Counts of Input Layers vs What we have in the database
-def get_count(service_url):
-    count_params = {
-        'where':'1=1',
-        'returnCountOnly': 'true',
-        'f': 'json'  # Specify the response format
-    }
-    response = requests.post(service_url + "/query", data=count_params)
-    data = response.json()
-    return data['count']
-#Get saple groups with big enough sizes and make sure entries are the same as the source data
+def field_equality(comparison_feature, sweri_feature, iterator_offset = 0):
+    field_equal = {}
+    iterator = 0 + iterator_offset
+    
+    if iterator_offset > 0:
+        field_equal['id'] = sweri_feature[0]
+
+    for key in comparison_feature[0]['attributes']:
+        field_equal[key] = comparison_feature[0]['attributes'][key] == sweri_feature[iterator]
+        iterator += 1
+
+    if(sweri_feature[-1] != None):
+        field_equal['geom'] = arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1]) 
+    
+    return field_equal
+
+def value_comparison(comparison_feature, sweri_feature, iterator_offset = 0):    
+
+    value_compare = {}
+    iterator = 0 + iterator_offset
+
+    if iterator_offset > 0:
+        value_compare['id'] = sweri_feature[0]
+    
+    for key in comparison_feature[0]['attributes']:
+        value_compare[comparison_feature[0]['attributes'][key]] = sweri_feature[iterator]
+        iterator += 1
+    
+    if(sweri_feature[-1] != None):
+        value_compare['geom'] = arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1]) 
+    
+    return value_compare
+
+def compare_features(comparison_feature, sweri_feature, iterator_offset = 0):
+    iterator = 0 + iterator_offset
+    total_compare = True
+    
+    for key in comparison_feature[0]['attributes']:
+        if type(sweri_feature[iterator]) == float:
+            total_compare = total_compare and ((comparison_feature[0]['attributes'][key]) - sweri_feature[iterator]) < 1
+        elif type(sweri_feature[iterator]) == str:
+            total_compare = total_compare and comparison_feature[0]['attributes'][key].strip() == sweri_feature[iterator].strip()
+        else:
+            total_compare = total_compare and comparison_feature[0]['attributes'][key] == sweri_feature[iterator]
+        iterator += 1
+
+    if(sweri_feature[-1] != None):
+        total_compare = total_compare and arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1])
+    
+    return total_compare
+
+
+def get_comparison_ids(cur, identifier_database, treatment_index, schema):
+    cur.execute(f'''
+        SELECT unique_id
+        FROM {schema}.{treatment_index}
+        tablesample system (1)
+	    WHERE identifier_database = '{identifier_database}'
+        AND
+        shape IS NOT NULL
+        limit 575;
+    ''')
+
+    id_rows = cur.fetchall()
+    comparison_ids = [str(id_row[0]) for id_row in id_rows]
+    return comparison_ids
+
+
+def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url, date_field, source_database, iterator_offset = 0):
+
+    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause) as service_cursor:
+        same = 0
+        different = 0
+        features_equal = False
+
+        for row in service_cursor:
+            
+            if source_database == 'FACTS Hazardous Fuels':
+                service_where_clause = f"activity_cn = '{row[0]}'" 
+
+            elif source_database == 'FACTS Common Attributes':
+                service_where_clause = f"event_cn = '{row[0]}'"
+
+            elif source_database == 'NFPORS':
+                nfporsfid, trt_id = row[0].split('-',1)
+                service_where_clause = f"nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}'"
+                
+            params = {'f': 'json', 'outSR': 3857, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
+            'where': service_where_clause}
+        
+            service_feature = fetch_features(service_url +'/query', params)
+            
+            if  service_feature == None or len(service_feature) == 0 or len(service_feature) > 1:
+                logging.warning(f'No feature returned for {row[0]} in {source_database}')
+                different += 1
+                continue
+  
+            if service_feature[0]['attributes'][date_field] != None:
+                service_feature[0]['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=(service_feature[0]['attributes'][date_field]/1000))
+            
+            features_equal = compare_features(service_feature, row, iterator_offset)  
+
+            if features_equal == True:
+                same += 1
+            else:
+                logging.warning(field_equality(service_feature, row, iterator_offset))
+                logging.warning(value_comparison(service_feature, row, iterator_offset))
+                different += 1
+
+    logging.info(f'same: {same}')
+    logging.info(f'different: {different}')
+    if different > 1:
+        logging.warning(f'{different} features from {source_database} did not match')
+
+def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
+
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
+    haz_fields = ['activity_cn', 'activity_sub_unit_name','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
+    sweri_haz_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']
+    source_database = 'FACTS Hazardous Fuels'
+    date_field = 'DATE_COMPLETED'
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+
+    if ids: 
+        id_list = ', '.join(f"'{i}'" for i in ids)  
+        sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
+    else:
+        sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ()"
+
+
+    compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause,haz_fields, hazardous_fuels_url, date_field, source_database)
+
+
+
+
+def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
+    nfpors_url = os.getenv('NFPORS_URL')
+    nfpors_fields = ['trt_nm','act_comp_dt','gis_acres','type_name','cat_nm','st_abbr']
+    sweri_nfpors_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'SHAPE@']
+    source_database = 'NFPORS'
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+    if ids: 
+        id_list = ', '.join(f"'{i}'" for i in ids)  
+        sweri_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({id_list})"
+    else:
+        sweri_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
+    
+    date_field = 'act_comp_dt'
+
+    #need to offset NFPORS by 1 to ignore the id field since we are splitting it apart
+    iterator_offset = 1
+
+    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, nfpors_url, date_field, source_database, iterator_offset)
+
+                 
+
+
+def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema):
+    common_attributes_service = os.getenv('COMMON_ATTRIBUTES_SERVICE')
+    common_attributes_fields = ['event_cn', 'name','date_completed','gis_acres','nfpors_treatment','nfpors_category','state_abbr','fund_codes','cost_per_unit','uom','activity']
+    sweri_common_attributes_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'SHAPE@']
+    source_database = 'FACTS Common Attributes'
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+
+    if ids: 
+        id_list = ', '.join(f"'{i}'" for i in ids)  
+        sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
+    else:
+         sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
+
+    date_field = 'DATE_COMPLETED'
+
+    compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause, common_attributes_fields, common_attributes_service, date_field, source_database)
+
+
+
 if __name__ == '__main__':
     load_dotenv()
 
     cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-    sde_connection_file = os.getenv('SDE_FILE')
-    nfpors_url = os.getenv('NFPORS_URL')
-    hazardous_fuels_url = os.getenv('HAZRADOUS_FUELS_URL')
-    common_attributes_service = os.getenv('COMMON_ATTRIBUTES_SERVICE')
-    sweri_treatment_index_url = os.getenv('TREATMENT_INDEX_URL')
     arcpy.env.workspace = arcpy.env.scratchGDB
 
-    haz_fields = ['activity_cn', 'activity_sub_unit_name','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
+    sde_connection_file = os.getenv('SDE_FILE')
+    target_schema = os.getenv('SCHEMA')
+    treatment_index_table = 'treatment_index_facts_nfpors'
 
-    cur.execute('''
-        SELECT unique_id
-        FROM staging.treatment_index_common_attributes
-        tablesample system (1)
-	    where identifier_database = 'FACTS Hazardous Fuels'
-        limit 575;
-    ''')
-    rows = cur.fetchall()
-    ids = [str(row[0]) for row in rows]
+    treatment_index_sweri_fc = os.path.join(sde_connection_file, f"sweri.{target_schema}.{treatment_index_table}")
 
-    if ids: 
-        id_list = ', '.join(f"'{i}'" for i in ids)  
-        hazardous_fuels_where_clause = f"activity_cn IN ({id_list})"
-        sweri_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
-    else:
-        where_clause = "activity_cn IN ()" 
-    
+    logging.info('new run')
+    logging.info('______________________________________')
 
-    hazardous_fuels_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_where_clause, arcpy.env.scratchGDB, 
-                                  'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 100)
-    
-
-    with arcpy.da.SearchCursor(hazardous_fuels_sweri_fc, ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']) as haz_cursor:
-        same = 0
-        modified = 0
-        different = 0
-
-        for row in haz_cursor:
-            
-            
-            hazardous_fuels_where_clause = f"activity_cn = '{row[0]}'"
-            params = {'f': 'json', 'outSR': 3857, 'outFields': ','.join(haz_fields), 'returnGeometry': 'true',
-            'where': hazardous_fuels_where_clause}
-            logging.info(params)
-            hazardous_fuels_feature = fetch_features(hazardous_fuels_url +'/query', params)
-
-            if hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] != None:
-                hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED'] = datetime.fromtimestamp(hazardous_fuels_feature[0]['attributes']['DATE_COMPLETED']/1000)
-
-
-
-            if len(hazardous_fuels_feature) == 0 or len(hazardous_fuels_feature) > 1:
-                pass
-            
-            else:
-                iterator = 0
-                key_equal = {}
-                value_compare = {}
-                total_compare = True
-                for key in hazardous_fuels_feature[0]['attributes']:
-                    key_equal[key] = hazardous_fuels_feature[0]['attributes'][key] == row[iterator]
-                    value_compare[hazardous_fuels_feature[0]['attributes'][key]] = row[iterator]
-                
-                    total_compare = total_compare and key_equal[key]
-                    iterator += 1
-
-                if(row[-1] != None):
-                    geom_equals = arcpy.AsShape(hazardous_fuels_feature[0]['geometry'],True).equals(row[-1]) 
-                    total_compare = total_compare and geom_equals
-            
-            logging.info(value_compare)
-            logging.info(key_equal)
-            if total_compare == True:
-                same += 1
-            elif total_compare == False and key_equal['ETL_MODIFIED_DATE_HAZ'] == False:
-                modified += 1
-            else:
-                different += 1
-
-   
-print(f'same: {same}')
-print(f'modified: {modified}')
-print(f'different: {different}')
-
-    # cur.execute('''
-    #     SELECT unique_id
-    #     FROM staging.treatment_index_common_attributes
-    #     tablesample system (1)
-	#     where identifier_database = 'FACTS Common Attributes'
-    #     limit 575;
-    # ''')
-    # rows = cur.fetchall()
-    # ids = [str(row[0]) for row in rows]
-
-    # if ids: 
-    #     id_list = ', '.join(f"'{i}'" for i in ids)  
-    #     common_attributes_where_clause = f"event_cn IN ({id_list})"
-    #     sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
-    # else:
-    #     common_attributes_where_clause = "event_cn IN ()" 
-    #     sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
-    
-
-    # common_attributes_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_where_clause, arcpy.env.scratchGDB, 
-    #                               'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
-    #                               out_fields=None, chunk_size = 100)
-    
-    # common_attributes_fs_fc = fetch_and_create_featureclass(common_attributes_service, common_attributes_where_clause, arcpy.env.scratchGDB, 
-    #                               'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
-    #                               out_fields=None, chunk_size = 100)
-    # print('test')
-
-    # cur.execute('''
-    #     SELECT unique_id
-    #     FROM staging.treatment_index_common_attributes
-    #     tablesample system (1)
-	#     where identifier_database = 'NFPORS'
-    #     limit 575;
-    # ''')
-    # rows = cur.fetchall()
-    # sweri_ids = [str(row[0]) for row in rows]
-    # nfpors_id_pairs = [row[0].split('-') for row in rows]
-
-
-    # if ids:  
-    #     sweri_ids = ', '.join(f"'{i}'" for i in ids) 
-    #     nfpors_where_clause = ' OR '.join(f"f(nfporsfid = '{nfporsfid} AND trt_id = '{trt_id}')" for nfporsfid, trt_id in nfpors_id_pairs)
-    #     sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({sweri_ids})"
-    # else:
-    #     nfpors_where_clause = "1=0"  
-    #     sweri_nfpors_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
-    
-
-    # nfpors_sweri_fc = fetch_and_create_featureclass(sweri_treatment_index_url, sweri_nfpors_where_clause, arcpy.env.scratchGDB, 
-    #                               'hazardous_fuels_sweri_fc', geometry=None, geom_type=None, out_sr=3857,
-    #                               out_fields=None, chunk_size = 100)
-    
-    # nfpors_fc = fetch_and_create_featureclass(nfpors_url, nfpors_where_clause, arcpy.env.scratchGDB, 
-    #                               'hazardous_fuels_fs_fc', geometry=None, geom_type=None, out_sr=3857,
-    #                               out_fields=None, chunk_size = 100)
-    # print('test')
+    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
+    common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
+    hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
