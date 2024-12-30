@@ -717,10 +717,10 @@ if __name__ == "__main__":
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
 
     #MERGE
     nfpors_insert(cur, target_schema, insert_table)
