@@ -25,15 +25,17 @@ def field_equality(comparison_feature, sweri_feature, iterator_offset = 0):
         field_equal[key] = comparison_feature[0]['attributes'][key] == sweri_feature[iterator]
         iterator += 1
 
-    if(sweri_feature[-1] != None):
+    if(sweri_feature[-1] is not None and comparison_feature[0]['geometry'] is not None):
         field_equal['geom'] = arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1]) 
     
     return field_equal
 
-def value_comparison(comparison_feature, sweri_feature, iterator_offset = 0):    
+def value_comparison(comparison_feature, sweri_feature, source_database, iterator_offset = 0):    
 
     value_compare = {}
     iterator = 0 + iterator_offset
+
+    value_compare[source_database] = 'sweri'
 
     if iterator_offset > 0:
         value_compare['id'] = sweri_feature[0]
@@ -84,6 +86,7 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema):
 
 def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url, date_field, source_database, iterator_offset = 0):
 
+
     with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause) as service_cursor:
         same = 0
         different = 0
@@ -106,12 +109,16 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
         
             service_feature = fetch_features(service_url +'/query', params)
             
-            if  service_feature == None or len(service_feature) == 0 or len(service_feature) > 1:
+            if  service_feature == None or len(service_feature) == 0:
                 logging.warning(f'No feature returned for {row[0]} in {source_database}')
                 different += 1
                 continue
+
+            elif len(service_feature) > 1:
+                logging.warning(f'more than one feature returned for {row[0]} in {source_database}, skipping comparison')
+                continue
   
-            if service_feature[0]['attributes'][date_field] != None:
+            if service_feature[0]['attributes'][date_field] is not None:
                 service_feature[0]['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=(service_feature[0]['attributes'][date_field]/1000))
             
             features_equal = compare_features(service_feature, row, iterator_offset)  
@@ -120,13 +127,16 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
                 same += 1
             else:
                 logging.warning(field_equality(service_feature, row, iterator_offset))
-                logging.warning(value_comparison(service_feature, row, iterator_offset))
+                logging.warning(value_comparison(service_feature, row, source_database, iterator_offset))
                 different += 1
-
+    
+    logging.info(f'{source_database} comparison complete')
     logging.info(f'same: {same}')
     logging.info(f'different: {different}')
-    if different > 1:
+    if different >= 1:
         logging.warning(f'{different} features from {source_database} did not match')
+    else:
+        logging.info(f'all {same} sweri {source_database} features matched source {source_database} features')
 
 def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
 
