@@ -6,3 +6,4 @@ sweri_utils/__pycache__/*
 /analysis/*.csv
 /analysis/raw/
 .vscode/settings.json
+nfpors_testing.py
