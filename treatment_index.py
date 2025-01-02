@@ -1,50 +1,79 @@
-import arcpy
 import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
+import arcpy
 from dotenv import load_dotenv
 import logging
-# import watchtower
 import re
+from arcgis.features import FeatureLayer
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
-from sweri_utils.download import fetch_and_create_featureclass
+from sweri_utils.download import get_ids
 from sweri_utils.files import gdb_to_postgres
+import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.addHandler(watchtower.CloudWatchLogHandler())
 
-def update_nfpors(cursor, schema, sde_file, wkid, exclusion_ids, chunk_size = 70):
 
-    max_modifiedon = cursor.execute(f'select max(modifiedon) from {schema}.nfpors;')
-    logger.info(f'max datetime in NFPORS: {max_modifiedon}')
+
+def update_nfpors(cursor, schema, sde_file, wkid, chunk_size = 70):
+
+    #clear data from the nfpors table
+    cursor.execute(f'TRUNCATE {schema}.nfpors')
 
     nfpors_url = os.getenv('NFPORS_URL')
-    nfpors_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors')
+    nfpors_fl = FeatureLayer(nfpors_url)
     nfpors_additions_postgres = os.path.join(sde_file, f'sweri.{schema}.nfpors_additions')
-    where_clause = f"modifiedon > TIMESTAMP '{max_modifiedon}'"
+    
+    where_clause = create_nfpors_where_clause()
 
+    #fetches all ids that will be added
+    ids = get_ids(nfpors_url, where=where_clause)
+    str_ids = [str(i) for i in ids]
+    start = 0
+
+    while start < len(ids):
+
+        id_list = ','.join(str_ids[start:start + chunk_size])
+        logger.info(f'start: {start} ids: {str_ids[start:start + chunk_size]} of {len(ids)}')
+
+        nfpors_fl_query = nfpors_fl.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        nfpors_additions_fc = nfpors_fl_query.save(arcpy.env.scratchGDB, 'nfpors_additions')
+        count = int(arcpy.management.GetCount(nfpors_additions_fc)[0])
+        logger.info(f'{count} additions to NFPORS')
+
+        if (count > 0):
+            try:
+                #make space for nfpors additions table
+                if(arcpy.Exists(nfpors_additions_postgres)):
+                    arcpy.management.Delete(nfpors_additions_postgres)
+                    logger.info("additions table deleted")
+
+                #upload current addition to postgres
+                arcpy.conversion.FeatureClassToGeodatabase(nfpors_additions_fc, sde_file)
+                logger.info("new additions table uploaded to postgres")
+
+                #insert additions to nfpors
+                logger.info(f'inserting {nfpors_additions_postgres} into nfpors')
+                insert_nfpors_additions(cursor, schema)
+                
+                logger.info("additions appended to nfpors")
+            except Exception as e:
+                logger.error(e.args[0])
+                raise e
+        start+=chunk_size
+
+def create_nfpors_where_clause():
+    #some ids break download, those will be excluded
+    exclusion_ids = os.getenv('EXCLUSION_IDS')
     exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
+
+    where_clause = f"1=1"
     if len(exlusion_ids_tuple) > 0:
         where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
-
-    # fetch_and_create_featureclass returns an exception if no features are 
-    # returned, in that case, nfpors is up to date, log exception and continue
-    try:
-        nfpors_additions_fc = fetch_and_create_featureclass(nfpors_url, where_clause, arcpy.env.scratchGDB, 'nfpors_additions', geometry=None, geom_type=None, out_sr=wkid,
-                                    out_fields=None, chunk_size = chunk_size)
-        logger.info('Uploading additions to postgress')
-        arcpy.conversion.FeatureClassToGeodatabase(nfpors_additions_fc, sde_connection_file)
-        logger.info("additions uploaded to postgrees")
-
-        logger.info(f'inserting {nfpors_additions_postgres} into {nfpors_postgres}')
-        insert_nfpors_additions(cursor, schema)
-        logger.info("additions appended to nfpors")
-    except Exception as e:
-        logger.error(e)
-        pass
-
-    logger.info('NFPORS up to date')
+    
+    return where_clause
 
 def insert_nfpors_additions(cursor, schema):
     common_fields = '''
@@ -56,7 +85,7 @@ def insert_nfpors_additions(cursor, schema):
         plan_int_dt, unit_id, agency, trt_id, created_by, edited_by,
         projectname, regionname, projectid, keypointarea, unitname,
         deptname, countyname, statename, regioncode, districtname,
-        isbil, bilfunding, gdb_geomattr_data, shape
+        isbil, bilfunding, shape
     '''
 
     cursor.execute('BEGIN;')
@@ -120,9 +149,9 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
 
         sde.next_rowid('{schema}', '{treatment_index}_temp'), activity_sub_unit_name AS name,
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
-        treatment_type AS type, cat_nm AS category, fund_code, cost_per_uom,
+        treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom, state_abbr AS state, activity, date_completed as treatment_date,
+        uom as uom, state_abbr AS state, activity as activity, date_completed as treatment_date,
         'date_completed' as date_source, shape, sde.next_globalid()
         
     FROM {schema}.facts_haz_3857_2;
@@ -354,31 +383,16 @@ def rename_treatment_points(schema, sde_file, cursor, treatment_index):
 # BEGIN Common Attributes Functions
 
 def add_fields_and_indexes(feature_class, region):
-    arcpy.management.AddField(feature_class,'included', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'included', f'included_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r2', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r2', f'r2_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r3', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r3', f'r3_idx_{region}',  ascending="ASCENDING")
-
-
-    arcpy.management.AddField(feature_class,'r4', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r4', f'r4_idx_{region}', ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r5', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r5', f'r5_idx_{region}',  ascending="ASCENDING")
-
-    arcpy.management.AddField(feature_class,'r6', 'TEXT')
-    arcpy.management.AddIndex(feature_class, 'r6', f'r6_idx_{region}',  ascending="ASCENDING")
-
+    new_fields = ('included', 'r2', 'r3', 'r4','r5', 'r6')
+    for field in new_fields:
+        arcpy.management.AddField(feature_class, field, 'TEXT')
+        arcpy.management.AddIndex(feature_class, field, f'{field}_idx_{region}', ascending="ASCENDING")
 
     arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'gis_acres', f'gis_acres_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'activity', f'activity_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'equipment', f'equipment_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'method', f'method_idx_{region}', ascending="ASCENDING")
+
+    new_indexes = ('gis_acres', 'activity', 'equipment', 'method')
+    for index in new_indexes: 
+            arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
        
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Do Not Included Entries Already Being Included via Hazardous Fuels
@@ -634,7 +648,7 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
         AND t.unique_id = f.event_cn;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
 def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
@@ -653,7 +667,6 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
     
 
     for url in urls:
-        print(url)
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
@@ -704,10 +717,10 @@ if __name__ == "__main__":
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, exluded_ids)
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
 
     #MERGE
     nfpors_insert(cur, target_schema, insert_table)
