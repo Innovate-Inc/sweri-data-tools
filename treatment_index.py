@@ -150,11 +150,11 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
 
         sde.next_rowid('{schema}', '{treatment_index}_temp'), activity_sub_unit_name AS name,
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
-        treatment_type AS type, cat_nm AS category, fund_code, cost_per_uom,
+        treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom, state_abbr AS state, activity, date_completed as treatment_date,
-        'date_completed' as date_source, method as method, equipment as equipment,
-        'USFS' as agency, shape, sde.next_globalid()
+        uom AS uom, state_abbr AS state, activity AS activity, date_completed AS treatment_date,
+        'date_completed' AS date_source, method AS method, equipment AS equipment,
+        'USFS' AS agency, shape, sde.next_globalid()
         
     FROM {schema}.facts_haz_3857_2;
     
@@ -650,7 +650,7 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
         AND t.unique_id = f.event_cn;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
 def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
@@ -719,10 +719,10 @@ if __name__ == "__main__":
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid)
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
 
     #MERGE
     nfpors_insert(cur, target_schema, insert_table)
