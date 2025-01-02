@@ -149,9 +149,9 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
 
         sde.next_rowid('{schema}', '{treatment_index}_temp'), activity_sub_unit_name AS name,
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
-        treatment_type AS type, cat_nm AS category, fund_code, cost_per_uom,
+        treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom, state_abbr AS state, activity, date_completed as treatment_date,
+        uom as uom, state_abbr AS state, activity as activity, date_completed as treatment_date,
         'date_completed' as date_source, shape, sde.next_globalid()
         
     FROM {schema}.facts_haz_3857_2;
@@ -648,7 +648,7 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
         AND t.unique_id = f.event_cn;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
 def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
