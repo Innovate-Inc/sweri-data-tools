@@ -142,7 +142,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         type, category, fund_code, cost_per_uom,
         identifier_database, unique_id,
         uom, state, activity, treatment_date,
-        date_source, method, equipment, agency
+        date_source, method, equipment, agency,
         shape, globalid
 
     )
