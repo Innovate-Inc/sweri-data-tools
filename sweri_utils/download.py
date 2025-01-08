@@ -6,6 +6,7 @@ import arcpy.conversion
 from arcpy import AddMessage, AddError, AddWarning, Exists
 import requests
 from arcpy.management import Delete
+from arcgis.features import FeatureLayer
 
 
 def get_fields(service_url):
@@ -230,3 +231,50 @@ def fetch_features(url, params):
     except Exception as e:
         AddError(e.args[0])
         raise e
+
+def service_to_postgres(service_url, database, schema, destination_table, cursor, sde_file, where_clause, wkid, call_insert_function,chunk_size = 70):
+    """
+    Some services have geoms that are not well handlded by JSONtoFeatures
+    In these cases services can be uploaded chunk by chunk directly to postgres
+    """
+    #clear data from the nfpors table
+    cursor.execute(f'TRUNCATE {schema}.{destination_table}')
+
+    service_fl = FeatureLayer(service_url)
+    service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
+
+    #fetches all ids that will be added
+    ids = get_ids(service_url, where=where_clause)
+    str_ids = [str(i) for i in ids]
+    start = 0
+
+    while start < len(ids):
+
+        id_list = ','.join(str_ids[start:start + chunk_size])
+        logging.info(f'start: {start} ids: {str_ids[start:start + chunk_size]} of {len(ids)}')
+
+        service_fl_query = service_fl.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        service_additions_fc = service_fl_query.save(arcpy.env.scratchGDB, f'{destination_table}_additions')
+        count = int(arcpy.management.GetCount(service_additions_fc)[0])
+        logging.info(f'{count} additions to {destination_table}')
+
+        if (count > 0):
+            try:
+                #make space for nfpors additions table
+                if(arcpy.Exists(service_additions_postgres)):
+                    arcpy.management.Delete(service_additions_postgres)
+                    logging.info("additions table deleted")
+
+                #upload current addition to postgres
+                arcpy.conversion.FeatureClassToGeodatabase(service_additions_fc, sde_file)
+                logging.info(f'{chunk_size} new additions table uploaded to postgres')
+
+                #insert additions to nfpors
+                logging.info(f'inserting {service_additions_fc} into {destination_table}')
+                call_insert_function(cursor, schema)
+                
+                logging.info(f'additions appended to {destination_table}')
+            except Exception as e:
+                logging.error(e.args[0])
+                raise e
+        start+=chunk_size
