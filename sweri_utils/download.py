@@ -248,7 +248,7 @@ def service_to_postgres(service_url, where_clause, wkid, database, schema, desti
     :param chunk_size: check size for batch feature request
     """
     #clear data from the destination table
-    #destination table must be in place and have the proper schema before running
+    #destination table must be in place and have the proper schema
     cursor.execute(f'TRUNCATE {schema}.{destination_table}')
 
     service_fl = FeatureLayer(service_url)
@@ -265,21 +265,18 @@ def service_to_postgres(service_url, where_clause, wkid, database, schema, desti
         logging.info(f'start: {start} ids: {str_ids[start:start + chunk_size]} of {len(ids)}')
 
         service_fl_query = service_fl.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
-        service_additions_fc = service_fl_query.save(arcpy.env.scratchGDB, f'{destination_table}_additions')
+
+        #make space for additions 
+        if(arcpy.Exists(service_additions_postgres)):
+            arcpy.management.Delete(service_additions_postgres)
+            logging.info("additions table deleted")
+
+        service_additions_fc = service_fl_query.save(sde_file, f'{destination_table}_additions')
         count = int(arcpy.management.GetCount(service_additions_fc)[0])
         logging.info(f'{count} additions to {destination_table}')
 
         if (count > 0):
             try:
-                #make space for additions 
-                if(arcpy.Exists(service_additions_postgres)):
-                    arcpy.management.Delete(service_additions_postgres)
-                    logging.info("additions table deleted")
-
-                #upload current additions to postgres
-                arcpy.conversion.FeatureClassToGeodatabase(service_additions_fc, sde_file)
-                logging.info(f'{chunk_size} new additions table uploaded to postgres')
-
                 #insert additions to destination table
                 logging.info(f'inserting {service_additions_fc} into {destination_table}')
                 call_insert_function(cursor, schema)
