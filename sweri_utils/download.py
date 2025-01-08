@@ -232,12 +232,23 @@ def fetch_features(url, params):
         AddError(e.args[0])
         raise e
 
-def service_to_postgres(service_url, database, schema, destination_table, cursor, sde_file, where_clause, wkid, call_insert_function,chunk_size = 70):
+def service_to_postgres(service_url, where_clause, wkid, database, schema, destination_table, cursor, sde_file,  call_insert_function,chunk_size = 70):
     """
-    Some services have geoms that are not well handlded by JSONtoFeatures
-    In these cases services can be uploaded chunk by chunk directly to postgres
+    service_to_postgres allows the capture of records from services that break other methods
+    this method is much slower, and should be used when other methods are exhauseted
+    :param service_url: REST endpoint of feature service
+    :param where_clause:  where clause for filtering features to fetch
+    :param wkid: out spatial reference WKID
+    :param database: destination postgres database
+    :param schema: destination postgres schema
+    :param destination_table: destination postgres table
+    :param cursor: psycopg2 cursor
+    :param sde_file: sde_file connected to target schema
+    :param call_insert_function: calls insert function passed in to insert from additions table to destination table
+    :param chunk_size: check size for batch feature request
     """
-    #clear data from the nfpors table
+    #clear data from the destination table
+    #destination table must be in place and have the proper schema before running
     cursor.execute(f'TRUNCATE {schema}.{destination_table}')
 
     service_fl = FeatureLayer(service_url)
@@ -260,16 +271,16 @@ def service_to_postgres(service_url, database, schema, destination_table, cursor
 
         if (count > 0):
             try:
-                #make space for nfpors additions table
+                #make space for additions 
                 if(arcpy.Exists(service_additions_postgres)):
                     arcpy.management.Delete(service_additions_postgres)
                     logging.info("additions table deleted")
 
-                #upload current addition to postgres
+                #upload current additions to postgres
                 arcpy.conversion.FeatureClassToGeodatabase(service_additions_fc, sde_file)
                 logging.info(f'{chunk_size} new additions table uploaded to postgres')
 
-                #insert additions to nfpors
+                #insert additions to destination table
                 logging.info(f'inserting {service_additions_fc} into {destination_table}')
                 call_insert_function(cursor, schema)
                 

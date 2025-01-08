@@ -24,7 +24,7 @@ def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     destination_table = 'nfpors'
     database = 'sweri'
 
-    service_to_postgres(nfpors_url, database, schema, destination_table, cursor, sde_file, where, wkid, insert_nfpors_additions)
+    service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
