@@ -182,6 +182,37 @@ class DownloadTests(TestCase):
         r = fetch_features('http://test.url/query', {'where': '1=1'})
         self.assertEqual(r, f)
 
+    @patch('arcgis.features.FeatureLayer')
+    def test_service_to_postgres(self, fl_mock):
+        with patch('sweri_utils.download.get_ids') as get_ids_mock,patch(
+            'sweri_utils.download.query_by_id_and_save_to_fc') as query_and_save_mock:
+
+            get_ids_mock.return_value = [1,2,3]
+            query_and_save_mock.return_value = (10, 'out_filepath')
+            url = 'http://some.url/'
+            where_clause = '1=1'
+            wkid = 3587
+            database = 'test_db'
+            schema = 'test_schema'
+            destination_table = 'test_table'
+            cursor = Mock()
+            sde_file = 'test_sde'
+            insert_function = Mock()
+            chunk_size = 2
+            expected_pg_path = 'test_sde\\test_db.test_schema.test_table_additions'
+
+            service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, insert_function, chunk_size)
+
+            cursor.execute.assert_called_once_with(f'TRUNCATE {schema}.{destination_table}')
+            get_ids_mock.assert_called_once_with(url, where=where_clause)
+            query_and_save_mock.assert_has_calls(
+                [call('1,2', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions'),
+                 call('3', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions')]
+            )
+            insert_function.assert_has_calls(
+                [call(cursor, schema),
+                call(cursor, schema)]
+            )
 
 class FilesTests(TestCase):
     @patch('zipfile.ZipFile')
