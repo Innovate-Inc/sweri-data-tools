@@ -1,6 +1,3 @@
-# Use the official Python 3.11 image as the base image
-
-
 
 FROM --platform=linux/amd64 postgres:15-bullseye
 
@@ -28,7 +25,7 @@ RUN mkdir -p /docker-entrypoint-initdb.d
 COPY initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
 COPY update-postgis.sh /usr/local/bin
 
-FROM --platform=linux/amd64 python:3.11-bullseye
+FROM --platform=linux/amd64 python:3.11-bookworm
 
 # Set environment variables to avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -39,12 +36,11 @@ WORKDIR .
 
 # Copy the requirements file
 COPY . .
-
-RUN apt-get update \
-    && apt-get install -y binutils libpq5=12.2 libpq-dev libproj-dev gdal-bin \
-    && python3 -m pip install GDAL==3.3.0\
-    && python3 -m pip install osgeo \
-    && python3 -m pip install -r docker/requirements.txt --no-cache-dir
+RUN apt-get update && apt-get install -y software-properties-common
+RUN apt-get install -y binutils python3-dev gdal-bin libpq5 libpq-dev libproj-dev libgdal-dev python3-gdal
+RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
+RUN export C_INCLUDE_PATH=/usr/include/gdal
+RUN python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
 # Set the default command to run PostgreSQL
 CMD ["python3", "intersections-postgis.py"]
