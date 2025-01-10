@@ -191,7 +191,7 @@ class DownloadTests(TestCase):
             query_and_save_mock.return_value = (10, 'out_filepath')
             url = 'http://some.url/'
             where_clause = '1=1'
-            wkid = 3587
+            wkid = 3857
             database = 'test_db'
             schema = 'test_schema'
             destination_table = 'test_table'
@@ -213,6 +213,34 @@ class DownloadTests(TestCase):
                 [call(cursor, schema),
                 call(cursor, schema)]
             )
+
+    @patch('arcpy.management.GetCount')
+    @patch('arcpy.management.Delete')
+    @patch('arcpy.Exists')
+    def test_query_by_id_and_save_to_fc(self, mock_exists, mock_delete, mock_get_count):
+        id_list = '1,2,3,4'
+        fl_mock = Mock()
+        sde_fc_path = 'test_path'
+        wkid = 3857
+        sde_file = 'test_sde_file'
+        out_fc_name = 'test_out_fc_name'
+
+        mock_query = Mock()
+        mock_query.save.return_value = 'saved_fc_path'
+        fl_mock.query.return_value = mock_query
+
+        mock_exists.return_value = True
+        mock_get_count.return_value = ['5']
+
+        count, saved_fc = query_by_id_and_save_to_fc(id_list, fl_mock, sde_fc_path, wkid, sde_file, out_fc_name)
+
+        self.assertEqual(count, 5)
+        self.assertEqual(saved_fc, 'saved_fc_path')
+        fl_mock.query.assert_called_once_with(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        mock_exists.assert_called_once_with(sde_fc_path)
+        mock_delete.assert_called_once_with(sde_fc_path)
+        mock_query.save.assert_called_once_with(sde_file, out_fc_name)
+        mock_get_count.assert_called_once_with('saved_fc_path')
 
 class FilesTests(TestCase):
     @patch('zipfile.ZipFile')

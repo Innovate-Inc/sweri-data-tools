@@ -258,21 +258,22 @@ def service_to_postgres(service_url, where_clause, wkid, database, schema, desti
     ids = get_ids(service_url, where=where_clause)
     str_ids = [str(i) for i in ids]
     start = 0
+    total_len = len(ids)
 
-    while start < len(ids):
+    while start < total_len:
         id_list = ','.join(str_ids[start:start + chunk_size])
         count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, sde_file, f'{destination_table}_additions')
 
         if (count > 0):
             try:
                 #insert additions to destination table
-                logging.info(f'inserting {fc} into {destination_table}')
                 call_insert_function(cursor, schema)
                 
-                logging.info(f'additions appended to {destination_table}')
             except Exception as e:
                 logging.error(e.args[0])
                 raise e
+        
+        logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
         start+=chunk_size
     
 def query_by_id_and_save_to_fc(id_list, feature_layer, sde_fc_path, wkid, sde_file, out_fc_name):
@@ -282,9 +283,7 @@ def query_by_id_and_save_to_fc(id_list, feature_layer, sde_fc_path, wkid, sde_fi
         #make space for additions 
         if(arcpy.Exists(sde_fc_path)):
             arcpy.management.Delete(sde_fc_path)
-            logging.info("additions table deleted")
 
         service_additions_fc = service_fl_query.save(sde_file, f'{out_fc_name}')
         count = int(arcpy.management.GetCount(service_additions_fc)[0])
-        logging.info(f'{count} additions from {out_fc_name}')
         return count, service_additions_fc
