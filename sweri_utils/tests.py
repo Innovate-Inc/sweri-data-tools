@@ -199,7 +199,7 @@ class DownloadTests(TestCase):
             sde_file = 'test_sde'
             insert_function = Mock()
             chunk_size = 2
-            expected_pg_path = 'test_sde\\test_db.test_schema.test_table_additions'
+            expected_pg_path = os.path.join('test_sde','test_db.test_schema.test_table_additions')
 
             service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, insert_function, chunk_size)
 
