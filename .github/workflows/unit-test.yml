@@ -9,11 +9,17 @@ on:
     branches:
       - main
 jobs:
+
   unit_test:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
     name: unit test python lib
     steps:
+      - name: Install libkrb5 for Kerberos on Linux
+        if: contains(matrix.os, 'ubuntu')
+        run: |
+          sudo apt install -y libkrb5-dev
+          pip install requests-kerberos
       - name: checkout
         uses: actions/checkout@v3
       - uses: actions/setup-python@v5
