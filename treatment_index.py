@@ -345,6 +345,8 @@ def rename_treatment_points(schema, sde_file, cursor, treatment_index):
 # BEGIN Common Attributes Functions
 
 def add_fields_and_indexes(feature_class, region):
+    #adds fields that will contain the pass/fail for each rule, as well as an overall included to be populated later
+
     new_fields = ('included', 'r2', 'r3', 'r4','r5', 'r6')
     for field in new_fields:
         arcpy.management.AddField(feature_class, field, 'TEXT')
@@ -357,7 +359,8 @@ def add_fields_and_indexes(feature_class, region):
             arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
        
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
-    # Do Not Included Entries Already Being Included via Hazardous Fuels
+    # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -372,6 +375,8 @@ def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 def exclude_by_acreage(cursor, schema, table):
+    #removes all treatments with null acerage or <= 5 acres
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -385,6 +390,8 @@ def exclude_by_acreage(cursor, schema, table):
     logging.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
 def trim_whitespace(cursor, schema, table):
+    #Some entries have spaces before or after that interfere with matching, this trims those spaces out
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -399,6 +406,9 @@ def trim_whitespace(cursor, schema, table):
     logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 def include_logging_activities(cursor, schema, table):
+    # Make sure the activity includes 'thin' or 'cut'
+    # Checks the lookup table for method and equipment slated for inclusion
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -428,6 +438,9 @@ def include_logging_activities(cursor, schema, table):
     logging.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
     
 def include_fire_activites(cursor, schema, table):
+    # Make sure the activity includes 'burn' or 'fire'
+    # Checks the lookup table for method and equipment slated for inclusion
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -458,6 +471,9 @@ def include_fire_activites(cursor, schema, table):
     logging.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
 
 def include_fuel_activities(cursor, schema, table):
+    # Make sure the activity includes 'fuel'
+    # Checks the lookup table for method and equipment slated for inclusion
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -486,6 +502,8 @@ def include_fuel_activities(cursor, schema, table):
     logging.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
 
 def special_exclusions(cursor, schema, table):
+    # A final pass to only include what is intended
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -508,9 +526,10 @@ def special_exclusions(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'no' for special exclusions in {schema}.{table}")
 
 def include_other_activites(cursor, schema, table):
+    #lookup based inclusion not dependent on other rules
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -551,6 +570,9 @@ def include_other_activites(cursor, schema, table):
     logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
 
 def set_included(cursor, schema, table):
+    # set included to yes when r5 passes or
+    # r2, r3, or, r4 passes and r6 passes
+
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
@@ -567,7 +589,8 @@ def set_included(cursor, schema, table):
     cursor.execute('COMMIT;')    
 
 def common_attributes_insert(cursor, schema, table, treatment_index):
-    #Need to figure out state and dates outside of date completed
+    # insert records where included = 'yes'
+    
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
