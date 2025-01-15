@@ -40,10 +40,14 @@ if __name__ == '__main__':
         arcpy.analysis.PairwiseIntersect([aoi, target_layer], intersect_output)
         arcpy.management.Delete(target_layer)
         update_schema_for_intersections_insert(intersect_output, 'aoi', target_key)
-        # calculate area if aoi is polygon otherwise just append the features and skip the calculations
+        # calculate area if aoi is polygon otherwise just append the features and set acre_overlap to 0
         if arcpy.Describe(aoi).shapeType == 'Polygon':
             arcpy.management.CalculateGeometryAttributes(intersect_output, [['acre_overlap', 'AREA_GEODESIC']],
                                                      area_unit='ACRES_US')
+        else:
+             # set overlap to 0 if aoi is not a polygon
+            arcpy.management.CalculateField(intersect_output, 'acre_overlap', '0', 'PYTHON3')
+
         arcpy.management.Append(intersect_output, target_table, 'NO_TEST')
 
     arcpy.AddMessage('Generating Output')
