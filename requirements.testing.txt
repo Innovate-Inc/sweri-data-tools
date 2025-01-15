@@ -3,3 +3,4 @@ pytest
 pytest-cov
 git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
 psycopg2
+arcgis
