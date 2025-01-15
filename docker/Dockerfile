@@ -24,6 +24,7 @@ RUN mkdir -p /docker-entrypoint-initdb.d
 
 COPY initdb-postgis.sh /docker-entrypoint-initdb.d/10_postgis.sh
 COPY update-postgis.sh /usr/local/bin
+COPY init.sql /docker-entrypoint-initdb.d/
 
 FROM --platform=linux/amd64 python:3.11-bookworm
 
