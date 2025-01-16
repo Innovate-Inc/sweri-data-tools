@@ -3,3 +3,8 @@
 .idea
 sweri_utils/__pycache__/*
 .vscode/settings.json
+*.csv
+/analysis/*.csv
+/analysis/raw/
+.vscode/settings.json
+nfpors_testing.py
