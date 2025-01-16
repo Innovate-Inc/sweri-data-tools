@@ -353,11 +353,33 @@ def add_fields_and_indexes(feature_class, region):
         arcpy.management.AddIndex(feature_class, field, f'{field}_idx_{region}', ascending="ASCENDING")
 
     arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
+    arcpy.management.AddIndex(feature_class, 'date_completed', f'date_completed_idx_{region}', ascending="ASCENDING")
+    arcpy.management.AddIndex(feature_class, 'act_created_date', f'act_created_date_idx_{region}', ascending="ASCENDING")
+
 
     new_indexes = ('gis_acres', 'activity', 'equipment', 'method')
     for index in new_indexes: 
             arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
-       
+
+def exclude_by_date(cursor, schema, table_name):
+    # Excludes treatment entries before 1984
+    # uses date_completed if available, and act_created_date if date_completed is null
+
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+                   
+    DELETE from {schema}.{table_name} WHERE
+    date_completed < '1984-1-1'::date
+    OR
+    (date_completed is null AND act_created_date < '1984-1-1'::date)
+
+          
+    ''')
+    cursor.execute('COMMIT;')
+
+    logging.info(f"deleted {schema}.{table_name} entries from before 1984")
+
+
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
 
@@ -661,6 +683,7 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
 
         add_fields_and_indexes(postgres_fc, region_number) 
 
+        exclude_by_date(cursor, schema, table_name)
         exclude_by_acreage(cursor, schema, table_name)
         exclude_facts_hazardous_fuels(cursor, schema, table_name, facts_haz_table)
 
