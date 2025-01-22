@@ -1,8 +1,9 @@
 services:
   db:
-#    env_file:
-#      - "./docker/.docker.env"
-    image: postgres:15
+    build:
+      dockerfile: ./Dockerfile.postgis
+    env_file:
+      - "./.env"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -20,6 +21,8 @@ services:
     build:
       context: ../
       dockerfile: ./docker/Dockerfile
+    env_file:
+      - "./.env"
     environment:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
