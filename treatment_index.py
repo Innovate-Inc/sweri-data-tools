@@ -124,6 +124,16 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     logger.info(f'FACTS entries inserted into {schema}.{treatment_index}_temp')
     #FACTS Insert Complete 
 
+def hazardous_fuels_date_filtering(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''             
+        DELETE FROM {schema}.facts_haz_3857_2 WHERE
+        date_completed < '1984-1-1'::date
+        OR
+        (date_completed is null AND date_planned < '1984-1-1'::date);
+    ''')
+    logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
+
 def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
@@ -137,6 +147,19 @@ def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+
+def nfpors_date_filtering(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''             
+        DELETE FROM {schema}.nfpors WHERE
+        act_comp_dt < '1984-1-1'::date
+        OR
+        (act_comp_dt is null AND plan_int_dt < '1984-1-1'::date)
+        OR
+        ((act_comp_dt is null AND plan_int_dt is NULL) AND col_date < '1984-1-1'::date);
+    ''')
+    cursor.execute('COMMIT;')
+    logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
 def nfpors_fund_code(cursor, schema, treatment_index):
 
@@ -361,7 +384,7 @@ def add_fields_and_indexes(feature_class, region):
     for index in new_indexes: 
             arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
 
-def exclude_by_date(cursor, schema, table_name):
+def common_attributes_date_filtering(cursor, schema, table_name):
     # Excludes treatment entries before 1984
     # uses date_completed if available, and act_created_date if date_completed is null
 
@@ -371,13 +394,13 @@ def exclude_by_date(cursor, schema, table_name):
     DELETE from {schema}.{table_name} WHERE
     date_completed < '1984-1-1'::date
     OR
-    (date_completed is null AND act_created_date < '1984-1-1'::date)
+    (date_completed is null AND act_created_date < '1984-1-1'::date);
 
           
     ''')
     cursor.execute('COMMIT;')
 
-    logging.info(f"deleted {schema}.{table_name} entries from before 1984")
+    logging.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
 
 
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
@@ -683,7 +706,7 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
 
         add_fields_and_indexes(postgres_fc, region_number) 
 
-        exclude_by_date(cursor, schema, table_name)
+        common_attributes_date_filtering(cursor, schema, table_name)
         exclude_by_acreage(cursor, schema, table_name)
         exclude_facts_hazardous_fuels(cursor, schema, table_name, facts_haz_table)
 
@@ -731,11 +754,13 @@ if __name__ == "__main__":
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
 
     #MERGE
+    nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
     nfpors_fund_code(cur, target_schema, insert_table)
     nfpors_treatment_date(cur, target_schema, insert_table)
 
     # Insert FACTS entries and enter proper treatement dates
+    hazardous_fuels_date_filtering(cur, target_schema)
     hazardous_fuels_insert(cur, target_schema, insert_table)
     hazardous_fuels_treatment_date(cur, target_schema, insert_table)
 
