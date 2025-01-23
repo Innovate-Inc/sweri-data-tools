@@ -76,7 +76,7 @@ def nfpors_insert(cursor, schema, treatment_index):
         acres, type, category, fund_code, 
         identifier_database, unique_id,
         state, treatment_date, date_source, 
-        shape, globalid
+        agency, shape, globalid
     )
     SELECT
 
@@ -85,7 +85,7 @@ def nfpors_insert(cursor, schema, treatment_index):
         gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
         'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
         st_abbr AS state, act_comp_dt as treatment_date, 'act_comp_dt' as date_source,
-        shape, sde.next_globalid()
+        agency as agency, shape, sde.next_globalid()
 
     FROM {schema}.nfpors;
     ''')
@@ -104,7 +104,8 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         type, category, fund_code, cost_per_uom,
         identifier_database, unique_id,
         uom, state, activity, treatment_date,
-        date_source, shape, globalid
+        date_source, method, equipment, agency,
+        shape, globalid
 
     )
     SELECT
@@ -113,8 +114,9 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
         treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom as uom, state_abbr AS state, activity as activity, date_completed as treatment_date,
-        'date_completed' as date_source, shape, sde.next_globalid()
+        uom AS uom, state_abbr AS state, activity AS activity, date_completed AS treatment_date,
+        'date_completed' AS date_source, method AS method, equipment AS equipment,
+        'USFS' AS agency, shape, sde.next_globalid()
         
     FROM {schema}.facts_haz_3857_2;
     
@@ -644,7 +646,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         objectid, name, date_current, actual_completion_date, acres, 
         type, category, fund_code, cost_per_uom, identifier_database, 
         unique_id, uom, state, activity, treatment_date, date_source, 
-        shape, globalid
+        method, equipment, agency, shape, globalid
 
     )
     SELECT
@@ -655,8 +657,8 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
         cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
         event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity, 
-        date_completed as treatment_date, 'date_completed' as date_source, shape, 
-        sde.next_globalid()
+        date_completed as treatment_date, 'date_completed' as date_source, 
+        method as method, equipment as equipment, 'USFS' as agency, shape, sde.next_globalid()
         
     FROM {schema}.{table}
     WHERE included = 'yes'
