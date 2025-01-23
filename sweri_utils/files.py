@@ -133,4 +133,4 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
 
     #Remove gdb
     arcpy.management.Delete(gdb_path)
-    logging.info(f'{gdb_path} deleted')
+    logging.info(f'{gdb_path} gdb deleted')
