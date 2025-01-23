@@ -9,11 +9,11 @@ from arcgis.features import FeatureLayer
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-import watchtower
+# import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
 
@@ -501,8 +501,8 @@ def include_fuel_activities(cursor, schema, table):
     cursor.execute('COMMIT;')
     logging.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
 
-def special_exclusions(cursor, schema, table):
-    # A final pass to only include what is intended
+def activity_filter(cursor, schema, table):
+    # Filters based on activity to ensure only intended activities enter the database
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
@@ -565,6 +565,23 @@ def include_other_activites(cursor, schema, table):
         AND include = 'TRUE');
 
     
+    ''')
+    cursor.execute('COMMIT;')
+    logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+
+def common_attributes_type_filter(cursor, schema, table):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+                   
+    UPDATE {schema}.{table}
+    SET r5 = 'FAIL'
+    WHERE
+    r5 = 'PASS'
+    AND 
+    nfpors_treatment IN (
+        SELECT value from {schema}.common_attributes_lookup
+        WHERE filter = 'type'
+        AND include = 'FALSE');
     ''')
     cursor.execute('COMMIT;')
     logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
@@ -652,6 +669,8 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
     
 
     for url in urls:
+
+        #expression pulls just the number out of the url, 01-10
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
@@ -669,13 +688,18 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         include_logging_activities(cursor, schema, table_name)
         include_fire_activites(cursor, schema, table_name)
         include_fuel_activities(cursor, schema, table_name)
-        special_exclusions(cursor, schema, table_name)
+        activity_filter(cursor, schema, table_name)
         include_other_activites(cursor, schema, table_name)
+        common_attributes_type_filter(cursor, schema, table_name)
 
         set_included(cursor, schema, table_name)
 
         common_attributes_insert(cursor, schema, table_name, treatment_index)
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
+
+        #Deletes singluar region pg table after processing that table
+        if arcpy.Exists(postgres_fc):
+            arcpy.management.Delete(postgres_fc)
 
 
 if __name__ == "__main__":
@@ -703,9 +727,9 @@ if __name__ == "__main__":
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
 
     #MERGE
     nfpors_insert(cur, target_schema, insert_table)
