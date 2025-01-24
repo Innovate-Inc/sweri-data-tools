@@ -1,4 +1,16 @@
 services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    env_file:
+      - "./.env"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "80:80"
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     build:
       dockerfile: ./Dockerfile.postgis
