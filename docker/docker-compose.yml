@@ -27,13 +27,12 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      DB_PORT: ${DB_PORT}
       DB_HOST: db
     depends_on:
       db:
         condition: service_healthy
 #    restart: always
     volumes:
-      - ../:/app
+      - ..:/code
 volumes:
   postgres_data:

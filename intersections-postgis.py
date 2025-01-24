@@ -1,8 +1,10 @@
+import json
 import logging
 import os
 import requests as r
 from dotenv import load_dotenv
-from osgeo import ogr
+from osgeo import ogr, gdal
+from sweri_utils.download import get_ids, get_all_features
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table
 import sys
 # import watchtower
@@ -94,51 +96,71 @@ def swap_intersection_tables(cursor, schema):
     # drop temp backup table
     cursor.execute(f'DROP TABLE IF EXISTS {schema}.intersections_backup_temp CASCADE;')
     logger.info(f'{schema}.intersections_backup_temp deleted')
+def fetch_features_and_create_geojson(service_url, where, gdb, fc_name, geometry=None, geom_type=None, out_sr=3857,
+                                  out_fields=None, chunk_size = 2000):
+    ids = get_ids(service_url, where, geometry, geom_type)
+    out_features = []
+    # get all features
+    for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size, 'geojson'):
+        out_features += f
+    if len(out_features) == 0:
+        raise Exception(f'No features fetched for ids: {ids}')
+    geojson_feat = {'type': 'FeatureCollection', 'features': out_features}
+    with open(f'{fc_name}.geojson', 'w') as f:
+        json.dump(geojson_feat, f)
+    return f
 
-def geojson_to_postgis(json, postgis_connection, table):
+def geojson_to_postgis(service_url, where, gdb, fc_name, geometry, geom_type, out_sr, out_fields, chunk_size):
+    geojson = fetch_features_and_create_geojson(service_url, where, gdb, fc_name, geometry, geom_type, out_sr, out_fields, chunk_size)
 
     pass
 
-def org_connect_to_postgis(connection_str):
-    return ogr.GetDriver('PostgreSQL').createDataSource(connection_str)
 
 if __name__ == '__main__':
+    gdal.SetConfigOption("PG_LIST_ALL_TABLES", "YES")
+    load_dotenv('.env')
     print('hello again')
-    sys.exit(1)
-    # Define the gdb and sde and load .env
-    load_dotenv()
     wkid = 3857
     # get db schema
     db_schema = os.getenv('SCHEMA')
-    db_host = os.getenv('DB_HOST'),
-    db_port = os.getenv('DB_PORT'),
-    db_name = os.getenv('DB_NAME'),
-    db_user = os.getenv('DB_USER'),
+    db_host = os.getenv('DB_HOST')
+    db_port = int(os.getenv('DB_PORT'))
+    db_name = os.getenv('DB_NAME')
+    db_user = os.getenv('DB_USER')
     db_pw = os.getenv('DB_PASSWORD')
+
     # psycopg2 connection, because arcsde connection is extremely slow during inserts
-    pg_cursor = connect_to_pg_db(
-        db_host, db_port, db_name, db_user, db_pw
-    )
+    pg_cursor = connect_to_pg_db(db_host, db_port, db_name, db_user, db_pw)
 
     # configure intersection sources
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
     # setup intersection source features
     ############## setting intersection sources ################
-    intersections = get_intersection_features(intersection_src_url)
+    #intersections = get_intersection_features(intersection_src_url)
     # handle coded value domains
-    cvs = query_coded_value_domain(intersection_src_url, 0)
-    sources = configure_intersection_sources(intersections, cvs)
-    intersect_sources = sources[0]
-    intersect_targets = sources[1]
+    # cvs = query_coded_value_domain(intersection_src_url, 0)
+    # sources = configure_intersection_sources(intersections, cvs)
+    # intersect_sources = sources[0]
+    # intersect_targets = sources[1]
 
     ############## updating data ################
     # iterate over intersection sources
-    postgis_conn_str = f"PG:host={db_host} dbname={db_name} user={db_user} password={db_pw}"
-    ogr_pg_conn = ogr_connect_to_postgis(postgis_conn_str)
+    postgis_conn_str = f"PG:host='{db_host}' port='{db_port}' dbname='{db_name}' user='{db_user}' password='{db_pw}'"
+    ogr.RegisterAll()
+    driver = gdal.GetDriverByName("PostgreSQL")
+    print(driver)
+    ogr_pg_conn =  ogr.Open(postgis_conn_str)
+    print('ogr', ogr_pg_conn)
+    # layerList = []
+    # for i in ogr_pg_conn:
+    #     daLayer = i.GetName()
+    #     if not daLayer in layerList:
+    #         layerList.append(daLayer)
+    # layerList.sort()
+    # # Close connection
+    # conn = None
     ############## calculating intersections ################
-    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor,
-                                         schema)
-
+    # calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor,
+    #                                      schema
     # create the template for the new intersect
-    swap_intersection_tables(pg_cursor, schema)
-    logger.info(f'INTERSECTIONS UPDATES COMPLETE')
+    # swap_intersection_tables(pg_cursor, schema)

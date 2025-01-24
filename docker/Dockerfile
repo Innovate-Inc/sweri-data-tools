@@ -3,7 +3,7 @@ FROM python:3.11-bookworm
 # Set environment variables to avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 # Set the working directory
-WORKDIR .
+WORKDIR /code
 
 # Copy the requirements file
 COPY . .
@@ -13,5 +13,5 @@ RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
-# Set the default command to run PostgreSQL
+# Set the default command to run python
 CMD ["python3", "intersections-postgis.py"]
