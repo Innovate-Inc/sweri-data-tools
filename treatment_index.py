@@ -9,6 +9,7 @@ from arcgis.features import FeatureLayer
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
+from .error_flagging import find_and_flag_duplicates, flag_high_cost
 import watchtower
 
 logger = logging.getLogger(__name__)
@@ -722,6 +723,9 @@ if __name__ == "__main__":
     fund_source_updates(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
+
+    flag_high_cost(cur, target_schema, f'{insert_table}_temp')
+    find_and_flag_duplicates(cur, target_schema, f'{insert_table}_temp')
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
     rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
