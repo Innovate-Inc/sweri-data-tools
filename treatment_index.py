@@ -9,7 +9,7 @@ from arcgis.features import FeatureLayer
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-from .error_flagging import find_and_flag_duplicates, flag_high_cost
+from error_flagging import find_and_flag_duplicates, flag_high_cost
 import watchtower
 
 logger = logging.getLogger(__name__)
