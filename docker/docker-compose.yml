@@ -11,6 +11,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ${HOST_PGADMIN_DATA_PATH}:/var/lib/pgadmin
   db:
     build:
       dockerfile: ./Dockerfile.postgis
