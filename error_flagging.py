@@ -4,12 +4,7 @@ import logging
 from dotenv import load_dotenv
 import watchtower
 
-
-logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./errors.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
-
-def find_and_flag_duplicates(cursor, schema, table_name):
+def flag_duplicates(cursor, schema, table_name):
 
     # Makes space for duplicate table
     cursor.execute('BEGIN;')
@@ -40,7 +35,7 @@ def find_and_flag_duplicates(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
+    logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
 
     # Creates partitions of each group of duplicates and ranks them
     # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
@@ -88,7 +83,7 @@ def find_and_flag_duplicates(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'Duplicates updated in {schema}.{table_name}')
+    logging.info(f'Duplicates updated in {schema}.{table_name}')
 
 
 def flag_high_cost(cursor, schema, table_name):
@@ -146,15 +141,18 @@ def flag_high_cost(cursor, schema, table_name):
         cost_per_uom/(acres*640) > 10000;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'High cost flagged in error field for {schema}.{target_table}')
+    logging.info(f'High cost flagged in error field for {schema}.{target_table}')
 
 if __name__ == "__main__":
     #Test
     load_dotenv()
     target_table = 'treatment_index_facts_nfpors_temp'
     target_schema = os.getenv('SCHEMA')
+    logger = logging.getLogger(__name__)
+    logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./error_flagging.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+    logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
     cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     flag_high_cost(cur, target_schema, target_table)
-    find_and_flag_duplicates(cur, target_schema, target_table)
+    flag_duplicates(cur, target_schema, target_table)

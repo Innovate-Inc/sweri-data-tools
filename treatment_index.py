@@ -5,18 +5,16 @@ from dotenv import load_dotenv
 import logging
 import re
 from arcgis.features import FeatureLayer
+import watchtower
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-from error_flagging import find_and_flag_duplicates, flag_high_cost
-import watchtower
+from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 logger.addHandler(watchtower.CloudWatchLogHandler())
-
-
 
 def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     
@@ -24,7 +22,6 @@ def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     database = 'sweri'
-
     service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
@@ -773,7 +770,7 @@ if __name__ == "__main__":
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
     flag_high_cost(cur, target_schema, f'{insert_table}_temp')
-    find_and_flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    flag_duplicates(cur, target_schema, f'{insert_table}_temp')
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
     rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
