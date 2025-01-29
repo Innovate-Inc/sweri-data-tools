@@ -52,7 +52,27 @@ def capture_records(url, ids, out_fields, cursor, id_field, source_name, out_sr=
                 raise e
 
 
-def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields, global_id=True):
+def insert_from_db_sde(cursor, schema, insert_table, insert_fields, from_table, from_fields, global_id=True):
+    """
+    Inserts records from one database into another in an enterprise geodatabase
+    :param cursor: psycopg2 connection curosr object
+    :param schema: schema to use
+    :param insert_table: table to insert features into
+    :param insert_fields: list of insert fields for target table
+    :param from_table: table to insert features from
+    :param from_fields: list of field names mapping to insert fields
+    :param global_id: whether to insert global ids or not
+    :return: None
+    """
+    q = f'''insert into {schema}.{insert_table} ({','.join(insert_fields)}) select sde.next_rowid('{schema}','{insert_table}'),{'sde.next_globalid(),' if global_id else ''}{','.join(from_fields)} from {schema}.{from_table};'''
+    logging.info(q)
+    arcpy.AddMessage(q)
+    cursor.execute('BEGIN;')
+    cursor.execute(q)
+    cursor.execute('COMMIT;')
+    logging.info(f'completed {q}')
+
+def insert_from_db_sde(cursor, schema, insert_table, insert_fields, from_table, from_fields, global_id=True):
     """
     Inserts records from one database into another in an enterprise geodatabase
     :param cursor: psycopg2 connection curosr object

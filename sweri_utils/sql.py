@@ -1,3 +1,5 @@
+import logging
+
 import psycopg2
 
 
@@ -26,5 +28,23 @@ def connect_to_pg_db(db_host, db_port, db_name, db_user, db_password):
 
     return conn.cursor()
 
+
+def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields):
+    """
+    Inserts records from one database into another in an enterprise geodatabase
+    :param cursor: psycopg2 connection curosr object
+    :param schema: schema to use
+    :param insert_table: table to insert features into
+    :param insert_fields: list of insert fields for target table
+    :param from_table: table to insert features from
+    :param from_fields: list of field names mapping to insert fields
+    :return: None
+    """
+    q = f'''insert into {schema}.{insert_table} ({','.join(insert_fields)}) select {','.join(from_fields)} from {schema}.{from_table};'''
+    logging.info(q)
+    cursor.execute('BEGIN;')
+    cursor.execute(q)
+    cursor.execute('COMMIT;')
+    logging.info(f'completed {q}')
 
 
