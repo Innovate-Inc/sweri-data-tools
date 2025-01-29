@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from datetime import datetime
-
 import requests as r
 from dotenv import load_dotenv
 from osgeo import ogr, gdal
@@ -56,11 +55,19 @@ def configure_intersection_sources(features, coded_vals, start):
     return intersection_sources, intersection_targets
 
 def update_last_run(features, start_time, url, layer_id):
-    '''
-    updates the last run date for the intersection source, run after intersections complete
-    :param features:
-    :return:
-    '''
+    """
+    Updates the `last_run` attribute for a list of features in a specified layer.
+
+    Args:
+        features (list): A list of feature dictionaries to update.
+        start_time (datetime): The start time to set as the new `last_run` timestamp.
+        url (str): The base URL of the feature service.
+        layer_id (int): The ID of the layer to update.
+
+    Raises:
+        ValueError: If the update request fails or the response is missing `updateResults`.
+    """
+
     update_feat = json.dumps([
         {
             'attributes': {
@@ -69,7 +76,6 @@ def update_last_run(features, start_time, url, layer_id):
             }
         } for f in features
     ])
-
 
     update_r = r.post(url + f'/{layer_id}/updateFeatures', params={'f': 'json', 'features': update_feat})
     if 'updateResults' not in update_r.json():
@@ -100,7 +106,7 @@ def calculate_intersections_and_insert(cursor, schema, insert_table, source_key,
          a.feat_source as id_1_source, 
          b.unique_id as id_2, 
          b.feat_source as id_2_source
-         from sweri.intersection_features a, sweri.intersection_features b
+         from {schema}.intersection_features a, {schema}.intersection_features b
          where ST_INTERSECTS (a.shape, b.shape) 
          and a.feat_source = '{source_key}'
          and b.feat_source = '{target_key}';"""
@@ -123,7 +129,7 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, n
 def swap_intersection_tables(cursor, schema):
     """
     swaps new intersections and existing intersections table
-    :param connection: ArcSDESQLExecute connection
+    :param cursor:
     :param schema: target schema
     :return:
     """
@@ -171,7 +177,6 @@ def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
     cursor.execute('COMMIT;')
 
 
-
 def configure_intersection_features_table(cursor, schema):
     logger.info('moving to postgres table updates')
     # drop temp backup table
@@ -200,14 +205,14 @@ def delete_intersection_features(cursor, schema, source):
     logging.info(f'deleted feat_source: {source} from {schema}.intersection_features')
 
 
-def fetch_all_features_to_intersect(intersect_sources, pg_cursor, schema, insert_table, wkid):
+def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table, wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
             out_feat = fetch_features_and_dump_geojson(value['source'],'1=1', None, None, wkid)
             for f in out_feat:
-                insert_feature_into_db(pg_cursor, f'{schema}.{insert_table}', f, key, value['id'])
+                insert_feature_into_db(cursor, f'{schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
-            insert_from_db(pg_cursor, schema, insert_table,
+            insert_from_db(cursor, schema, insert_table,
                            ( 'shape', 'unique_id', 'feat_source'), value['source'],
                            # do not need to specify object id as we are using sde.net_rowid() in the insert
                            ('shape', value['id'], f"'{key}'"))
@@ -250,7 +255,7 @@ if __name__ == '__main__':
         delete_intersection_features(pg_cursor, db_schema, src)
     ############## fetching features ################
     # get latest features based on source
-    fetch_all_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
+    fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
 
     ############## calculating intersections ################
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
