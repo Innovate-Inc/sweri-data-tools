@@ -1,13 +1,12 @@
 import json
 import logging
 import os
+import sys
 from datetime import datetime
 import requests as r
 from dotenv import load_dotenv
-from osgeo import ogr, gdal
 from sweri_utils.download import get_ids, get_all_features
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db
-
 
 # import watchtower
 logger = logging.getLogger(__name__)
@@ -220,7 +219,6 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
 if __name__ == '__main__':
-    gdal.SetConfigOption("PG_LIST_ALL_TABLES", "YES")
     load_dotenv('.env')
     print('hello again')
     script_start = datetime.now()
