@@ -196,7 +196,7 @@ def configure_intersection_features_table(cursor, schema):
 
 
 def delete_intersection_features(cursor, schema, source):
-    delete_feat_q = f'DELETE FROM {schema}.intersection_features WHERE feat_source = {source};'
+    delete_feat_q = f"DELETE FROM {schema}.intersection_features WHERE feat_source = '{source}';"
     logger.info(f'running {delete_feat_q}')
     cursor.execute('BEGIN;')
     cursor.execute(delete_feat_q)
