@@ -8,6 +8,8 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "80:80"
+    volumes:
+      - /var/lib/pgadmin:/var/lib/pgadmin  
     depends_on:
       db:
         condition: service_healthy
