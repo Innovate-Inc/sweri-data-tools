@@ -85,7 +85,8 @@ def nfpors_insert(cursor, schema, treatment_index):
         st_abbr AS state, act_comp_dt as treatment_date, 'act_comp_dt' as date_source,
         agency as agency, shape, sde.next_globalid()
 
-    FROM {schema}.nfpors;
+    FROM {schema}.nfpors
+    WHERE {schema}.nfpors.shape IS NOT NULL;
     ''')
     cursor.execute('COMMIT;')
 
@@ -116,7 +117,8 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         'date_completed' AS date_source, method AS method, equipment AS equipment,
         'USFS' AS agency, shape, sde.next_globalid()
         
-    FROM {schema}.facts_haz_3857_2;
+    FROM {schema}.facts_haz_3857_2
+    WHERE {schema}.facts_haz_3857_2.shape IS NOT NULL;
     
     ''')
     cursor.execute('COMMIT;')
@@ -660,7 +662,8 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         
     FROM {schema}.{table}
     WHERE included = 'yes'
-    ;
+    AND
+    {schema}.{table}.shape IS NOT NULL;
 
     ''')
     cursor.execute('COMMIT;')
