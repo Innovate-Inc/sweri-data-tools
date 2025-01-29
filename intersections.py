@@ -151,7 +151,7 @@ def swap_intersection_tables(cursor, schema):
     logger.info(f'{schema}.intersections_backup_temp deleted')
 
 def fetch_features_and_dump_geojson(service_url, where, geometry=None, geom_type=None, out_sr=4326,
-                                      out_fields=None, chunk_size=2000):
+                                      out_fields=None, chunk_size=100):
     ids = get_ids(service_url, where, geometry, geom_type)
     out_features = []
     # get all features
@@ -171,9 +171,14 @@ def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
     logger.info(f'inserting feature into {fc_name}')
     json_geom = json.dumps(feature['geometry'])
     q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326));"
-    cursor.execute('BEGIN;')
-    cursor.execute(q)
-    cursor.execute('COMMIT;')
+    try:
+        cursor.execute('BEGIN;')
+        cursor.execute(q)
+        cursor.execute('COMMIT;')
+    except Exception as e:
+        logger.error(f'error inserting feature: {e}, {q}')
+        cursor.execute('ROLLBACK;')
+
 
 
 def configure_intersection_features_table(cursor, schema):
@@ -207,7 +212,7 @@ def delete_intersection_features(cursor, schema, source):
 def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table, wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
-            out_feat = fetch_features_and_dump_geojson(value['source'],'1=1', None, None, wkid)
+            out_feat = fetch_features_and_dump_geojson(value['source'],'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
                 insert_feature_into_db(cursor, f'{schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
