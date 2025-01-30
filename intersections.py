@@ -205,7 +205,7 @@ def configure_new_intersections_table(cursor, schema):
     cursor.execute(f'DROP TABLE IF EXISTS {schema}.new_intersections CASCADE;')
     logger.info(f'{schema}.new_intersection deleted')
     # rename backup backup to temp table to make space for new backup
-    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS SELECT * FROM {schema}.intersections WHERE 1=0;')
+    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS {schema}.intersections WITH NO DATA;')
     logger.info(f'created {schema}.new_intersections from {schema}.intersections')
 
 
@@ -226,9 +226,9 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
                 insert_feature_into_db(cursor, f'{schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
             insert_from_db(cursor, schema, insert_table,
-                           ( 'shape', 'unique_id', 'feat_source'), value['source'],
+                           ('unique_id', 'feat_source'), value['source'],
                            # do not need to specify object id as we are using sde.net_rowid() in the insert
-                           ('shape', value['id'], f"'{key}'"))
+                           ( value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 

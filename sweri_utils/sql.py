@@ -29,9 +29,11 @@ def connect_to_pg_db(db_host, db_port, db_name, db_user, db_password):
     return conn.cursor()
 
 
-def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields):
+def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields, from_shape='shape', to_shape='shape'):
     """
     Inserts records from one database into another in an enterprise geodatabase
+    :param to_shape:
+    :param from_shape:
     :param cursor: psycopg2 connection curosr object
     :param schema: schema to use
     :param insert_table: table to insert features into
@@ -40,7 +42,7 @@ def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from
     :param from_fields: list of field names mapping to insert fields
     :return: None
     """
-    q = f'''insert into {schema}.{insert_table} ({','.join(insert_fields)}) select {','.join(from_fields)} from {schema}.{from_table};'''
+    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_TRANSFORM({from_shape}, 4326), {','.join(from_fields)} from {schema}.{from_table};'''
     logging.info(q)
     cursor.execute('BEGIN;')
     cursor.execute(q)
