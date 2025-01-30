@@ -106,7 +106,7 @@ def calculate_intersections_and_insert(cursor, schema, insert_table, source_key,
          b.unique_id as id_2, 
          b.feat_source as id_2_source
          from {schema}.intersection_features a, {schema}.intersection_features b
-         where ST_INTERSECTS (a.shape, b.shape) 
+         where ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape) 
          and a.feat_source = '{source_key}'
          and b.feat_source = '{target_key}';"""
     cursor.execute('BEGIN;')
@@ -205,7 +205,7 @@ def configure_new_intersections_table(cursor, schema):
     cursor.execute(f'DROP TABLE IF EXISTS {schema}.new_intersections CASCADE;')
     logger.info(f'{schema}.new_intersection deleted')
     # rename backup backup to temp table to make space for new backup
-    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS {schema}.intersections WITH NO DATA;')
+    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS TABLE {schema}.intersections WITH NO DATA;')
     logger.info(f'created {schema}.new_intersections from {schema}.intersections')
 
 
