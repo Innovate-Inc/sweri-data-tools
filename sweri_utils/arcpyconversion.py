@@ -106,14 +106,3 @@ def reproject(fc, target_projection, output_gdb_path):
     return proj_fc
 
 
-def array_to_dict(keys, values):
-    """
-    shallow array to dictionary converter
-    :param keys: names of keys to assign in new object
-    :param values: list of values in same order as keys
-    :return: new dict
-    """
-    x = dict()
-    for i, f in enumerate(keys):
-        x[f] = values[i]
-    return x

@@ -26,7 +26,7 @@ def connect_to_pg_db(db_host, db_port, db_name, db_user, db_password):
         password=db_password
     )
 
-    return conn.cursor()
+    return conn.cursor(), conn
 
 
 def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields, from_shape='shape', to_shape='shape'):

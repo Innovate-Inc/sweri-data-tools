@@ -8,13 +8,13 @@ from dotenv import load_dotenv
 from sweri_utils.download import get_ids, get_all_features
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db
 
-# import watchtower
+import watchtower
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
 
 
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def get_intersection_features(url, layer_id=0):
     intersection_r = r.get(url + f'/{layer_id}/query',
@@ -233,8 +233,8 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
 if __name__ == '__main__':
+    logger.info('starting intersection processing')
     load_dotenv('.env')
-    print('hello again')
     script_start = datetime.now()
     wkid = 4326
     # get db schema
@@ -246,7 +246,7 @@ if __name__ == '__main__':
     db_pw = os.getenv('DB_PASSWORD')
 
     # psycopg2 connection, because arcsde connection is extremely slow during inserts
-    pg_cursor = connect_to_pg_db(db_host, db_port, db_name, db_user, db_pw)
+    pg_cursor, conn = connect_to_pg_db(db_host, db_port, db_name, db_user, db_pw)
 
     # configure intersection sources
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
@@ -278,4 +278,8 @@ if __name__ == '__main__':
     swap_intersection_tables(pg_cursor, db_schema)
     ############## update run info on intersection sources table ################
     update_last_run(intersections, script_start, intersection_src_url, 0)
+
+    ############## write to csv ################
+
+    conn.close()
     logger.info('completed intersection processing')
