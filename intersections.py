@@ -199,6 +199,15 @@ def configure_intersection_features_table(cursor, schema):
     cursor.execute(f'CREATE TABLE {schema}.intersection_features AS SELECT * FROM {schema}.intersection_features_backup')
     logger.info(f'created {schema}.intersection_features from {schema}.intersection_features_backup')
 
+def configure_new_intersections_table(cursor, schema):
+    logger.info('moving to postgres table updates')
+    # drop temp backup table
+    cursor.execute(f'DROP TABLE IF EXISTS {schema}.new_intersections CASCADE;')
+    logger.info(f'{schema}.new_intersection deleted')
+    # rename backup backup to temp table to make space for new backup
+    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS SELECT * FROM {schema}.intersections WHERE 1=0;')
+    logger.info(f'created {schema}.new_intersections from {schema}.intersections')
+
 
 def delete_intersection_features(cursor, schema, source):
     delete_feat_q = f"DELETE FROM {schema}.intersection_features WHERE feat_source = '{source}';"
@@ -261,6 +270,9 @@ if __name__ == '__main__':
     fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
 
     ############## calculating intersections ################
+    # setup table
+    configure_new_intersections_table(pg_cursor, db_schema)
+    # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
     # create the template for the new intersect
     swap_intersection_tables(pg_cursor, db_schema)
