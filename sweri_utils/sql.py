@@ -50,3 +50,7 @@ def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from
     logging.info(f'completed {q}')
 
 
+def pg_copy_to_csv(cursor, schema, table, filename):
+    with open(filename, 'w') as f:
+        cursor.copy_expert(f'COPY {schema}.{table} TO STDOUT WITH CSV HEADER', f)
+    return f

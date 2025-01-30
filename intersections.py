@@ -5,8 +5,11 @@ import sys
 from datetime import datetime
 import requests as r
 from dotenv import load_dotenv
+
+from sweri_utils.conversion import create_csv_and_upload_to_s3
 from sweri_utils.download import get_ids, get_all_features
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db
+from sweri_utils.s3 import upload_to_s3
+from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, pg_copy_to_csv
 
 import watchtower
 logger = logging.getLogger(__name__)
@@ -250,14 +253,12 @@ if __name__ == '__main__':
 
     # configure intersection sources
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
-    # setup intersection source features
+
     ############## setting intersection sources ################
     intersections = get_intersection_features(intersection_src_url)
     # handle coded value domains
     cvs = query_coded_value_domain(intersection_src_url, 0)
-    sources = configure_intersection_sources(intersections, cvs, script_start)
-    intersect_sources = sources[0]
-    intersect_targets = sources[1]
+    intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
 
     ############## setting up intersection features ################
     # setup intersection features table
@@ -265,9 +266,6 @@ if __name__ == '__main__':
     # delete source features and fetch new ones
     for src in intersect_sources.keys():
         delete_intersection_features(pg_cursor, db_schema, src)
-    ############## fetching features ################
-    # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
 
     ############## calculating intersections ################
     # setup table
@@ -276,10 +274,13 @@ if __name__ == '__main__':
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
     # create the template for the new intersect
     swap_intersection_tables(pg_cursor, db_schema)
+
     ############## update run info on intersection sources table ################
-    update_last_run(intersections, script_start, intersection_src_url, 0)
+    update_last_run(intersections, script_start, intersection_src_url, 0) ############## fetching features ################
+    # get latest features based on source
+    fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
 
-    ############## write to csv ################
-
+    ############## write to csv and upload to s3 ################
+    create_csv_and_upload_to_s3(pg_cursor, db_schema, 'intersections', f'intersections_{db_schema}.csv', os.getenv('S3_BUCKET'))
     conn.close()
     logger.info('completed intersection processing')

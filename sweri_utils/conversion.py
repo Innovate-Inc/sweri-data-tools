@@ -1,4 +1,5 @@
 from sweri_utils.s3 import upload_to_s3
+from sweri_utils.sql import pg_copy_to_csv
 
 
 def array_to_dict(keys, values):
@@ -14,11 +15,6 @@ def array_to_dict(keys, values):
     return x
 
 
-def pg_copy_to_csv(cursor, schema, table, filename):
-    with open(f'{filename}.csv', 'w') as f:
-        cursor.copy_expert(f'COPY {schema}.{table} TO STDOUT WITH CSV HEADER', f)
-    return f
-
-def create_csv_and_upload_to_s3(cursor, schema, table, filename, bucket, key):
+def create_csv_and_upload_to_s3(cursor, schema, table, filename, bucket):
     f = pg_copy_to_csv(cursor, schema, table, filename)
-    return upload_to_s3(bucket, f)
+    return upload_to_s3(bucket, f.name, filename)
