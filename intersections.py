@@ -281,6 +281,8 @@ if __name__ == '__main__':
     fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
 
     ############## write to csv and upload to s3 ################
+    logger.info('uploading csv to s3')
     create_csv_and_upload_to_s3(pg_cursor, db_schema, 'intersections', f'intersections_{db_schema}.csv', os.getenv('S3_BUCKET'))
+    logger.info('completed upload to s3')
     conn.close()
     logger.info('completed intersection processing')
