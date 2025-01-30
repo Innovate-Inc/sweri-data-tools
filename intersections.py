@@ -168,7 +168,7 @@ def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
         raise KeyError('missing geometry or properties')
     if id_field not in feature['properties']:
         raise KeyError(f'missing or incorrect id field: {id_field}')
-    logger.info(f'inserting feature into {fc_name}')
+    
     json_geom = json.dumps(feature['geometry'])
     q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326));"
     try:
