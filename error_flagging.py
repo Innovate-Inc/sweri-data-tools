@@ -109,7 +109,7 @@ def flag_high_cost(cursor, schema, table_name):
     # EACH
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{target_table}
+        UPDATE {schema}.{table_name}
         SET error =            
             CASE
                 WHEN error IS NULL THEN 'HIGH_COST'
@@ -127,7 +127,7 @@ def flag_high_cost(cursor, schema, table_name):
     # MILES
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{target_table}
+        UPDATE {schema}.{table_name}
         SET error = 
             CASE
                 WHEN error IS NULL THEN 'HIGH_COST'
@@ -141,7 +141,7 @@ def flag_high_cost(cursor, schema, table_name):
         cost_per_uom/(acres*640) > 10000;
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f'High cost flagged in error field for {schema}.{target_table}')
+    logging.info(f'High cost flagged in error field for {schema}.{table_name}')
 
 if __name__ == "__main__":
     #Test
