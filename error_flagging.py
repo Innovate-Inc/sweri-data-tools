@@ -70,7 +70,7 @@ def flag_duplicates(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
+    logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
 
     # Updates treatment index table to 
     cursor.execute('BEGIN;')
