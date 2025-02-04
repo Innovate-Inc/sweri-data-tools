@@ -14,6 +14,11 @@ def rename_postgres_table(cursor, schema, old_table_name, new_table_name):
     cursor.execute(f'ALTER TABLE {schema}.{old_table_name} RENAME TO {new_table_name};')
     cursor.execute(f'COMMIT;')
 
+def postgres_create_index(cursor, schema, table_name, column_to_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
+    cursor.execute('COMMIT;')
+
 def connect_to_pg_db(db_host, db_port, db_name, db_user, db_password):
  
     conn = psycopg2.connect(
