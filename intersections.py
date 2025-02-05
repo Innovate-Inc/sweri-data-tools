@@ -239,20 +239,7 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
-
-if __name__ == '__main__':
-    logger.info('starting intersection processing')
-    load_dotenv('.env')
-    script_start = datetime.now()
-    wkid = 4326
-    # get db schema
-    db_schema = os.getenv('SCHEMA')
-    db_host = os.getenv('DB_HOST')
-    db_port = int(os.getenv('DB_PORT'))
-    db_name = os.getenv('DB_NAME')
-    db_user = os.getenv('DB_USER')
-    db_pw = os.getenv('DB_PASSWORD')
-
+def run_intersections(db_host, db_port, db_name, db_user, db_pw, db_schema, s3_bucket, start, wkid):
     # psycopg2 connection, because arcsde connection is extremely slow during inserts
     pg_cursor, conn = connect_to_pg_db(db_host, db_port, db_name, db_user, db_pw)
 
@@ -282,7 +269,8 @@ if __name__ == '__main__':
     # setup table
     configure_new_intersections_table(pg_cursor, db_schema)
     # calculate intersections
-    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
+    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor,
+                                         db_schema)
     # create the template for the new intersect
     swap_intersection_tables(pg_cursor, db_schema)
 
@@ -290,9 +278,24 @@ if __name__ == '__main__':
     update_last_run(intersections, script_start, intersection_src_url, 0)
     ############## write to csv and upload to s3 ################
     logger.info('uploading csv to s3')
-    create_csv_and_upload_to_s3(pg_cursor, db_schema, 'intersections', f'intersections_{db_schema}.csv',
-                                os.getenv('S3_BUCKET'))
+    create_csv_and_upload_to_s3(pg_cursor, db_schema, 'intersections', ['id_1', 'id_2','id_1_source','id_2_source','acre_overlap'],f'intersections_{db_schema}.csv', s3_bucket)
     logger.info('completed upload to s3')
     conn.close()
 
+
+if __name__ == '__main__':
+    logger.info('starting intersection processing')
+    load_dotenv('.env')
+    script_start = datetime.now()
+    sr_wkid = 4326
+    # get db schema
+    database_schema = os.getenv('SCHEMA')
+    database_host = os.getenv('DB_HOST')
+    database_port = int(os.getenv('DB_PORT'))
+    database_name = os.getenv('DB_NAME')
+    database_user = os.getenv('DB_USER')
+    database_pw = os.getenv('DB_PASSWORD')
+    s3_bucket_name = os.getenv('S3_BUCKET')
+    # function that runs everything for creating new intersections
+    run_intersections(database_host, database_port, database_name, database_user, database_pw, database_schema, s3_bucket_name, script_start, sr_wkid)
     logger.info('completed intersection processing')

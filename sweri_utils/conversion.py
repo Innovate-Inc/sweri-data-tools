@@ -15,6 +15,6 @@ def array_to_dict(keys, values):
     return x
 
 
-def create_csv_and_upload_to_s3(cursor, schema, table, filename, bucket):
-    f = pg_copy_to_csv(cursor, schema, table, filename)
+def create_csv_and_upload_to_s3(cursor, schema, table, columns, filename, bucket):
+    f = pg_copy_to_csv(cursor, schema, table, filename, columns)
     return upload_to_s3(bucket, f.name, filename)

@@ -50,9 +50,9 @@ def insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from
     logging.info(f'completed {q}')
 
 
-def pg_copy_to_csv(cursor, schema, table, filename):
+def pg_copy_to_csv(cursor, schema, table, filename, columns):
     with open(filename, 'w') as f:
-        cursor.copy_expert(f'COPY {schema}.{table} TO STDOUT WITH CSV HEADER', f)
+        cursor.copy_expert(f'COPY {schema}.{table} ({",".join(columns)})TO STDOUT WITH CSV HEADER', f)
     return f
 
 def refresh_spatial_index_analyze(cursor, schema, table):
