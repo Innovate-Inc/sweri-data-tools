@@ -402,7 +402,7 @@ def common_attributes_date_filtering(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
-    logging.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
+    logger.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
 
 
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
@@ -419,7 +419,7 @@ def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
           
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
+    logger.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 def exclude_by_acreage(cursor, schema, table):
     #removes all treatments with null acerage or <= 5 acres
@@ -434,7 +434,7 @@ def exclude_by_acreage(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"deleted Entries <= 5 acres {schema}.{table}")
+    logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
 def trim_whitespace(cursor, schema, table):
     #Some entries have spaces before or after that interfere with matching, this trims those spaces out
@@ -450,7 +450,7 @@ def trim_whitespace(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
+    logger.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 def include_logging_activities(cursor, schema, table):
     # Make sure the activity includes 'thin' or 'cut'
@@ -482,7 +482,7 @@ def include_logging_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
     
 def include_fire_activites(cursor, schema, table):
     # Make sure the activity includes 'burn' or 'fire'
@@ -515,7 +515,7 @@ def include_fire_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
 
 def include_fuel_activities(cursor, schema, table):
     # Make sure the activity includes 'fuel'
@@ -546,7 +546,7 @@ def include_fuel_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
 
 def activity_filter(cursor, schema, table):
     # Filters based on activity to ensure only intended activities enter the database
@@ -614,7 +614,7 @@ def include_other_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
 
 def common_attributes_type_filter(cursor, schema, table):
     cursor.execute('BEGIN;')
@@ -629,7 +629,7 @@ def common_attributes_type_filter(cursor, schema, table):
         AND include = 'FALSE');
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'no' for problem types in {schema}.{table}")
 
 def set_included(cursor, schema, table):
     # set included to yes when r5 passes or
