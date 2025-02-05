@@ -1,4 +1,7 @@
 import os
+
+from sweri_utils.arcpy.files import gdb_to_postgres
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 import arcpy
 from dotenv import load_dotenv
@@ -8,7 +11,6 @@ from arcgis.features import FeatureLayer
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids
-from sweri_utils.files import gdb_to_postgres
 import watchtower
 
 logger = logging.getLogger(__name__)

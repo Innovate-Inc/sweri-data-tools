@@ -1,11 +1,11 @@
 from typing import cast
 from unittest import TestCase
-from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from .analysis import layer_intersections
+from unittest.mock import patch, Mock, call, mock_open
+from sweri_utils.arcpy.analysis import layer_intersections
 from .download import *
 from .files import *
 from .conversion import *
-from .sql import rename_postgres_table
+from .sql import rename_postgres_table, insert_from_db
 
 
 class DownloadTests(TestCase):

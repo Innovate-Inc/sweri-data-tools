@@ -1,7 +1,9 @@
 import arcpy
 import logging
 import os
-from .conversion import insert_from_db
+
+from sweri_utils.sql import insert_from_db
+
 
 def calculate_area_overlap_and_insert(fc_area_calc, insert_table_path, insert_table_name, connection, schema, insert_fields,
                                       fc_area_calc_from_fields, area_field, units="ACRES_US"):

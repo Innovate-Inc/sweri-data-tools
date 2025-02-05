@@ -14,7 +14,7 @@ def insert_json_into_fc(source, filename, id_field, insert_table,
     :param id_field: id field of FeatureClass
     :param insert_table: table to insert features into
     :param insert_fields: fields to use for InsertCursor
-    :param out_sr: out spatial reference WKID 
+    :param out_sr: out spatial reference WKID
     :param chunk_size: chunk size for batch conversion to FeatureClass
     :return: None
     """
@@ -34,7 +34,7 @@ def capture_records(url, ids, out_fields, cursor, id_field, source_name, out_sr=
     :param out_fields: out fields object for query
     :param cursor: InsertCursor cursor object
     :param id_field: FeatureClass id field
-    :param source_name: FeatureClass name of features being inserted 
+    :param source_name: FeatureClass name of features being inserted
     :param out_sr: out spatial reference WKID
     :return: None
     """

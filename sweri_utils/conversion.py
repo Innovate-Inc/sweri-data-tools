@@ -1,5 +1,5 @@
-from sweri_utils.s3 import upload_to_s3
-from sweri_utils.sql import pg_copy_to_csv
+from .s3 import upload_to_s3
+from .sql import pg_copy_to_csv
 
 
 def array_to_dict(keys, values):

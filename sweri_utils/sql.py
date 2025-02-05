@@ -65,3 +65,38 @@ def refresh_spatial_index_analyze(cursor, schema, table):
     # run VACUUM ANALYZE to increase performance after bulk updates
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     logging.info(f'refreshed spatial index on {schema}.{table}')
+
+def rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, drop_temp=True):
+    """
+    swaps new intersections and existing intersections table
+    :param drop_temp:
+    :param new_table_name:
+    :param backup_table_name:
+    :param main_table_name:
+    :param cursor:
+    :param schema: target schema
+    :return:
+    """
+    logging.info('moving to postgres table updates')
+    # rename backup  to temp table to make space for new backup
+    rename_postgres_table(cursor, schema, backup_table_name,
+                          f'{backup_table_name}_temp')
+    logging.info(f'{schema}.{backup_table_name} renamed to {schema}.{backup_table_name}_temp')
+
+    # rename current table to backup table
+    rename_postgres_table(cursor, schema, main_table_name, backup_table_name)
+    logging.info(f'{schema}.{main_table_name} renamed to {schema}.{backup_table_name}')
+
+    # rename new intersections table to new data
+    rename_postgres_table(cursor, schema, new_table_name, main_table_name)
+    logging.info(f'{schema}.{new_table_name} renamed to {schema}.{main_table_name}')
+
+    # drop (default) or swap out temp table with new table
+    if drop_temp:
+        # drop temp backup table
+        cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
+        logging.info(f'{schema}.{backup_table_name}_temp deleted')
+    else:
+        # cycle temp backup into new table
+        rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
+        logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')

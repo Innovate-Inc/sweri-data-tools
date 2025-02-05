@@ -4,11 +4,10 @@ import os
 from datetime import datetime
 import requests as r
 from dotenv import load_dotenv
-
 from sweri_utils.conversion import create_csv_and_upload_to_s3
-from sweri_utils.download import get_ids, get_all_features
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index_analyze
-
+from sweri_utils.download import fetch_features, fetch_geojson_features
+from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index_analyze, \
+    rotate_tables
 import watchtower
 
 logger = logging.getLogger(__name__)
@@ -16,15 +15,6 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='
                     datefmt='%Y-%m-%d %H:%M:%S')
 
 logger.addHandler(watchtower.CloudWatchLogHandler())
-
-
-def get_intersection_features(url, layer_id=0):
-    intersection_r = r.get(url + f'/{layer_id}/query',
-                           params={'f': 'json', 'where': '1=1', 'outFields': '*'})
-    intersections_json = intersection_r.json()
-    if 'features' not in intersections_json:
-        raise KeyError('features')
-    return intersections_json['features']
 
 
 def configure_intersection_sources(features, coded_vals, start):
@@ -129,81 +119,6 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, n
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 
-# def swap_intersection_tables(cursor, schema, main_table, backup_table, new_table):
-#     """
-#     swaps new intersections and existing intersections table
-#     :param cursor:
-#     :param schema: target schema
-#     :return:
-#     """
-#     logger.info('moving to postgres table updates')
-#     # rename backup backup to temp table to make space for new backup
-#     rename_postgres_table(cursor, schema, 'intersections_backup',
-#                           'intersections_backup_temp')
-#     logger.info(f'{schema}.intersections_backup renamed to {schema}.intersections_backup_temp')
-#
-#     # rename current table to backup table
-#     rename_postgres_table(cursor, schema, 'intersections', 'intersections_backup')
-#     logger.info(f'{schema}.intersections renamed to {schema}.intersections_backup')
-#
-#     # rename new intersections table to new data
-#     rename_postgres_table(cursor, schema, 'new_intersections', 'intersections')
-#     logger.info(f'{schema}.new_intersections renamed to {schema}.intersections')
-#
-#     # drop temp backup table
-#     cursor.execute(f'DROP TABLE IF EXISTS {schema}.intersections_backup_temp CASCADE;')
-#     logger.info(f'{schema}.intersections_backup_temp deleted')
-
-
-def swap_intersection_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, drop_temp=True):
-    """
-    swaps new intersections and existing intersections table
-    :param drop_temp:
-    :param new_table_name:
-    :param backup_table_name:
-    :param main_table_name:
-    :param cursor:
-    :param schema: target schema
-    :return:
-    """
-    logger.info('moving to postgres table updates')
-    # rename backup  to temp table to make space for new backup
-    rename_postgres_table(cursor, schema, backup_table_name,
-                          f'{backup_table_name}_temp')
-    logger.info(f'{schema}.{backup_table_name} renamed to {schema}.{backup_table_name}_temp')
-
-    # rename current table to backup table
-    rename_postgres_table(cursor, schema, main_table_name, backup_table_name)
-    logger.info(f'{schema}.{main_table_name} renamed to {schema}.{backup_table_name}')
-
-    # rename new intersections table to new data
-    rename_postgres_table(cursor, schema, new_table_name, main_table_name)
-    logger.info(f'{schema}.{new_table_name} renamed to {schema}.{main_table_name}')
-
-    # drop (default) or swap out temp table with new table
-    if drop_temp:
-        # drop temp backup table
-        cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
-        logger.info(f'{schema}.intersections_backup_temp deleted')
-    else:
-        # cycle temp backup into new table
-        rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
-        logger.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
-
-def fetch_features_and_dump_geojson(service_url, where, geometry=None, geom_type=None, out_sr=4326,
-                                    out_fields=None, chunk_size=100):
-    ids = get_ids(service_url, where, geometry, geom_type)
-    out_features = []
-    # get all features
-    for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size, 'geojson'):
-        # change to insert directly into db
-        out_features += f
-
-    if len(out_features) == 0:
-        raise Exception(f'No features fetched for ids: {ids}')
-    return out_features
-
-
 def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
     if ('geometry' not in feature) or ('properties' not in feature):
         raise KeyError('missing geometry or properties')
@@ -263,7 +178,7 @@ def delete_intersection_features(cursor, schema, source):
 def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table, wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
-            out_feat = fetch_features_and_dump_geojson(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
+            out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
                 insert_feature_into_db(cursor, f'{schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
@@ -289,6 +204,7 @@ def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table
     cursor.execute('COMMIT;')
     logger.info(f'completed import of {csv_file} into {db_schema}.{destination_table}')
 
+
 def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
     # psycopg2 connection, because arcsde connection is extremely slow during inserts
 
@@ -297,7 +213,7 @@ def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
 
     ############## setting intersection sources ################
-    intersections = get_intersection_features(intersection_src_url)
+    intersections = fetch_features(f'{intersection_src_url}/0/query',{'f': 'json', 'where': '1=1', 'outFields': '*'})
     # handle coded value domains
     cvs = query_coded_value_domain(intersection_src_url, 0)
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
@@ -321,7 +237,7 @@ def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
     # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
     # create the template for the new intersect
-    swap_intersection_tables(pg_cursor, db_schema, 'intersections', 'intersections_backup', 'new_intersections', drop_temp=True)
+    rotate_tables(pg_cursor, db_schema, 'intersections', 'intersections_backup', 'new_intersections', drop_temp=True)
 
     ############## update run info on intersection sources table ################
     update_last_run(intersections, start, intersection_src_url, 0)
@@ -331,10 +247,9 @@ def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
     logger.info('completed upload to s3')
     conn.close()
 
-def update_intersections_rds_db(rds_host, rds_port, rds_name, rds_user, rds_password, rds_schema, s3_bucket):
-    logger.info('connecting to rds database')
-    rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_host, rds_port, rds_name, rds_user, rds_password)
-    # logger.info('importing csv into postgres')
+
+def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
+    logger.info('importing csv into postgres')
     import_s3_csv_to_postgres_table(rds_pg_cursor,
                                     rds_schema,
                                     ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
@@ -343,7 +258,7 @@ def update_intersections_rds_db(rds_host, rds_port, rds_name, rds_user, rds_pass
                                     f'intersections_{rds_schema}.csv')
     # swap the tables in the rds db
     logger.info('swapping tables')
-    swap_intersection_tables(rds_pg_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
+    rotate_tables(rds_pg_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
                              drop_temp=False)
     rds_pg_conn.close()
 
@@ -377,6 +292,7 @@ if __name__ == '__main__':
     rds_db_name = os.getenv('RDS_DB_NAME')
     rds_db_user = os.getenv('RDS_DB_USER')
     rds_db_password = os.getenv('RDS_DB_PASSWORD')
+    rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password)
     # connect and upload
-    update_intersections_rds_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password, rds_db_schema, s3_bucket_name)
+    update_intersections_rds_db(rds_pg_cursor, rds_pg_conn, rds_db_schema, s3_bucket_name)
     logger.info('completed intersection processing')
