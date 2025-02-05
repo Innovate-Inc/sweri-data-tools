@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import logging
 import re
 from arcgis.features import FeatureLayer
-import watchtower
+# import watchtower
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
 from sweri_utils.download import get_ids, service_to_postgres
@@ -14,7 +14,7 @@ from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def create_temp_table(sde_file, table_name, projection, cur, schema):
 
@@ -40,6 +40,7 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['identifier_database', 'TEXT', 'Identifier Database', 255, '', ''],
             ['date_current', 'DATE', 'Date Current', '', '', ''],
             ['actual_completion_date', 'DATE', 'Actual Completion Date', '', '', ''],
+            ['activity_code', 'TEXT', 'Activity Code', 255, '', ''],
             ['activity', 'TEXT', 'Activity', 255, '', ''],
             ['method', 'TEXT', 'Method', 255, '', ''],
             ['equipment', 'TEXT', 'Equipment', 255, '', ''],
@@ -48,6 +49,7 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['agency', 'TEXT', 'Agency', 255, '', ''],
             ['fund_source', 'TEXT', 'Fund Source', 255, '', ''],
             ['fund_code', 'TEXT', 'Fund Code', 255, '', 'fund_name'],
+            ['total_cost', 'DOUBLE', 'Total Cost', '', '', ''],
             ['cost_per_uom', 'DOUBLE', 'Cost per Unit of Measure', '', '', ''],
             ['uom', 'TEXT', 'Unit of Measure', 255, '', ''],
             ['error', 'TEXT', 'Error', 255, '', '']
@@ -55,8 +57,8 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
     )
 
     fields_to_index = ['unique_id','name','state','acres','treatment_date','date_source',
-    'identifier_database','date_current','actual_completion_date','activity','method','equipment',
-    'category','type','agency','fund_source','fund_code','cost_per_uom','uom','error']
+    'identifier_database','date_current','actual_completion_date','activity','activity_code','method','equipment',
+    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error']
 
     for field in fields_to_index:
         postgres_create_index(cur, schema, f'{table_name}_temp', field)
@@ -145,10 +147,10 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     INSERT INTO {schema}.{treatment_index}_temp(
 
         objectid, name, 
-        date_current, actual_completion_date, acres, 
+        date_current, actual_completion_date, acres,    
         type, category, fund_code, cost_per_uom,
         identifier_database, unique_id,
-        uom, state, activity, treatment_date,
+        uom, state, activity, activity_code, treatment_date,
         date_source, method, equipment, agency,
         shape
 
@@ -159,7 +161,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
         treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom AS uom, state_abbr AS state, activity AS activity, date_completed AS treatment_date,
+        uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, date_completed AS treatment_date,
         'date_completed' AS date_source, method AS method, equipment AS equipment,
         'USFS' AS agency, shape
         
@@ -295,6 +297,30 @@ def fund_source_updates(cursor, schema, treatment_index):
     cursor.execute('COMMIT;')
 
     logger.info(f'updated fund_source in {schema}.{treatment_index}_temp')
+
+def fix_typos(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{treatment_index}_temp
+        SET type = 'Biomass Removal'
+        WHERE 
+        type = 'Biomass Removall'
+    ''')
+    cursor.execute('COMMIT;')
+
+def update_total_cost(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''      
+        UPDATE {schema}.{treatment_index}_temp
+        SET total_cost = 
+            CASE
+                WHEN uom = 'EACH' THEN cost_per_uom
+                WHEN uom = 'ACRES' THEN cost_per_uom * acres
+                WHEN uom = 'MILES' THEN cost_per_uom * (acres / 640)
+                ELSE total_cost
+            END;
+    ''')
+    cursor.execute('COMMIT;')
 
 
 def treatment_index_renames(cursor, schema, treatment_index, sde_file):
@@ -710,7 +736,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
 
         objectid, name, date_current, actual_completion_date, acres, 
         type, category, fund_code, cost_per_uom, identifier_database, 
-        unique_id, uom, state, activity, treatment_date, date_source, 
+        unique_id, uom, state, activity, activity_code, treatment_date, date_source, 
         method, equipment, agency, shape
 
     )
@@ -721,9 +747,10 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         date_completed AS actual_completion_date, gis_acres AS acres, 
         nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
         cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
-        event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity, 
-        date_completed as treatment_date, 'date_completed' as date_source, 
-        method as method, equipment as equipment, 'USFS' as agency, shape
+        event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity,
+        activity_code as activity_code, date_completed as treatment_date,
+        'date_completed' as date_source, method as method, equipment as equipment, 
+        'USFS' as agency, shape as shape
         
     FROM {schema}.{table}
     WHERE included = 'yes'
@@ -841,6 +868,8 @@ if __name__ == "__main__":
 
     # Insert NFPORS, convert isbil Yes/No to fund_code 'BIL'/null
     fund_source_updates(cur, target_schema, insert_table)
+    update_total_cost(cur, target_schema, insert_table)
+    fix_typos(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
