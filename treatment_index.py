@@ -621,10 +621,8 @@ def common_attributes_type_filter(cursor, schema, table):
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
-    SET r5 = 'FAIL'
+    SET included = 'no'
     WHERE
-    r5 = 'PASS'
-    AND 
     nfpors_treatment IN (
         SELECT value from {schema}.common_attributes_lookup
         WHERE filter = 'type'
