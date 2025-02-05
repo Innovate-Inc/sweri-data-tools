@@ -1,15 +1,13 @@
 import json
 import logging
 import os
-import sys
 from datetime import datetime
 import requests as r
 from dotenv import load_dotenv
 
 from sweri_utils.conversion import create_csv_and_upload_to_s3
 from sweri_utils.download import get_ids, get_all_features
-from sweri_utils.s3 import upload_to_s3
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, pg_copy_to_csv
+from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index_analyze
 
 import watchtower
 
@@ -240,18 +238,6 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
                            (value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
-
-
-def refresh_spatial_index_analyze(cursor, schema, table):
-    logger.info(f'refreshing spatial index on {schema}.{table}')
-    cursor.execute('BEGIN;')
-    cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
-    # recreate index
-    cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
-    cursor.execute('COMMIT;')
-    # run VACUUM ANALYZE to help with performance
-    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
-    logger.info(f'refreshed spatial index on {schema}.{table}')
 
 
 if __name__ == '__main__':
