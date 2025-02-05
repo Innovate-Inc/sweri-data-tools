@@ -54,3 +54,14 @@ def pg_copy_to_csv(cursor, schema, table, filename):
     with open(filename, 'w') as f:
         cursor.copy_expert(f'COPY {schema}.{table} TO STDOUT WITH CSV HEADER', f)
     return f
+
+def refresh_spatial_index_analyze(cursor, schema, table):
+    logging.info(f'refreshing spatial index on {schema}.{table}')
+    cursor.execute('BEGIN;')
+    cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
+    # recreate index
+    cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+    cursor.execute('COMMIT;')
+    # run VACUUM ANALYZE to increase performance after bulk updates
+    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
+    logging.info(f'refreshed spatial index on {schema}.{table}')
