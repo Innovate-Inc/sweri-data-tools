@@ -248,9 +248,9 @@ def refresh_spatial_index_analyze(cursor, schema, table):
     cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
     # recreate index
     cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
-    # run VACUUM ANALYZE to increase performance after bulk updates
-    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     cursor.execute('COMMIT;')
+    # run VACUUM ANALYZE to help with performance
+    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     logger.info(f'refreshed spatial index on {schema}.{table}')
 
 
