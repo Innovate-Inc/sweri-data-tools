@@ -616,20 +616,20 @@ def include_other_activites(cursor, schema, table):
     cursor.execute('COMMIT;')
     logger.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
 
-def common_attributes_type_filter(cursor, schema, table):
+def common_attributes_type_filter(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
-    cursor.execute(f'''
-                   
-    UPDATE {schema}.{table}
-    SET included = 'no'
-    WHERE
-    nfpors_treatment IN (
-        SELECT value from {schema}.common_attributes_lookup
-        WHERE filter = 'type'
-        AND include = 'FALSE');
+    cursor.execute(f'''           
+        DELETE from staging.{treatment_index}_temp 
+        WHERE
+        type IN (
+            SELECT value from staging.common_attributes_lookup
+            WHERE filter = 'type'
+            AND include = 'FALSE')
+        AND
+        identifier_database = 'FACTS Common Attributes';
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"included set to 'no' for problem types in {schema}.{table}")
+    logger.info(f"deleted Common Attributes problem types from {schema}.{treatment_index}")
 
 def set_included(cursor, schema, table):
     # set included to yes when r5 passes or
@@ -737,7 +737,6 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         include_fuel_activities(cursor, schema, table_name)
         activity_filter(cursor, schema, table_name)
         include_other_activites(cursor, schema, table_name)
-        common_attributes_type_filter(cursor, schema, table_name)
 
         set_included(cursor, schema, table_name)
 
@@ -777,6 +776,8 @@ if __name__ == "__main__":
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+
+    common_attributes_type_filter(cur, target_schema, insert_table)
 
     #MERGE
     nfpors_date_filtering(cur, target_schema)
