@@ -269,8 +269,7 @@ def run_intersections(db_host, db_port, db_name, db_user, db_pw, db_schema, s3_b
     # setup table
     configure_new_intersections_table(pg_cursor, db_schema)
     # calculate intersections
-    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor,
-                                         db_schema)
+    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
     # create the template for the new intersect
     swap_intersection_tables(pg_cursor, db_schema)
 
