@@ -90,9 +90,19 @@ def query_coded_value_domain(url, layer):
     cv = d_json['domains'][0]['codedValues']
     return {c['code']: c['name'] for c in cv}
 
+def delete_existing_intersects(cursor, schema, table, source_key, target_key):
+    delete_feat_q = f"DELETE FROM {schema}.{table} WHERE id_1_source = '{source_key}' and id_2_source = '{target_key}';"
+    logger.info(f'running {delete_feat_q}')
+    cursor.execute('BEGIN;')
+    cursor.execute(delete_feat_q)
+    cursor.execute('COMMIT;')
+    logger.info(f'deleted feat_source: {source_key} and {target_key} from {schema}.{table}')
+
 
 def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
     logger.info(f'beginning intersections on {source_key} and {target_key}')
+    # delete existing intersections and replace with new ones
+    delete_existing_intersects(cursor, schema, insert_table, source_key, target_key)
     query = f""" insert into {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
          select ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
          a.unique_id as id_1, 
@@ -158,11 +168,11 @@ def configure_intersection_features_table(cursor, schema):
 
 def configure_new_intersections_table(cursor, schema):
     logger.info('moving to postgres table updates')
-    # drop temp backup table
+    # drop existing intersections table
     cursor.execute(f'DROP TABLE IF EXISTS {schema}.new_intersections CASCADE;')
     logger.info(f'{schema}.new_intersection deleted')
-    # rename backup backup to temp table to make space for new backup
-    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS TABLE {schema}.intersections WITH NO DATA;')
+    # recreate new intersections from existing intersections
+    cursor.execute(f'CREATE TABLE {schema}.new_intersections AS SELECT * FROM {schema}.intersections;')
     logger.info(f'created {schema}.new_intersections from {schema}.intersections')
 
 
@@ -193,7 +203,7 @@ def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table,
 def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table, s3_bucket, csv_file, aws_region='us-west-2'):
     cursor.execute('BEGIN;')
     # delete existing data in destination table
-    cursor.execute('DELETE FROM {db_schema}.{destination_table};')
+    cursor.execute(f'DELETE FROM {db_schema}.{destination_table};')
     # use aws_s3 extension to insert data from the csv file in s3 into the postgres table
     cursor.execute(f"""
         SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', 
