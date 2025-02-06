@@ -110,7 +110,7 @@ def calculate_intersections_and_insert(cursor, schema, insert_table, source_key,
          b.unique_id as id_2, 
          b.feat_source as id_2_source
          from {schema}.intersection_features a, {schema}.intersection_features b
-         where ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape) 
+         where ST_INTERSECTS (a.shape, b.shape) 
          and a.feat_source = '{source_key}'
          and b.feat_source = '{target_key}';"""
     cursor.execute('BEGIN;')
@@ -136,7 +136,7 @@ def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
         raise KeyError(f'missing or incorrect id field: {id_field}')
 
     json_geom = json.dumps(feature['geometry'])
-    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326));"
+    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_SetSRID(ST_MakeValid(ST_GeomFromGeoJSON('{json_geom}')), 4326));"
     try:
         cursor.execute('BEGIN;')
         cursor.execute(q)
@@ -260,7 +260,7 @@ def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
 
 def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
     logger.info('importing csv into postgres')
-    import_s3_csv_to_postgres_table(rds_pg_cursor,
+    import_s3_csv_to_postgres_table(rds_cursor,
                                     rds_schema,
                                     ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                     'intersections_s3',
@@ -270,7 +270,7 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
     logger.info('swapping tables')
     rotate_tables(rds_pg_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
                              drop_temp=False)
-    rds_pg_conn.close()
+    rds_conn.close()
 
 
 if __name__ == '__main__':
