@@ -7,4 +7,4 @@ sweri_utils/__pycache__/*
 /analysis/raw/
 .vscode/settings.json
 nfpors_testing.py
-__pycache__/error_flagging.cpython-311.pyc
+__pycache__/*

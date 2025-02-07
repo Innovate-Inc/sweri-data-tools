@@ -4,8 +4,8 @@ import logging
 from dotenv import load_dotenv
 # import watchtower
 
-def flag_duplicates(cursor, schema, table_name):
-
+def create_duplicate_table(cursor, schema, table_name):
+    
     # Makes space for duplicate table
     cursor.execute('BEGIN;')
     cursor.execute(f'''
@@ -37,6 +37,7 @@ def flag_duplicates(cursor, schema, table_name):
     cursor.execute('COMMIT;')
     logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
 
+def flag_duplicate_table(cursor, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
     # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
     # Ensures 1 record kept and all others dropped for each group of duplicates
@@ -72,7 +73,8 @@ def flag_duplicates(cursor, schema, table_name):
     cursor.execute('COMMIT;')
     logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
 
-    # Updates treatment index table to 
+def update_treatment_index_duplicates(cursor, schema, table_name):
+    # Updates treatment index table to match duplicate flags in duplicate table
     cursor.execute('BEGIN;')
     cursor.execute(f'''
 
@@ -86,9 +88,16 @@ def flag_duplicates(cursor, schema, table_name):
     logging.info(f'Duplicates updated in {schema}.{table_name}')
 
 
-def flag_high_cost(cursor, schema, table_name):
-    # flags treatments with more than $10,000 spent per acre of treatment 
-    # ACRES
+def flag_duplicates(cursor, schema, table_name):
+    # Create a table of all duplicates
+    # Flag table with DUPLICATE-KEEP or DUPLICATE-DROP for each record
+    # Update treatment index with duplicate flags from duplicate table
+
+    create_duplicate_table(cursor, schema, table_name)
+    flag_duplicate_table(cursor, schema, table_name)
+    update_treatment_index_duplicates(cursor, schema, table_name)
+
+def flag_high_cost_acres(cursor, schema, table_name):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
@@ -106,7 +115,7 @@ def flag_high_cost(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
-    # EACH
+def flag_high_cost_each(cursor, schema, table_name):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
@@ -124,7 +133,7 @@ def flag_high_cost(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
-    # MILES
+def flag_high_cost_miles(cursor, schema, table_name):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
@@ -143,8 +152,16 @@ def flag_high_cost(cursor, schema, table_name):
     cursor.execute('COMMIT;')
     logging.info(f'High cost flagged in error field for {schema}.{table_name}')
 
+def flag_high_cost(cursor, schema, table_name):
+    # Flags treatments with more than $10,000 spent per acre of treatment 
+    # Different functions are needed based on the uom or Unit of Measure
+    # Current uom possibilites are acres, each, and miles
+
+    flag_high_cost_acres(cursor, schema, table_name)
+    flag_high_cost_each(cursor, schema, table_name)
+    flag_high_cost_miles(cursor, schema, table_name)
+
 if __name__ == "__main__":
-    #Test
     load_dotenv()
     target_table = 'treatment_index_facts_nfpors_temp'
     target_schema = os.getenv('SCHEMA')
