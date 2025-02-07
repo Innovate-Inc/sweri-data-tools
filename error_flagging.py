@@ -156,6 +156,7 @@ def flag_high_cost(cursor, schema, table_name):
     # flags treatments with more than $10,000 spent per acre of treatment 
     # different functions are needed based on the uom or Unit of Measure
     # Current uom possibilites are acres, each, and miles
+    
     flag_high_cost_acres(cursor, schema, table_name)
     flag_high_cost_each(cursor, schema, table_name)
     flag_high_cost_miles(cursor, schema, table_name)
