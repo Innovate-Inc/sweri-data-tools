@@ -153,16 +153,15 @@ def flag_high_cost_miles(cursor, schema, table_name):
     logging.info(f'High cost flagged in error field for {schema}.{table_name}')
 
 def flag_high_cost(cursor, schema, table_name):
-    # flags treatments with more than $10,000 spent per acre of treatment 
-    # different functions are needed based on the uom or Unit of Measure
+    # Flags treatments with more than $10,000 spent per acre of treatment 
+    # Different functions are needed based on the uom or Unit of Measure
     # Current uom possibilites are acres, each, and miles
-    
+
     flag_high_cost_acres(cursor, schema, table_name)
     flag_high_cost_each(cursor, schema, table_name)
     flag_high_cost_miles(cursor, schema, table_name)
 
 if __name__ == "__main__":
-    #Test
     load_dotenv()
     target_table = 'treatment_index_facts_nfpors_temp'
     target_schema = os.getenv('SCHEMA')
