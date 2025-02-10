@@ -6,7 +6,7 @@ import requests as r
 from dotenv import load_dotenv
 from sweri_utils.conversion import create_csv_and_upload_to_s3
 from sweri_utils.download import fetch_features, fetch_geojson_features
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index_analyze, \
+from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index, \
     rotate_tables, copy_table_across_servers
 import watchtower
 
@@ -200,11 +200,11 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                 value['source'],
                 docker_cursor,
                 docker_schema,
-                value['source'],
-                (value['id'], f"'{key}'"),
-                ('unique_id', 'feat_source'),
-
-                'intersection_features')
+                value['source'])
+            insert_from_db(docker_cursor, docker_schema, insert_table,
+                           ('unique_id', 'feat_source'), value['source'],
+                           # do not need to specify object id as we are using sde.net_rowid() in the insert
+                           (value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
@@ -248,8 +248,11 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features', rds_db_cursor, rds_schema, wkid)
     # refresh the spatial index
-    refresh_spatial_index_analyze(docker_db_cursor, docker_schema, 'intersection_features')
-
+    refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
+    # run VACUUM ANALYZE to increase performance after bulk updates
+    docker_conn.autocommit = True
+    docker_db_cursor.execute(f'VACUUM ANALYZE {docker_schema}.intersection_features;')
+    docker_conn.autocommit = False
     ############## calculating intersections ################
     # setup table
     configure_new_intersections_table(docker_db_cursor, docker_schema)

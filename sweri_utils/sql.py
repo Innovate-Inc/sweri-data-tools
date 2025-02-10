@@ -55,15 +55,13 @@ def pg_copy_to_csv(cursor, schema, table, filename, columns):
         cursor.copy_expert(f'COPY (SELECT row_number() OVER () AS objectid, {",".join(columns)} FROM {schema}.{table}) TO STDOUT WITH CSV HEADER', f)
     return f
 
-def refresh_spatial_index_analyze(cursor, schema, table):
+def refresh_spatial_index(cursor, schema, table):
     logging.info(f'refreshing spatial index on {schema}.{table}')
     cursor.execute('BEGIN;')
     cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
     # recreate index
     cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
     cursor.execute('COMMIT;')
-    # run VACUUM ANALYZE to increase performance after bulk updates
-    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     logging.info(f'refreshed spatial index on {schema}.{table}')
 
 def rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, drop_temp=True):
@@ -101,20 +99,8 @@ def rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_
         rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
         logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
 
-def copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_fields, insert_fields, insert_table):
-    """
+def copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table):
 
-    :param from_cursor:
-    :param from_schema:
-    :param from_table:
-    :param to_cursor:
-    :param to_schema:
-    :param to_table:
-    :param from_fields:
-    :param insert_fields:
-    :param insert_table:
-    :return:
-    """
     logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
     with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
         to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
@@ -122,5 +108,4 @@ def copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, t
             for data in out_copy:
                 in_copy.write(data)
 
-    insert_from_db(to_cursor, to_schema, insert_table , insert_fields, to_table, from_fields)
     logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
