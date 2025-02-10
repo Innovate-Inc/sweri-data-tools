@@ -1,7 +1,8 @@
-from sweri_utils.sql import  connect_to_pg_db
+from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
 import os
 import logging
 from dotenv import load_dotenv
+
 # import watchtower
 
 def create_duplicate_table(cursor, schema, table_name):
@@ -36,6 +37,18 @@ def create_duplicate_table(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
     logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+
+        CREATE INDEX
+        ON {schema}.treatment_index_duplicates
+        USING GIST (shape);
+
+    ''')
+    cursor.execute('COMMIT;')
+
+    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'activity')
+    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'actual_completion_date')
 
 def flag_duplicate_table(cursor, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
