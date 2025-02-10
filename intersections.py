@@ -81,9 +81,10 @@ def update_last_run(features, start_time, url, layer_id):
 
 
 def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
-    logger.info(f'beginning intersections on {source_key} and {target_key}')
+
     # delete existing intersections and replace with new ones
     delete_from_table(cursor, schema, insert_table, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
+    logger.info(f'beginning intersections on {source_key} and {target_key}')
     query = f""" insert into {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
          select ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
          a.unique_id as id_1, 

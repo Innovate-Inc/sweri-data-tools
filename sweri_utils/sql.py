@@ -1,8 +1,6 @@
 import logging
 from typing import TextIO
-
 import psycopg
-from psycopg import sql
 
 
 def rename_postgres_table(cursor: psycopg.Cursor, schema: str, old_table_name: str, new_table_name: str) -> None:

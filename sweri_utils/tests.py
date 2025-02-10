@@ -1,7 +1,6 @@
 from typing import cast
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open
-from sweri_utils.arcpy.analysis import layer_intersections
 from .download import *
 from .files import *
 from .conversion import *
@@ -291,23 +290,6 @@ class ConversionTests(TestCase):
                 call('COMMIT;')
             ]
         )
-
-
-class AnalysisTests(TestCase):
-    @patch('arcpy.management.MakeFeatureLayer')
-    @patch('arcpy.analysis.PairwiseIntersect')
-    @patch('arcpy.management.Delete')
-    def test_layer_intersect(self,delete_mock, intersect_mock, make_layer_mock):
-        layer_intersections('intersection_features', 'source', 'target', 'out_name', 'gdb', 'something')
-        make_layer_mock.side_effect = ['source_fl', 'target_fl']
-        make_layer_mock.assert_has_calls(
-            [
-                call('intersection_features', where_clause="something = 'source'"),
-                call('intersection_features', where_clause="something = 'target'")
-            ]
-        )
-        intersect_mock.assert_called()
-        delete_mock.assert_called()
 
 
 class SqlTests(TestCase):

@@ -1,12 +1,10 @@
 import json
 import os
-
 from .download import get_ids, get_all_features
 from .s3 import upload_to_s3
 from .sql import pg_copy_to_csv
 import requests as r
 import logging
-
 try:
     import arcpy
 except ModuleNotFoundError:
