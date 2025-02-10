@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from sweri_utils.conversion import create_csv_and_upload_to_s3
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index_analyze, \
-    rotate_tables
+    rotate_tables, copy_table_across_servers
 import watchtower
 
 logger = logging.getLogger(__name__)
@@ -89,6 +89,7 @@ def query_coded_value_domain(url, layer):
         raise ValueError('missing coded values or incorrect domain type')
     cv = d_json['domains'][0]['codedValues']
     return {c['code']: c['name'] for c in cv}
+
 
 def delete_existing_intersects(cursor, schema, table, source_key, target_key):
     delete_feat_q = f"DELETE FROM {schema}.{table} WHERE id_1_source = '{source_key}' and id_2_source = '{target_key}';"
@@ -185,22 +186,31 @@ def delete_intersection_features(cursor, schema, source):
     logging.info(f'deleted feat_source: {source} from {schema}.intersection_features')
 
 
-def fetch_features_to_intersect(intersect_sources, cursor, schema, insert_table, wkid):
+def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema, insert_table, rds_cursor, rds_schema, wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
-                insert_feature_into_db(cursor, f'{schema}.{insert_table}', f, key, value['id'])
+                insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
-            insert_from_db(cursor, schema, insert_table,
-                           ('unique_id', 'feat_source'), value['source'],
-                           # do not need to specify object id as we are using sde.net_rowid() in the insert
-                           (value['id'], f"'{key}'"))
+            # this will copy the current table from the production server and use that data for intersections
+            copy_table_across_servers(
+                rds_cursor,
+                rds_schema,
+                value['source'],
+                docker_cursor,
+                docker_schema,
+                value['source'],
+                (value['id'], f"'{key}'"),
+                ('unique_id', 'feat_source'),
+
+                'intersection_features')
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
 
 
-def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table, s3_bucket, csv_file, aws_region='us-west-2'):
+def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table, s3_bucket, csv_file,
+                                    aws_region='us-west-2'):
     cursor.execute('BEGIN;')
     # delete existing data in destination table
     cursor.execute(f'DELETE FROM {db_schema}.{destination_table};')
@@ -215,47 +225,50 @@ def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table
     logger.info(f'completed import of {csv_file} into {db_schema}.{destination_table}')
 
 
-def run_intersections(pg_cursor, conn, db_schema, s3_bucket, start, wkid):
+def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_cursor, rds_schema,  s3_bucket, start, wkid):
     # psycopg2 connection, because arcsde connection is extremely slow during inserts
-
 
     # configure intersection sources
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
 
     ############## setting intersection sources ################
-    intersections = fetch_features(f'{intersection_src_url}/0/query',{'f': 'json', 'where': '1=1', 'outFields': '*'})
+    intersections = fetch_features(f'{intersection_src_url}/0/query', {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
     # handle coded value domains
     cvs = query_coded_value_domain(intersection_src_url, 0)
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
 
     ############## setting up intersection features ################
     # setup intersection features table
-    configure_intersection_features_table(pg_cursor, db_schema)
+    configure_intersection_features_table(docker_db_cursor, docker_schema)
     # delete source features and fetch new ones
     for src in intersect_sources.keys():
-        delete_intersection_features(pg_cursor, db_schema, src)
+        delete_intersection_features(docker_db_cursor, docker_schema, src)
 
     ############## fetching features ################
     # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, pg_cursor, db_schema, 'intersection_features', wkid)
+    fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features', rds_db_cursor, rds_schema, wkid)
     # refresh the spatial index
-    refresh_spatial_index_analyze(pg_cursor, db_schema, 'intersection_features')
+    refresh_spatial_index_analyze(docker_db_cursor, docker_schema, 'intersection_features')
 
     ############## calculating intersections ################
     # setup table
-    configure_new_intersections_table(pg_cursor, db_schema)
+    configure_new_intersections_table(docker_db_cursor, docker_schema)
     # calculate intersections
-    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', pg_cursor, db_schema)
+    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', docker_db_cursor,
+                                         docker_schema)
     # create the template for the new intersect
-    rotate_tables(pg_cursor, db_schema, 'intersections', 'intersections_backup', 'new_intersections', drop_temp=True)
+    rotate_tables(docker_db_cursor, docker_schema, 'intersections', 'intersections_backup', 'new_intersections',
+                  drop_temp=True)
 
     ############## update run info on intersection sources table ################
     update_last_run(intersections, start, intersection_src_url, 0)
     ############## write to csv and upload to s3 ################
     logger.info('uploading csv to s3')
-    create_csv_and_upload_to_s3(pg_cursor, db_schema, 'intersections', ['id_1', 'id_2','id_1_source','id_2_source','acre_overlap'],f'intersections_{db_schema}.csv', s3_bucket)
+    create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
+                                ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                f'intersections_{docker_schema}.csv', s3_bucket)
     logger.info('completed upload to s3')
-    conn.close()
+    docker_conn.close()
 
 
 def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
@@ -268,8 +281,8 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
                                     f'intersections_{rds_schema}.csv')
     # swap the tables in the rds db
     logger.info('swapping tables')
-    rotate_tables(rds_pg_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
-                             drop_temp=False)
+    rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
+                  drop_temp=False)
     rds_conn.close()
 
 
@@ -281,7 +294,7 @@ if __name__ == '__main__':
 
     # s3 bucket used for intersections
     s3_bucket_name = os.getenv('S3_BUCKET')
-    ############## intersections processing in docker ################
+    ############### database connections ################
     # local docker db environment variables
     docker_db_schema = os.getenv('DOCKER_DB_SCHEMA')
     docker_db_host = os.getenv('DOCKER_DB_HOST')
@@ -289,12 +302,9 @@ if __name__ == '__main__':
     docker_db_name = os.getenv('DOCKER_DB_NAME')
     docker_db_user = os.getenv('DOCKER_DB_USER')
     docker_db_password = os.getenv('DOCKER_DB_PASSWORD')
+    docker_pg_cursor, docker_pg_conn = connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user,
+                                                        docker_db_password)
 
-    docker_pg_cursor, docker_pg_conn = connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
-    # function that runs everything for creating new intersections in docker
-    run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, s3_bucket_name, script_start, sr_wkid)
-
-    ############## uploading results to rds db instance ################
     # rds db params
     rds_db_schema = os.getenv('RDS_SCHEMA')
     rds_db_host = os.getenv('RDS_DB_HOST')
@@ -303,6 +313,12 @@ if __name__ == '__main__':
     rds_db_user = os.getenv('RDS_DB_USER')
     rds_db_password = os.getenv('RDS_DB_PASSWORD')
     rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password)
-    # connect and upload
-    update_intersections_rds_db(rds_pg_cursor, rds_pg_conn, rds_db_schema, s3_bucket_name)
-    logger.info('completed intersection processing')
+
+    ############## intersections processing in docker ################
+    # function that runs everything for creating new intersections in docker
+    run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema,rds_pg_cursor, rds_db_schema, s3_bucket_name, script_start, sr_wkid)
+
+    # ############## uploading results to rds db instance ################
+    # # connect and upload
+    # update_intersections_rds_db(rds_pg_cursor, rds_pg_conn, rds_db_schema, s3_bucket_name)
+    # logger.info('completed intersection processing')

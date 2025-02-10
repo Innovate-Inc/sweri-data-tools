@@ -1,6 +1,6 @@
 import logging
 
-import psycopg2
+import psycopg
 
 
 def rename_postgres_table(cursor, schema, old_table_name, new_table_name):
@@ -18,7 +18,7 @@ def rename_postgres_table(cursor, schema, old_table_name, new_table_name):
 
 
 def connect_to_pg_db(db_host, db_port, db_name, db_user, db_password):
-    conn = psycopg2.connect(
+    conn = psycopg.connect(
         host=db_host,
         # port=db_port,
         dbname=db_name,
@@ -100,3 +100,27 @@ def rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_
         # cycle temp backup into new table
         rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
         logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
+
+def copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_fields, insert_fields, insert_table):
+    """
+
+    :param from_cursor:
+    :param from_schema:
+    :param from_table:
+    :param to_cursor:
+    :param to_schema:
+    :param to_table:
+    :param from_fields:
+    :param insert_fields:
+    :param insert_table:
+    :return:
+    """
+    logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
+    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
+        to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
+        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)") as in_copy:
+            for data in out_copy:
+                in_copy.write(data)
+
+    insert_from_db(to_cursor, to_schema, insert_table , insert_fields, to_table, from_fields)
+    logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
