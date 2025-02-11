@@ -723,7 +723,7 @@ if __name__ == "__main__":
     #This is the path of the final table, _temp and _backup of this table must also exist
     insert_table = f'treatment_index_facts_nfpors'
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))[0]
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
