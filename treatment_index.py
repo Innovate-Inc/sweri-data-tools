@@ -5,17 +5,16 @@ from dotenv import load_dotenv
 import logging
 import re
 from arcgis.features import FeatureLayer
+import watchtower
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-import watchtower
+from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 logger.addHandler(watchtower.CloudWatchLogHandler())
-
-
 
 def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     
@@ -23,7 +22,6 @@ def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     database = 'sweri'
-
     service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
@@ -87,7 +85,8 @@ def nfpors_insert(cursor, schema, treatment_index):
         st_abbr AS state, act_comp_dt as treatment_date, 'act_comp_dt' as date_source,
         agency as agency, shape, sde.next_globalid()
 
-    FROM {schema}.nfpors;
+    FROM {schema}.nfpors
+    WHERE {schema}.nfpors.shape IS NOT NULL;
     ''')
     cursor.execute('COMMIT;')
 
@@ -118,13 +117,24 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         'date_completed' AS date_source, method AS method, equipment AS equipment,
         'USFS' AS agency, shape, sde.next_globalid()
         
-    FROM {schema}.facts_haz_3857_2;
+    FROM {schema}.facts_haz_3857_2
+    WHERE {schema}.facts_haz_3857_2.shape IS NOT NULL;
     
     ''')
     cursor.execute('COMMIT;')
 
     logger.info(f'FACTS entries inserted into {schema}.{treatment_index}_temp')
     #FACTS Insert Complete 
+
+def hazardous_fuels_date_filtering(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''             
+        DELETE FROM {schema}.facts_haz_3857_2 WHERE
+        date_completed < '1984-1-1'::date
+        OR
+        (date_completed is null AND date_planned < '1984-1-1'::date);
+    ''')
+    logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
 
 def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
@@ -139,6 +149,19 @@ def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+
+def nfpors_date_filtering(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''             
+        DELETE FROM {schema}.nfpors WHERE
+        act_comp_dt < '1984-1-1'::date
+        OR
+        (act_comp_dt is null AND plan_int_dt < '1984-1-1'::date)
+        OR
+        ((act_comp_dt is null AND plan_int_dt is NULL) AND col_date < '1984-1-1'::date);
+    ''')
+    cursor.execute('COMMIT;')
+    logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
 def nfpors_fund_code(cursor, schema, treatment_index):
 
@@ -355,11 +378,33 @@ def add_fields_and_indexes(feature_class, region):
         arcpy.management.AddIndex(feature_class, field, f'{field}_idx_{region}', ascending="ASCENDING")
 
     arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
+    arcpy.management.AddIndex(feature_class, 'date_completed', f'date_completed_idx_{region}', ascending="ASCENDING")
+    arcpy.management.AddIndex(feature_class, 'act_created_date', f'act_created_date_idx_{region}', ascending="ASCENDING")
+
 
     new_indexes = ('gis_acres', 'activity', 'equipment', 'method')
     for index in new_indexes: 
             arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
-       
+
+def common_attributes_date_filtering(cursor, schema, table_name):
+    # Excludes treatment entries before 1984
+    # uses date_completed if available, and act_created_date if date_completed is null
+
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+                   
+    DELETE from {schema}.{table_name} WHERE
+    date_completed < '1984-1-1'::date
+    OR
+    (date_completed is null AND act_created_date < '1984-1-1'::date);
+
+          
+    ''')
+    cursor.execute('COMMIT;')
+
+    logger.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
+
+
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
 
@@ -374,7 +419,7 @@ def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
           
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
+    logger.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 def exclude_by_acreage(cursor, schema, table):
     #removes all treatments with null acerage or <= 5 acres
@@ -389,7 +434,7 @@ def exclude_by_acreage(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"deleted Entries <= 5 acres {schema}.{table}")
+    logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
 def trim_whitespace(cursor, schema, table):
     #Some entries have spaces before or after that interfere with matching, this trims those spaces out
@@ -405,7 +450,7 @@ def trim_whitespace(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
+    logger.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 def include_logging_activities(cursor, schema, table):
     # Make sure the activity includes 'thin' or 'cut'
@@ -437,7 +482,7 @@ def include_logging_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
     
 def include_fire_activites(cursor, schema, table):
     # Make sure the activity includes 'burn' or 'fire'
@@ -470,7 +515,7 @@ def include_fire_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
 
 def include_fuel_activities(cursor, schema, table):
     # Make sure the activity includes 'fuel'
@@ -501,10 +546,10 @@ def include_fuel_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
 
-def special_exclusions(cursor, schema, table):
-    # A final pass to only include what is intended
+def activity_filter(cursor, schema, table):
+    # Filters based on activity to ensure only intended activities enter the database
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
@@ -569,7 +614,22 @@ def include_other_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+
+def common_attributes_type_filter(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''           
+        DELETE from staging.{treatment_index}_temp 
+        WHERE
+        type IN (
+            SELECT value from staging.common_attributes_lookup
+            WHERE filter = 'type'
+            AND include = 'FALSE')
+        AND
+        identifier_database = 'FACTS Common Attributes';
+    ''')
+    cursor.execute('COMMIT;')
+    logger.info(f"deleted Common Attributes problem types from {schema}.{treatment_index}")
 
 def set_included(cursor, schema, table):
     # set included to yes when r5 passes or
@@ -617,7 +677,8 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
         
     FROM {schema}.{table}
     WHERE included = 'yes'
-    ;
+    AND
+    {schema}.{table}.shape IS NOT NULL;
 
     ''')
     cursor.execute('COMMIT;')
@@ -654,6 +715,8 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
     
 
     for url in urls:
+
+        #expression pulls just the number out of the url, 01-10
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
@@ -663,6 +726,7 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
 
         add_fields_and_indexes(postgres_fc, region_number) 
 
+        common_attributes_date_filtering(cursor, schema, table_name)
         exclude_by_acreage(cursor, schema, table_name)
         exclude_facts_hazardous_fuels(cursor, schema, table_name, facts_haz_table)
 
@@ -671,13 +735,17 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         include_logging_activities(cursor, schema, table_name)
         include_fire_activites(cursor, schema, table_name)
         include_fuel_activities(cursor, schema, table_name)
-        special_exclusions(cursor, schema, table_name)
+        activity_filter(cursor, schema, table_name)
         include_other_activites(cursor, schema, table_name)
 
         set_included(cursor, schema, table_name)
 
         common_attributes_insert(cursor, schema, table_name, treatment_index)
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
+
+        #Deletes singluar region pg table after processing that table
+        if arcpy.Exists(postgres_fc):
+            arcpy.management.Delete(postgres_fc)
 
 
 if __name__ == "__main__":
@@ -705,16 +773,20 @@ if __name__ == "__main__":
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
     #gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
+    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
+
+    common_attributes_type_filter(cur, target_schema, insert_table)
 
     #MERGE
+    nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
     nfpors_fund_code(cur, target_schema, insert_table)
     nfpors_treatment_date(cur, target_schema, insert_table)
 
     # Insert FACTS entries and enter proper treatement dates
+    hazardous_fuels_date_filtering(cur, target_schema)
     hazardous_fuels_insert(cur, target_schema, insert_table)
     hazardous_fuels_treatment_date(cur, target_schema, insert_table)
 
@@ -722,6 +794,9 @@ if __name__ == "__main__":
     fund_source_updates(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
+
+    flag_high_cost(cur, target_schema, f'{insert_table}_temp')
+    flag_duplicates(cur, target_schema, f'{insert_table}_temp')
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
     rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
