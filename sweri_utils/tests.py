@@ -1,12 +1,12 @@
 from typing import cast
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from .analysis import layer_intersections
 from .download import *
 from .files import *
 from .conversion import *
-from .intersections import update_schema_for_intersections_insert, fetch_domains, configure_intersection_sources
-from .sql import rename_postgres_table
+from .s3 import import_s3_csv_to_postgres_table
+from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
+    refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
 
 
 class DownloadTests(TestCase):
@@ -323,8 +323,8 @@ class FilesTests(TestCase):
             zip_file = f'{postgres_table_name}.zip'
 
             gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
-            
-            
+
+
             download_file_mock.assert_called_once_with(url, zip_file)
             extract_zip_mock.assert_called_once_with(zip_file)
             mock_project.assert_called_once_with(feature_class, reprojected_fc, projection)
@@ -362,29 +362,37 @@ class ConversionTests(TestCase):
         }
         self.assertEqual(actual, expected)
 
-    @patch('arcpy.AddMessage')
-    def test_insert_from_db_with_globalid(self, message_mock):
-        mock_conn = Mock()
-        mock_conn.execute.return_value = True
-        insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'])
-        expected = '''insert into dev.insert_here (field1,field2) select sde.next_rowid('dev','insert_here'),sde.next_globalid(),from1,from2 from dev.from_here;'''
-        self.assertEqual(
-            mock_conn.execute.call_args_list,
-            [
-                call('BEGIN;'),
-                call(expected),
-                call('COMMIT;')
-            ]
-        )
+    @patch('sweri_utils.conversion.pg_copy_to_csv')
+    @patch('sweri_utils.conversion.upload_to_s3')
+    def test_create_csv_and_upload_to_s3(self, mock_upload_to_s3, mock_pg_copy_to_csv):
+        # Arrange
+        cursor = MagicMock()
+        schema = 'public'
+        table = 'test_table'
+        columns = ['col1', 'col2']
+        filename = 'test.csv'
+        bucket = 'test-bucket'
+
+        mock_file = MagicMock()
+        mock_file.name = filename
+        mock_pg_copy_to_csv.return_value = mock_file
+        mock_upload_to_s3.return_value = 'upload_success'
+
+        # Act
+        result = create_csv_and_upload_to_s3(cursor, schema, table, columns, filename, bucket)
+
+        # Assert
+        mock_pg_copy_to_csv.assert_called_once_with(cursor, schema, table, filename, columns)
+        mock_upload_to_s3.assert_called_once_with(bucket, filename, filename)
+        self.assertEqual(result, 'upload_success')
 
     @patch('arcpy.AddMessage')
-    def test_insert_from_db_without_globalid(self, message_mock):
+    def test_insert_from_db(self, message_mock):
         mock_conn = Mock()
         mock_conn.execute.return_value = True
         insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
                        'from_here', ['from1', 'from2'], False)
-        expected = '''insert into dev.insert_here (field1,field2) select sde.next_rowid('dev','insert_here'),from1,from2 from dev.from_here;'''
+        expected = 'insert into dev.insert_here (shape, field1,field2) select ST_TRANSFORM(ST_MakeValid(False), 4326), from1,from2 from dev.from_here;'
 
         self.assertEqual(
             mock_conn.execute.call_args_list,
@@ -395,24 +403,52 @@ class ConversionTests(TestCase):
             ]
         )
 
-
-class AnalysisTests(TestCase):
-    @patch('arcpy.management.MakeFeatureLayer')
-    @patch('arcpy.analysis.PairwiseIntersect')
-    @patch('arcpy.management.Delete')
-    def test_layer_intersect(self, delete_mock, intersect_mock, make_layer_mock):
-        layer_intersections('intersection_features', 'source',
-                            'target', 'out_name', 'gdb', 'something')
-        make_layer_mock.side_effect = ['source_fl', 'target_fl']
-        make_layer_mock.assert_has_calls(
-            [
-                call('intersection_features',
-                     where_clause="something = 'source'"),
-                call('intersection_features', where_clause="something = 'target'")
+    @patch('requests.get')
+    def test_create_coded_val_dict(self, mock_get):
+        # Mock response data
+        mock_response = {
+            'domains': [
+                {
+                    'codedValues': [
+                        {'code': 1, 'name': 'Value1'},
+                        {'code': 2, 'name': 'Value2'}
+                    ]
+                }
             ]
-        )
-        intersect_mock.assert_called()
-        delete_mock.assert_called()
+        }
+        mock_get.return_value.json.return_value = mock_response
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+        expected_result = {1: 'Value1', 2: 'Value2'}
+
+        result = create_coded_val_dict(url, layer)
+        self.assertEqual(result, expected_result)
+
+    @patch('requests.get')
+    def test_create_coded_val_dict_missing_domains(self, mock_get):
+        mock_get.return_value.json.return_value = {}
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+
+        with self.assertRaises(ValueError) as context:
+            create_coded_val_dict(url, layer)
+        self.assertEqual(str(context.exception), 'missing domains')
+
+    @patch('requests.get')
+    def test_create_coded_val_dict_missing_coded_values(self, mock_get):
+        mock_response = {
+            'domains': [{}]
+        }
+        mock_get.return_value.json.return_value = mock_response
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+
+        with self.assertRaises(ValueError) as context:
+            create_coded_val_dict(url, layer)
+        self.assertEqual(str(context.exception), 'missing coded values or incorrect domain type')
 
 
 class SqlTests(TestCase):
@@ -426,93 +462,207 @@ class SqlTests(TestCase):
 
         # Assert the execute method was called with the correct SQL
         mock_connection.execute.assert_has_calls(
-            [
-                call("BEGIN;"),
-                call("ALTER TABLE public.old_table RENAME TO new_table;"),
-                call("COMMIT;")
-            ]
+            [call('BEGIN;'),
+             call('ALTER TABLE public.old_table RENAME TO new_table;'),
+             call('COMMIT;')]
         )
 
-class IntersectionsTest(TestCase):
-    @patch('arcpy.management.AlterField')
-    @patch('arcpy.management.CalculateField')
-    def test_update_schema_for_intersections_insert(self, mock_calc, mock_alter):
-        update_schema_for_intersections_insert(
-            'intersect_result', 'fc_1_name', 'fc_2_name')
-        mock_alter.assert_has_calls(
-            [
-                call('intersect_result', 'unique_id', 'id_1', 'id_1'),
-                call('intersect_result', 'unique_id_1', 'id_2', 'id_2'),
-                call('intersect_result', 'feat_source',
-                     'id_1_source', 'id_1_source'),
-                call('intersect_result', 'feat_source_1',
-                     'id_2_source', 'id_2_source')
-            ]
-        )
-        mock_calc.assert_has_calls(
-            [
-                call('intersect_result', 'id_1_source',
-                     f"'fc_1_name'", 'PYTHON3'),
-                call('intersect_result', 'id_2_source',
-                     f"'fc_2_name'", 'PYTHON3')
-            ]
-        )
+    def test_run_vacuum_analyze(self):
+        # Arrange
+        mock_connection = Mock()
+        mock_cursor = Mock()
+        schema = 'public'
+        table = 'test_table'
 
-    @patch('sweri_utils.intersections.arcpy.da.ListDomains')
-    @patch('sweri_utils.intersections.arcpy.ListFields')
-    def test_fetch_domains(self, mock_list_fields, mock_list_domains):
-        # Mock the return value of ListDomains
-        mock_domain = MagicMock()
-        mock_domain.name = 'test_domain'
-        mock_domain.codedValues = {'key1': 'value1', 'key2': 'value2'}
-        mock_list_domains.return_value = [mock_domain]
+        # Act
+        run_vacuum_analyze(mock_connection, mock_cursor, schema, table)
 
-        # Mock the return value of ListFields
-        mock_field = MagicMock()
-        mock_field.name = 'test_field'
-        mock_field.domain = 'test_domain'
-        mock_list_fields.return_value = [mock_field]
+        # Assert
+        self.assertFalse(mock_connection.autocommit)
+        mock_cursor.execute.assert_has_calls([
+            call(f'VACUUM ANALYZE {schema}.{table};')
+        ])
+
+    def test_delete_from_table(self):
+        # Arrange
+        mock_cursor = Mock()
+        schema = 'public'
+        table = 'test_table'
+        where = 'id = 1'
+
+        # Act
+        delete_from_table(mock_cursor, schema, table, where)
+
+        # Assert
+        expected_calls = [
+            call('BEGIN;'),
+            call(f'DELETE FROM {schema}.{table} WHERE {where};'),
+            call('COMMIT;')
+        ]
+        mock_cursor.execute.assert_has_calls(expected_calls)
+
+    def test_rotate_tables_drop(self):
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
+            cursor = MagicMock()
+            schema = 'public'
+            main_table_name = 'main_table'
+            backup_table_name = 'backup_table'
+            new_table_name = 'new_table'
+
+            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name)
+
+            mock_rename.assert_has_calls(
+                [
+                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(cursor, schema, main_table_name, backup_table_name),
+                    call(cursor, schema, new_table_name, main_table_name)
+                ]
+            )
+
+            cursor.execute.assert_has_calls(
+                [
+                    call('BEGIN;'),
+                    call(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;'),
+                    call('COMMIT;')
+                ]
+            )
+
+    def test_rotate_tables_keep(self):
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
+            cursor = MagicMock()
+            schema = 'public'
+            main_table_name = 'main_table'
+            backup_table_name = 'backup_table'
+            new_table_name = 'new_table'
+            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, False)
+            mock_rename.assert_has_calls(
+                [
+                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(cursor, schema, main_table_name, backup_table_name),
+                    call(cursor, schema, new_table_name, main_table_name),
+                    call(cursor, schema, f'{backup_table_name}_temp', new_table_name)
+                ]
+            )
+
+    def test_refresh_spatial_index(self):
+        cursor = MagicMock()
+        schema = 'public'
+        table = 'test_table'
+
+        refresh_spatial_index(cursor, schema, table)
+
+        cursor.execute.assert_any_call('BEGIN;')
+        cursor.execute.assert_any_call(f'DROP INDEX IF EXISTS {table}_shape_idx;')
+        cursor.execute.assert_any_call(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+        cursor.execute.assert_any_call('COMMIT;')
+
+    @patch('psycopg.connect')
+    def test_connect_to_pg_db(self, mock_connect):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connect.return_value = mock_connection
+        mock_connection.cursor.return_value = mock_cursor
+
+        db_host = 'localhost'
+        db_port = 5432
+        db_name = 'test_db'
+        db_user = 'test_user'
+        db_password = 'test_password'
+
+        # Act
+        cursor, connection = connect_to_pg_db(db_host, db_port, db_name, db_user, db_password)
+
+        # Assert
+        mock_connect.assert_called_once_with(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password
+        )
+        self.assertEqual(cursor, mock_cursor)
+        self.assertEqual(connection, mock_connection)
+
+    def test_insert_from_db(self):
+        # Mock the cursor
+        cursor = MagicMock()
+
+        # Define the parameters
+        schema = 'public'
+        insert_table = 'target_table'
+        insert_fields = ['field1', 'field2']
+        from_table = 'source_table'
+        from_fields = ['field1', 'field2']
 
         # Call the function
-        sde_connection_file = 'fake_sde_connection_file'
-        in_table = 'fake_in_table'
-        result = fetch_domains(sde_connection_file, in_table)
+        insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields)
 
-        # Assert the result
-        expected_result = {'test_field': {'key1': 'value1', 'key2': 'value2'}}
-        self.assertEqual(result, expected_result)
+        # Check if the correct SQL commands were executed
+        cursor.execute.assert_any_call('BEGIN;')
+        cursor.execute.assert_any_call(
+            f"insert into {schema}.{insert_table} (shape, {','.join(insert_fields)}) "
+            f"select ST_TRANSFORM(ST_MakeValid(shape), 4326), {','.join(from_fields)} "
+            f"from {schema}.{from_table};"
+        )
+        cursor.execute.assert_any_call('COMMIT;')
 
-    @patch('arcpy.da.SearchCursor')
-    @patch('sweri_utils.intersections.fetch_domains')
-    def test_configure_intersection_sources(self, mock_fetch_domains, mock_search_cursor):
-        # Mock the return value of fetch_domains
-        mock_fetch_domains.return_value = {
-            'name': {
-                'source_name_1': 'Source Name 1',
-                'source_name_2': 'Source Name 2'
-            }
-        }
+    def test_copy_table_across_servers(self):
+        from_cursor = MagicMock()
+        to_cursor = MagicMock()
+        from_schema = 'public'
+        from_table = 'source_table'
+        to_schema = 'public'
+        to_table = 'destination_table'
 
-        # Mock the SearchCursor to return specific rows
-        mock_search_cursor.return_value.__enter__.return_value = [
-            ('source_1', 'id_1', 'uid_1', 1, 'type_1', 'source_name_1'),
-            ('source_2', 'id_2', 'uid_2', 0, 'type_2', 'source_name_2')
-        ]
+        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table)
 
-        sde_connection_file = 'fake_sde_connection_file'
-        schema = 'fake_schema'
+        from_cursor.copy.assert_called_once_with(
+            f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
+        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table};")
+        to_cursor.copy.assert_called_once_with(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)")
 
-        intersect_sources, intersect_targets = configure_intersection_sources(
-            sde_connection_file, schema)
 
-        expected_sources = {
-            'id_1': {'source': 'source_1', 'id': 'uid_1', 'source_type': 'type_1', 'name': 'Source Name 1'},
-            'id_2': {'source': 'source_2', 'id': 'uid_2', 'source_type': 'type_2', 'name': 'Source Name 2'}
-        }
+class S3Tests(TestCase):
+    def test_import_s3_csv_to_postgres_table(self):
+        # Mock cursor
+        mock_cursor = MagicMock()
 
-        expected_targets = {
-            'id_1': {'source': 'source_1', 'id': 'uid_1', 'source_type': 'type_1', 'name': 'Source Name 1'}
-        }
+        # Define test parameters
+        db_schema = 'public'
+        fields = ['id', 'name', 'value']
+        destination_table = 'test_table'
+        s3_bucket = 'test_bucket'
+        csv_file = 'test_file.csv'
+        aws_region = 'us-west-2'
 
-        self.assertEqual(intersect_sources, expected_sources)
-        self.assertEqual(intersect_targets, expected_targets)
+        # Call the function
+        import_s3_csv_to_postgres_table(mock_cursor, db_schema, fields, destination_table, s3_bucket, csv_file,
+                                        aws_region)
+
+        mock_cursor.execute.assert_has_calls(
+            [
+                call('BEGIN;'),
+                call(f'DELETE FROM {db_schema}.{destination_table};'),
+                call(f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
+                call('COMMIT;')
+            ]
+        )
+
+    def test_upload_to_s3(self):
+        # Arrange
+        bucket = 'test_bucket'
+        file_name = 'test_file.txt'
+        obj_name = 'test_file.txt'
+
+        # Mock the boto3 client and its upload_file method
+        with patch('boto3.client') as mock_boto_client:
+            mock_s3 = mock_boto_client.return_value
+            mock_s3.upload_file.return_value = None
+
+            # Act
+            upload_to_s3(bucket, file_name, obj_name)
+
+            # Assert
+            mock_boto_client.assert_called_once_with('s3')
+            mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
