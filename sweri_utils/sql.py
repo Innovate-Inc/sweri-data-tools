@@ -191,3 +191,9 @@ def delete_from_table(cursor: psycopg.Cursor, schema: str, table: str, where: st
     cursor.execute(delete_feat_q)
     cursor.execute('COMMIT;')
     logging.info(f'deleted from {schema}.{table} where {where}')
+
+
+def run_vacuum_analyze(connection, cursor, schema, table):
+    connection.autocommit = True
+    cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
+    connection.autocommit = False
