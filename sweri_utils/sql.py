@@ -85,7 +85,7 @@ def pg_copy_to_csv(cursor: psycopg.Cursor, schema: str, table: str, filename: st
         with cursor.copy(
             f'COPY (SELECT row_number() OVER () AS objectid, {",".join(columns)} FROM {schema}.{table}) TO STDOUT WITH CSV HEADER') as copy:
                 while data := copy.read():
-                    f.write(data)
+                    f.write(data.tobytes().decode('utf-8'))
     return f
 
 
