@@ -3,6 +3,7 @@ import json
 import os
 from time import sleep
 import requests
+import arcgis
 try:
     import arcpy
 except ModuleNotFoundError:

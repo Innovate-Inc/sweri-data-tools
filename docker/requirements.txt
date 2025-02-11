@@ -4,4 +4,4 @@ python-dotenv==1.0.1
 geopandas==0.14.4
 watchtower==3.3.1
 requests==2.32.3
-git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
+arcgis==2.3.0
