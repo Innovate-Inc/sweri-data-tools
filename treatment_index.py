@@ -350,62 +350,13 @@ def create_treatment_points(schema, sde_file, treatment_index):
         out_feature_class=temp_points,
         point_location="INSIDE"
     )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="treatment_date",
-        index_name="treatment_date_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="acres",
-        index_name="treatment_acres_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="name",
-        index_name="treatment_name_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="type",
-        index_name="treatment_type_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="fund_source",
-        index_name="treatment_fund_source_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="actual_completion_date",
-        index_name="treatment_actual_completion_date_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="fund_code",
-        index_name="treatment_fund_code_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
-    arcpy.management.AddIndex(
-        in_table=temp_points,
-        fields="unique_id",
-        index_name="treatment_unique_id_idx",
-        unique="NON_UNIQUE",
-        ascending="ASCENDING"
-    )
+
+    fields_to_index = ['unique_id','name','state','acres','treatment_date','date_source',
+    'identifier_database','date_current','actual_completion_date','activity','activity_code','method','equipment',
+    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error']
+
+    for field in fields_to_index:
+        postgres_create_index(cur, schema, f'{treatment_index}_points_temp', field)
 
     arcpy.management.EnableFeatureBinning(
         in_features=temp_points,
