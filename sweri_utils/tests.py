@@ -1,10 +1,11 @@
 from typing import cast
 from unittest import TestCase
-from unittest.mock import patch, Mock, call, mock_open
+from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from .download import *
 from .files import *
 from .conversion import *
-from .sql import rename_postgres_table, insert_from_db
+from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
+    refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
 
 
 class DownloadTests(TestCase):
@@ -234,6 +235,7 @@ class FilesTests(TestCase):
         mock_open.assert_called_once_with(destination_path, 'wb')
         mock_open().write.assert_called_once_with(b'Test content')
 
+
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
     @patch('arcpy.management.Project')
@@ -299,9 +301,166 @@ class SqlTests(TestCase):
         mock_connection.execute.return_value = "Success"
 
         # Call the function with test data
-        result = rename_postgres_table(mock_connection, "public", "old_table", "new_table")
+        rename_postgres_table(mock_connection, "public", "old_table", "new_table")
 
         # Assert the execute method was called with the correct SQL
-        mock_connection.execute.assert_called_once_with("ALTER TABLE public.old_table RENAME TO new_table;")
-        # Assert the result is as expected
-        self.assertEqual(result, "Success")
+        mock_connection.execute.assert_has_calls(
+            [call('BEGIN;'),
+             call('ALTER TABLE public.old_table RENAME TO new_table;'),
+             call('COMMIT;')]
+        )
+
+    def test_run_vacuum_analyze(self):
+        # Arrange
+        mock_connection = Mock()
+        mock_cursor = Mock()
+        schema = 'public'
+        table = 'test_table'
+
+        # Act
+        run_vacuum_analyze(mock_connection, mock_cursor, schema, table)
+
+        # Assert
+        self.assertFalse(mock_connection.autocommit)
+        mock_cursor.execute.assert_has_calls([
+            call(f'VACUUM ANALYZE {schema}.{table};')
+        ])
+
+    def test_delete_from_table(self):
+        # Arrange
+        mock_cursor = Mock()
+        schema = 'public'
+        table = 'test_table'
+        where = 'id = 1'
+
+        # Act
+        delete_from_table(mock_cursor, schema, table, where)
+
+        # Assert
+        expected_calls = [
+            call('BEGIN;'),
+            call(f'DELETE FROM {schema}.{table} WHERE {where};'),
+            call('COMMIT;')
+        ]
+        mock_cursor.execute.assert_has_calls(expected_calls)
+
+    def test_rotate_tables_drop(self):
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
+            cursor = MagicMock()
+            schema = 'public'
+            main_table_name = 'main_table'
+            backup_table_name = 'backup_table'
+            new_table_name = 'new_table'
+
+            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name)
+
+            mock_rename.assert_has_calls(
+                [
+                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(cursor, schema, main_table_name, backup_table_name),
+                    call(cursor, schema, new_table_name, main_table_name)
+                ]
+            )
+
+            cursor.execute.assert_has_calls(
+                [
+                    call('BEGIN;'),
+                    call(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;'),
+                    call('COMMIT;')
+                ]
+            )
+
+    def test_rotate_tables_keep(self):
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
+            cursor = MagicMock()
+            schema = 'public'
+            main_table_name = 'main_table'
+            backup_table_name = 'backup_table'
+            new_table_name = 'new_table'
+            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, False)
+            mock_rename.assert_has_calls(
+                [
+                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(cursor, schema, main_table_name, backup_table_name),
+                    call(cursor, schema, new_table_name, main_table_name),
+                    call(cursor, schema, f'{backup_table_name}_temp', new_table_name)
+                ]
+            )
+
+    def test_refresh_spatial_index(self):
+        cursor = MagicMock()
+        schema = 'public'
+        table = 'test_table'
+
+        refresh_spatial_index(cursor, schema, table)
+
+        cursor.execute.assert_any_call('BEGIN;')
+        cursor.execute.assert_any_call(f'DROP INDEX IF EXISTS {table}_shape_idx;')
+        cursor.execute.assert_any_call(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+        cursor.execute.assert_any_call('COMMIT;')
+
+    @patch('psycopg.connect')
+    def test_connect_to_pg_db(self, mock_connect):
+        # Arrange
+        mock_cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_connect.return_value = mock_connection
+        mock_connection.cursor.return_value = mock_cursor
+
+        db_host = 'localhost'
+        db_port = 5432
+        db_name = 'test_db'
+        db_user = 'test_user'
+        db_password = 'test_password'
+
+        # Act
+        cursor, connection = connect_to_pg_db(db_host, db_port, db_name, db_user, db_password)
+
+        # Assert
+        mock_connect.assert_called_once_with(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_password
+        )
+        self.assertEqual(cursor, mock_cursor)
+        self.assertEqual(connection, mock_connection)
+
+    def test_insert_from_db(self):
+        # Mock the cursor
+        cursor = MagicMock()
+
+        # Define the parameters
+        schema = 'public'
+        insert_table = 'target_table'
+        insert_fields = ['field1', 'field2']
+        from_table = 'source_table'
+        from_fields = ['field1', 'field2']
+
+        # Call the function
+        insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields)
+
+        # Check if the correct SQL commands were executed
+        cursor.execute.assert_any_call('BEGIN;')
+        cursor.execute.assert_any_call(
+            f"insert into {schema}.{insert_table} (shape, {','.join(insert_fields)}) "
+            f"select ST_TRANSFORM(ST_MakeValid(shape), 4326), {','.join(from_fields)} "
+            f"from {schema}.{from_table};"
+        )
+        cursor.execute.assert_any_call('COMMIT;')
+
+    def test_copy_table_across_servers(self):
+        from_cursor = MagicMock()
+        to_cursor = MagicMock()
+        from_schema = 'public'
+        from_table = 'source_table'
+        to_schema = 'public'
+        to_table = 'destination_table'
+
+        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table)
+
+        from_cursor.copy.assert_called_once_with(
+            f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
+        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table};")
+        to_cursor.copy.assert_called_once_with(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)")

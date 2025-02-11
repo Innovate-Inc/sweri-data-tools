@@ -145,7 +145,9 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
     # drop (default) or swap out temp table with new table
     if drop_temp:
         # drop temp backup table
+        cursor.execute('BEGIN;')
         cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
+        cursor.execute('COMMIT;')
         logging.info(f'{schema}.{backup_table_name}_temp deleted')
     else:
         # cycle temp backup into new table
