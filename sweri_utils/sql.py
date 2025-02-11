@@ -82,9 +82,11 @@ def pg_copy_to_csv(cursor: psycopg.Cursor, schema: str, table: str, filename: st
     :return: The file object of the written CSV file.
     """
     with open(filename, 'w') as f:
-        cursor.copy(
+        with cursor.copy(
             f'COPY (SELECT row_number() OVER () AS objectid, {",".join(columns)} FROM {schema}.{table}) TO STDOUT WITH CSV HEADER',
-            f)
+            f) as copy:
+                while data := copy.read():
+                    f.write(data)
     return f
 
 
