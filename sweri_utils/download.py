@@ -6,6 +6,7 @@ import arcpy.conversion
 from arcpy import AddMessage, AddError, AddWarning, Exists
 import requests
 from arcpy.management import Delete
+import arcgis.features
 
 
 def get_fields(service_url):
@@ -230,3 +231,59 @@ def fetch_features(url, params):
     except Exception as e:
         AddError(e.args[0])
         raise e
+
+def service_to_postgres(service_url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, call_insert_function,chunk_size = 70):
+    """
+    service_to_postgres allows the capture of records from services that break other methods
+    this method is much slower, and should be used when other methods are exhauseted
+    :param service_url: REST endpoint of feature service
+    :param where_clause:  where clause for filtering features to fetch
+    :param wkid: out spatial reference WKID
+    :param database: destination postgres database
+    :param schema: destination postgres schema
+    :param destination_table: destination postgres table
+    :param cursor: psycopg2 cursor
+    :param sde_file: sde_file connected to target schema
+    :param call_insert_function: calls insert function passed in to insert from additions table to destination table
+    :param chunk_size: check size for batch feature request
+    """
+    #clear data from the destination table
+    #destination table must be in place and have the proper schema
+    cursor.execute(f'TRUNCATE {schema}.{destination_table}')
+
+    service_fl = arcgis.features.FeatureLayer(service_url)
+    service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
+
+    #fetches all ids that will be added
+    ids = get_ids(service_url, where=where_clause)
+    str_ids = [str(i) for i in ids]
+    start = 0
+    total_len = len(ids)
+
+    while start < total_len:
+        id_list = ','.join(str_ids[start:start + chunk_size])
+        count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, sde_file, f'{destination_table}_additions')
+
+        if (count > 0):
+            try:
+                #insert additions to destination table
+                call_insert_function(cursor, schema)
+                
+            except Exception as e:
+                logging.error(e.args[0])
+                raise e
+        
+        logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
+        start+=chunk_size
+    
+def query_by_id_and_save_to_fc(id_list, feature_layer, sde_fc_path, wkid, sde_file, out_fc_name):
+   
+        service_fl_query = feature_layer.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+
+        #make space for additions 
+        if(arcpy.Exists(sde_fc_path)):
+            arcpy.management.Delete(sde_fc_path)
+
+        service_additions_fc = service_fl_query.save(sde_file, f'{out_fc_name}')
+        count = int(arcpy.management.GetCount(service_additions_fc)[0])
+        return count, service_additions_fc

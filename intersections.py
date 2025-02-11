@@ -38,6 +38,7 @@ def calculate_intersections_update_area(intersect_sources, intersect_targets, ne
                                             f'{source_key}_{target_key}', workspace)
             add_area_and_update_intersections(intersect, new_intersections_table, new_intersections_name, source_key, target_key, connection, schema)
             arcpy.management.Delete(intersect)
+            logger.info(f'deleted {intersect}')
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 

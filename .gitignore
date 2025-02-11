@@ -1,6 +1,10 @@
 .env
 *.log
 .idea
+sweri_utils/__pycache__/*
 *.csv
 /analysis/*.csv
 /analysis/raw/
+.vscode/settings.json
+nfpors_testing.py
+__pycache__/*
