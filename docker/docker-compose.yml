@@ -2,7 +2,7 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     env_file:
-      - "./.env"
+      - "../.env"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -16,7 +16,7 @@ services:
   db:
     image: postgis/postgis:15-3.5
     env_file:
-      - "./.env"
+      - "../.env"
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -35,7 +35,7 @@ services:
       context: ../
       dockerfile: ./docker/Dockerfile
     env_file:
-      - "./.env"
+      - "../.env"
     environment:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}

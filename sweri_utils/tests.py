@@ -39,7 +39,8 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {"objectIds": ["peach", "orange"]}
         mockresponse.status_code = 200
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query', {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'}]
+        expected_args = ['http://test.url/query',
+                         {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'}]
         r = get_ids('http://test.url', '46=2')
         self.assertTrue(mock_post.called_once_with(expected_args))
         self.assertEqual(r, ["peach", "orange"])
@@ -100,14 +101,15 @@ class DownloadTests(TestCase):
     @patch('arcpy.management.DefineProjection')
     def test_fetch_create_new_fc(self, mock_project, mock_json_to_fc, mock_exists):
         with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
-                'sweri_utils.download.get_all_features') as get_feat_mock, patch(
-            'sweri_utils.download.get_fields') as get_fields_mock:
+            'sweri_utils.download.get_all_features') as get_feat_mock, patch(
+                'sweri_utils.download.get_fields') as get_fields_mock:
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
             out_fc = 'some_path_to_fc'
             get_ids_mock.return_value = [1, 2, 3]
-            get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {'attributes': {'another': 'feature'}}]
+            get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {
+                'attributes': {'another': 'feature'}}]
 
             get_fields_mock.return_value = []
 
@@ -119,8 +121,10 @@ class DownloadTests(TestCase):
                                               geom, 'polygon', 102100)
             mock_project.assert_called()
             self.assertEqual(r, out_fc)
-            self.assertTrue(get_feat_mock.called_once_with(url, where, 102100, None))
-            self.assertTrue(get_ids_mock.called_once_with(url, where, geom, 'polygon', ))
+            self.assertTrue(get_feat_mock.called_once_with(
+                url, where, 102100, None))
+            self.assertTrue(get_ids_mock.called_once_with(
+                url, where, geom, 'polygon', ))
             self.assertTrue(get_fields_mock.called_once_with(url))
             self.assertTrue(mock_exists.called_once_with(out_fc))
 
@@ -171,12 +175,72 @@ class DownloadTests(TestCase):
     @patch('requests.post')
     def test_fetch_features(self, mock_post, mock_add_error, mock_add_warning):
         mockresponse = Mock()
-        f = [{"attributes": {'something': 'hello'}}, {"attributes": {'something': 'new'}}]
+        f = [{"attributes": {'something': 'hello'}},
+             {"attributes": {'something': 'new'}}]
         mockresponse.json = lambda: {"features": f}
         mock_post.return_value = mockresponse
         r = fetch_features('http://test.url/query', {'where': '1=1'})
         self.assertEqual(r, f)
 
+    @patch('arcgis.features.FeatureLayer')
+    def test_service_to_postgres(self, fl_mock):
+        with patch('sweri_utils.download.get_ids') as get_ids_mock,patch(
+            'sweri_utils.download.query_by_id_and_save_to_fc') as query_and_save_mock:
+
+            get_ids_mock.return_value = [1,2,3]
+            query_and_save_mock.return_value = (10, 'out_filepath')
+            url = 'http://some.url/'
+            where_clause = '1=1'
+            wkid = 3857
+            database = 'test_db'
+            schema = 'test_schema'
+            destination_table = 'test_table'
+            cursor = Mock()
+            sde_file = 'test_sde'
+            insert_function = Mock()
+            chunk_size = 2
+            expected_pg_path = os.path.join('test_sde','test_db.test_schema.test_table_additions')
+
+            service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, insert_function, chunk_size)
+
+            cursor.execute.assert_called_once_with(f'TRUNCATE {schema}.{destination_table}')
+            get_ids_mock.assert_called_once_with(url, where=where_clause)
+            query_and_save_mock.assert_has_calls(
+                [call('1,2', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions'),
+                 call('3', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions')]
+            )
+            insert_function.assert_has_calls(
+                [call(cursor, schema),
+                call(cursor, schema)]
+            )
+
+    @patch('arcpy.management.GetCount')
+    @patch('arcpy.management.Delete')
+    @patch('arcpy.Exists')
+    def test_query_by_id_and_save_to_fc(self, mock_exists, mock_delete, mock_get_count):
+        id_list = '1,2,3,4'
+        fl_mock = Mock()
+        sde_fc_path = 'test_path'
+        wkid = 3857
+        sde_file = 'test_sde_file'
+        out_fc_name = 'test_out_fc_name'
+
+        mock_query = Mock()
+        mock_query.save.return_value = 'saved_fc_path'
+        fl_mock.query.return_value = mock_query
+
+        mock_exists.return_value = True
+        mock_get_count.return_value = ['5']
+
+        count, saved_fc = query_by_id_and_save_to_fc(id_list, fl_mock, sde_fc_path, wkid, sde_file, out_fc_name)
+
+        self.assertEqual(count, 5)
+        self.assertEqual(saved_fc, 'saved_fc_path')
+        fl_mock.query.assert_called_once_with(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        mock_exists.assert_called_once_with(sde_fc_path)
+        mock_delete.assert_called_once_with(sde_fc_path)
+        mock_query.save.assert_called_once_with(sde_file, out_fc_name)
+        mock_get_count.assert_called_once_with('saved_fc_path')
 
 class FilesTests(TestCase):
     @patch('zipfile.ZipFile')
@@ -236,6 +300,42 @@ class FilesTests(TestCase):
         mock_open.assert_called_once_with(destination_path, 'wb')
         mock_open().write.assert_called_once_with(b'Test content')
 
+    @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    @patch('arcpy.management.Delete')
+    @patch('arcpy.Exists')
+    @patch('arcpy.management.Project')
+    def test_gdb_to_postgres(self, mock_project, mock_exist, mock_delete, mock_fc_gdb):
+        with patch('sweri_utils.files.download_file_from_url') as download_file_mock, patch(
+            'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
+            mock_exist.return_value = True
+            sde_file = 'fake_sde_connection_file'
+            gdb_name = 'test_gdb'
+            gdb_path = os.path.join(os.getcwd(),gdb_name)
+            projection = arcpy.SpatialReference(3857)
+            postgres_table_name = 'test_table'
+            schema = 'test_schema'
+            postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
+            fc_name = 'Activity_HazFuelTrt_PL'
+
+            feature_class = os.path.join(gdb_path,fc_name)
+            reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
+            url = 'http://test.url'
+            zip_file = f'{postgres_table_name}.zip'
+
+            gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
+
+
+            download_file_mock.assert_called_once_with(url, zip_file)
+            extract_zip_mock.assert_called_once_with(zip_file)
+            mock_project.assert_called_once_with(feature_class, reprojected_fc, projection)
+            mock_exist.assert_called_once_with(postgres_table_location)
+            mock_delete.assert_has_calls(
+                [
+                    call(postgres_table_location),
+                    call(gdb_path)
+                ]
+            )
+            mock_fc_gdb.assert_called_once_with(reprojected_fc, sde_file)
 
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
@@ -249,7 +349,8 @@ class ConversionTests(TestCase):
         self.assertEqual(project, new_fc)
 
     def test_array_to_dict(self):
-        fields = ['text_field', 'number_field', 'none_field', 'nested_dict', 'nested_arr']
+        fields = ['text_field', 'number_field',
+                  'none_field', 'nested_dict', 'nested_arr']
         row = ['yellow', 123, None, {'hello': 'world'}, ['apples', 'bananas']]
         actual = array_to_dict(fields, row)
         expected = {
@@ -354,10 +455,10 @@ class SqlTests(TestCase):
     def test_rename_postgres_table(self):
         # Mock the connection object
         mock_connection = Mock()
-        mock_connection.execute.return_value = "Success"
 
         # Call the function with test data
-        rename_postgres_table(mock_connection, "public", "old_table", "new_table")
+        rename_postgres_table(
+            mock_connection, "public", "old_table", "new_table")
 
         # Assert the execute method was called with the correct SQL
         mock_connection.execute.assert_has_calls(
