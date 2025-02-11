@@ -81,7 +81,19 @@ def update_last_run(features, start_time, url, layer_id):
 
 
 def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
+    """
+    Calculate intersections between features from two sources and insert the results into a specified table.
+    ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap is used so we can calculate the geodesic area
+    Args:
+        cursor: Database cursor for executing SQL commands.
+        schema (str): The schema name where the tables are located.
+        insert_table (str): The name of the table to insert intersection results into.
+        source_key (str): The key identifying the source features.
+        target_key (str): The key identifying the target features.
 
+    Returns:
+        None
+    """
     # delete existing intersections and replace with new ones
     delete_from_table(cursor, schema, insert_table, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
     logger.info(f'beginning intersections on {source_key} and {target_key}')
