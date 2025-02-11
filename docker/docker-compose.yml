@@ -14,8 +14,7 @@ services:
     volumes:
       - ${HOST_PGADMIN_DATA_PATH}:/var/lib/pgadmin
   db:
-    build:
-      dockerfile: ./Dockerfile.postgis
+    image: postgis/postgis:15-3.5
     env_file:
       - "./.env"
     environment:
