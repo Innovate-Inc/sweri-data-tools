@@ -4,6 +4,7 @@ from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from .download import *
 from .files import *
 from .conversion import *
+from .s3 import import_s3_csv_to_postgres_table
 from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
     refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
 
@@ -260,29 +261,37 @@ class ConversionTests(TestCase):
         }
         self.assertEqual(actual, expected)
 
-    @patch('arcpy.AddMessage')
-    def test_insert_from_db_with_globalid(self, message_mock):
-        mock_conn = Mock()
-        mock_conn.execute.return_value = True
-        insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'])
-        expected = '''insert into dev.insert_here (field1,field2) select sde.next_rowid('dev','insert_here'),sde.next_globalid(),from1,from2 from dev.from_here;'''
-        self.assertEqual(
-            mock_conn.execute.call_args_list,
-            [
-                call('BEGIN;'),
-                call(expected),
-                call('COMMIT;')
-            ]
-        )
+    @patch('sweri_utils.conversion.pg_copy_to_csv')
+    @patch('sweri_utils.conversion.upload_to_s3')
+    def test_create_csv_and_upload_to_s3(self, mock_upload_to_s3, mock_pg_copy_to_csv):
+        # Arrange
+        cursor = MagicMock()
+        schema = 'public'
+        table = 'test_table'
+        columns = ['col1', 'col2']
+        filename = 'test.csv'
+        bucket = 'test-bucket'
+
+        mock_file = MagicMock()
+        mock_file.name = filename
+        mock_pg_copy_to_csv.return_value = mock_file
+        mock_upload_to_s3.return_value = 'upload_success'
+
+        # Act
+        result = create_csv_and_upload_to_s3(cursor, schema, table, columns, filename, bucket)
+
+        # Assert
+        mock_pg_copy_to_csv.assert_called_once_with(cursor, schema, table, filename, columns)
+        mock_upload_to_s3.assert_called_once_with(bucket, filename, filename)
+        self.assertEqual(result, 'upload_success')
 
     @patch('arcpy.AddMessage')
-    def test_insert_from_db_without_globalid(self, message_mock):
+    def test_insert_from_db(self, message_mock):
         mock_conn = Mock()
         mock_conn.execute.return_value = True
         insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
                        'from_here', ['from1', 'from2'], False)
-        expected = '''insert into dev.insert_here (field1,field2) select sde.next_rowid('dev','insert_here'),from1,from2 from dev.from_here;'''
+        expected = 'insert into dev.insert_here (shape, field1,field2) select ST_TRANSFORM(ST_MakeValid(False), 4326), from1,from2 from dev.from_here;'
 
         self.assertEqual(
             mock_conn.execute.call_args_list,
@@ -292,6 +301,53 @@ class ConversionTests(TestCase):
                 call('COMMIT;')
             ]
         )
+
+    @patch('requests.get')
+    def test_create_coded_val_dict(self, mock_get):
+        # Mock response data
+        mock_response = {
+            'domains': [
+                {
+                    'codedValues': [
+                        {'code': 1, 'name': 'Value1'},
+                        {'code': 2, 'name': 'Value2'}
+                    ]
+                }
+            ]
+        }
+        mock_get.return_value.json.return_value = mock_response
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+        expected_result = {1: 'Value1', 2: 'Value2'}
+
+        result = create_coded_val_dict(url, layer)
+        self.assertEqual(result, expected_result)
+
+    @patch('requests.get')
+    def test_create_coded_val_dict_missing_domains(self, mock_get):
+        mock_get.return_value.json.return_value = {}
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+
+        with self.assertRaises(ValueError) as context:
+            create_coded_val_dict(url, layer)
+        self.assertEqual(str(context.exception), 'missing domains')
+
+    @patch('requests.get')
+    def test_create_coded_val_dict_missing_coded_values(self, mock_get):
+        mock_response = {
+            'domains': [{}]
+        }
+        mock_get.return_value.json.return_value = mock_response
+
+        url = 'http://example.com/arcgis/rest/services'
+        layer = '0'
+
+        with self.assertRaises(ValueError) as context:
+            create_coded_val_dict(url, layer)
+        self.assertEqual(str(context.exception), 'missing coded values or incorrect domain type')
 
 
 class SqlTests(TestCase):
@@ -464,3 +520,48 @@ class SqlTests(TestCase):
             f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
         to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table};")
         to_cursor.copy.assert_called_once_with(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)")
+
+
+class S3Tests(TestCase):
+    def test_import_s3_csv_to_postgres_table(self):
+        # Mock cursor
+        mock_cursor = MagicMock()
+
+        # Define test parameters
+        db_schema = 'public'
+        fields = ['id', 'name', 'value']
+        destination_table = 'test_table'
+        s3_bucket = 'test_bucket'
+        csv_file = 'test_file.csv'
+        aws_region = 'us-west-2'
+
+        # Call the function
+        import_s3_csv_to_postgres_table(mock_cursor, db_schema, fields, destination_table, s3_bucket, csv_file,
+                                        aws_region)
+
+        mock_cursor.execute.assert_has_calls(
+            [
+                call('BEGIN;'),
+                call(f'DELETE FROM {db_schema}.{destination_table};'),
+                call(f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
+                call('COMMIT;')
+            ]
+        )
+
+    def test_upload_to_s3(self):
+        # Arrange
+        bucket = 'test_bucket'
+        file_name = 'test_file.txt'
+        obj_name = 'test_file.txt'
+
+        # Mock the boto3 client and its upload_file method
+        with patch('boto3.client') as mock_boto_client:
+            mock_s3 = mock_boto_client.return_value
+            mock_s3.upload_file.return_value = None
+
+            # Act
+            upload_to_s3(bucket, file_name, obj_name)
+
+            # Assert
+            mock_boto_client.assert_called_once_with('s3')
+            mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)

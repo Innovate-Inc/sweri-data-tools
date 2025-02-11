@@ -197,7 +197,6 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
     out_features = []
     # get all features
     for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size, 'geojson'):
-        # change to insert directly into db
         out_features += f
 
     if len(out_features) == 0:
