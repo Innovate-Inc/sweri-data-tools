@@ -123,7 +123,7 @@ def get_ids(service_url, where='1=1', geometry=None, geometry_type=None):
     data = response.json()
     if 'error' in data or response.status_code != 200:
         raise Exception(f'Failed to fetch object Ids, {response.status_code}: {data}')
-    if 'objectIds' not in data or data.get('objectIds') == None:
+    if 'objectIds' not in data or data.get('objectIds') is None:
         raise Exception('objectIds are missing from request')
     return data.get('objectIds')
 
@@ -139,7 +139,7 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     :return: None
     """
     logging.info(f'getting all features for {url}')
-    # AddMessage(f'getting all features for {url}')
+    arcpy.AddMessage(f'getting all features for {url}')
     if out_fields is None:
         out_fields = ['*']
     start = 0
@@ -162,14 +162,14 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
             total += len(r)
             yield r
             logging.info(f'{total} of {len(ids)} fetched')
-            # arcpy.AddMessage(f'{total} of {len(ids)} fetched')
+            arcpy.AddMessage(f'{total} of {len(ids)} fetched')
         except Exception as e:
             logging.error(e.args[0])
-            # arcpy.AddError(e.args[0])
+            arcpy.AddError(e.args[0])
             raise e
     if total != len(ids):
         logging.warning(f'missing features: {total} of {len(ids)} collected')
-        # AddWarning(f'missing features: {total} of {len(ids)} collected')
+        arcpy.AddWarning(f'missing features: {total} of {len(ids)} collected')
 
 
 @retry(retries=2, on_failure=fetch_failure)
@@ -184,11 +184,9 @@ def fetch_features(url, params):
         r = requests.post(url, data=params)
         r_json = r.json()
         if 'features' not in r_json:
-            # arcpy.AddWarning('no features returned, retrying')
             raise KeyError(f'Error: {r.content} With Params: {json.dumps(params)}')
         return r_json['features']
     except Exception as e:
-        # AddError(e.args[0])
         raise e
 
 def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, out_sr=4326,
