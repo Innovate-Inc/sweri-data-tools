@@ -10,12 +10,11 @@ from sweri_utils.s3 import import_s3_csv_to_postgres_table
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index, \
     rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze
 import watchtower
+logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
-logger = logging.getLogger(__name__)
-
-
 logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.setLevel(logging.INFO)
 
 
 def configure_intersection_sources(features, coded_vals, start):

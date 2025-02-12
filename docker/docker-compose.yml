@@ -47,7 +47,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-#    restart: always
     volumes:
       - ..:/code
 volumes:
