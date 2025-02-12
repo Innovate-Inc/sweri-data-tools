@@ -139,7 +139,6 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     :return: None
     """
     logging.info(f'getting all features for {url}')
-    arcpy.AddMessage(f'getting all features for {url}')
     if out_fields is None:
         out_fields = ['*']
     start = 0
@@ -162,14 +161,11 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
             total += len(r)
             yield r
             logging.info(f'{total} of {len(ids)} fetched')
-            arcpy.AddMessage(f'{total} of {len(ids)} fetched')
         except Exception as e:
             logging.error(e.args[0])
-            arcpy.AddError(e.args[0])
             raise e
     if total != len(ids):
         logging.warning(f'missing features: {total} of {len(ids)} collected')
-        arcpy.AddWarning(f'missing features: {total} of {len(ids)} collected')
 
 
 @retry(retries=2, on_failure=fetch_failure)
