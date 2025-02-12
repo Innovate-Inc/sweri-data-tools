@@ -619,10 +619,10 @@ def include_other_activites(cursor, schema, table):
 def common_attributes_type_filter(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''           
-        DELETE from staging.{treatment_index}_temp 
+        DELETE from {schema}.{treatment_index}_temp 
         WHERE
         type IN (
-            SELECT value from staging.common_attributes_lookup
+            SELECT value from {schema}.common_attributes_lookup
             WHERE filter = 'type'
             AND include = 'FALSE')
         AND
