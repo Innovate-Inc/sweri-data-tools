@@ -125,7 +125,7 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
     #Clear space in postgres for table
     if(arcpy.Exists(postgres_table_location)):
         arcpy.management.Delete(postgres_table_location)
-        logging.info(f'{postgres_table_name} postgres table has been deleted')
+        logging.info(f'existing {postgres_table_name} postgres table has been deleted')
 
     #Upload fc to postgres
     arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)

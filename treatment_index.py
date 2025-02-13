@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import logging
 import re
 from arcgis.features import FeatureLayer
-# import watchtower
+import watchtower
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
 from sweri_utils.download import get_ids, service_to_postgres
@@ -14,7 +14,7 @@ from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def create_temp_table(sde_file, table_name, projection, cur, schema):
 
@@ -509,7 +509,7 @@ def include_logging_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"included set to 'yes' for logging activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"r2 set to 'PASS' for logging activities with proper methods and equipment in {schema}.{table}")
     
 def include_fire_activites(cursor, schema, table):
     # Make sure the activity includes 'burn' or 'fire'
@@ -542,7 +542,7 @@ def include_fire_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"included set to 'yes' for fire activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"r3 set to 'PASS' for fire activities with proper methods and equipment in {schema}.{table}")
 
 def include_fuel_activities(cursor, schema, table):
     # Make sure the activity includes 'fuel'
@@ -573,7 +573,7 @@ def include_fuel_activities(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"included set to 'yes' for fuel activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"r4 set to 'PASS' for fuel activities with proper methods and equipment in {schema}.{table}")
 
 def activity_filter(cursor, schema, table):
     # Filters based on activity to ensure only intended activities enter the database
@@ -596,10 +596,11 @@ def activity_filter(cursor, schema, table):
         WHERE filter = 'special_exclusions'
         AND include = 'TRUE'
     );
-
     
     ''')
     cursor.execute('COMMIT;')
+    logger.info(f"r6 set to 'PASS' passing activities with acceptable activity values {schema}.{table}")
+
 
 def include_other_activites(cursor, schema, table):
     #lookup based inclusion not dependent on other rules
@@ -641,15 +642,15 @@ def include_other_activites(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"included set to 'yes' for other activities with proper methods and equipment in {schema}.{table}")
+    logger.info(f"r5 set to 'PASS' for other activities with proper methods and equipment in {schema}.{table}")
 
 def common_attributes_type_filter(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''           
-        DELETE from staging.{treatment_index}_temp 
+        DELETE from {schema}.{treatment_index}_temp 
         WHERE
         type IN (
-            SELECT value from staging.common_attributes_lookup
+            SELECT value from {schema}.common_attributes_lookup
             WHERE filter = 'type'
             AND include = 'FALSE')
         AND
@@ -676,6 +677,7 @@ def set_included(cursor, schema, table):
     
     ''')
     cursor.execute('COMMIT;')    
+    logger.info(f"included set to 'yes' for {schema}.{table} records with proper rules passing")
 
 def common_attributes_insert(cursor, schema, table, treatment_index):
     # insert records where included = 'yes'
