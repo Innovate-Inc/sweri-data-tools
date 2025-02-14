@@ -52,7 +52,7 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['total_cost', 'DOUBLE', 'Total Cost', '', '', ''],
             ['cost_per_uom', 'DOUBLE', 'Cost per Unit of Measure', '', '', ''],
             ['uom', 'TEXT', 'Unit of Measure', 255, '', ''],
-            ['error', 'TEXT', 'Error', 255, '', '']
+            ['error', 'TEXT', 'Error Code', 255, '', '']
         ]
     )
 
