@@ -10,7 +10,7 @@ import watchtower
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-from error_flagging import flag_duplicates, flag_high_cost
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -728,6 +728,12 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
+def flag_errors(cursor, schema, target_table):
+    flag_high_cost(cursor, schema, target_table)
+    flag_duplicates(cursor, schema, target_table)  
+    flag_uom_outliers(cursor, schema, target_table) 
+
+
 def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
@@ -827,8 +833,7 @@ if __name__ == "__main__":
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
-    flag_high_cost(cur, target_schema, f'{insert_table}_temp')
-    flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    flag_errors(cur, target_schema, f'{insert_table}_temp')
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
     rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)

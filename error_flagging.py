@@ -174,6 +174,23 @@ def flag_high_cost(cursor, schema, table_name):
     flag_high_cost_each(cursor, schema, table_name)
     flag_high_cost_miles(cursor, schema, table_name)
 
+def flag_uom_outliers(cursor, schema, table_name):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{table_name}
+        SET error = 
+            CASE
+                WHEN error IS NULL THEN 'CHECK_UOM'
+                ELSE error || ';CHECK_UOM'
+            END
+        WHERE
+        uom = 'MILES' 
+        OR
+        uom = 'EACH';
+    ''')
+    cursor.execute('COMMIT;')
+    logging.info(f'check uom flagged in error field for {schema}.{table_name}')
+
 if __name__ == "__main__":
     load_dotenv()
     target_table = 'treatment_index_facts_nfpors_temp'
@@ -183,6 +200,8 @@ if __name__ == "__main__":
     # logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     flag_high_cost(cur, target_schema, target_table)
     flag_duplicates(cur, target_schema, target_table)
+    flag_uom_outliers(cur, target_schema, target_table) 
+    conn.close()
