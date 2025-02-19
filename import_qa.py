@@ -154,7 +154,7 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
     else:
         sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ()"
 
-
+    logging.info('Running Hazardous Fuels sample comparison')
     compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause,haz_fields, hazardous_fuels_url, date_field, source_database)
 
 
@@ -178,6 +178,7 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
     #need to offset NFPORS by 1 to ignore the id field since we are splitting it apart
     iterator_offset = 1
 
+    logging.info('Running NFPORS sample comparison')
     compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, nfpors_url, date_field, source_database, iterator_offset)
 
                  
@@ -199,6 +200,7 @@ def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema
 
     date_field = 'DATE_COMPLETED'
 
+    logging.info('Running Common Attributes sample comparison')
     compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause, common_attributes_fields, common_attributes_service, date_field, source_database)
 
 
