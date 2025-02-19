@@ -87,7 +87,7 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema):
 def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url, date_field, source_database, iterator_offset = 0):
 
 
-    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause) as service_cursor:
+    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause, spatial_reference=arcpy.SpatialReference(3857)) as service_cursor:
         same = 0
         different = 0
         features_equal = False
@@ -140,7 +140,7 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
 
 def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
 
-    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
+    hazardous_fuels_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15'
     haz_fields = ['activity_cn', 'activity_sub_unit_name','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
     sweri_haz_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']
     source_database = 'FACTS Hazardous Fuels'
@@ -161,7 +161,7 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
 
 
 def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
-    nfpors_url = os.getenv('NFPORS_URL')
+    nfpors_url = 'https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0'
     nfpors_fields = ['trt_nm','act_comp_dt','gis_acres','type_name','cat_nm','st_abbr']
     sweri_nfpors_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'SHAPE@']
     source_database = 'NFPORS'
@@ -184,7 +184,7 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
 
 
 def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema):
-    common_attributes_service = os.getenv('COMMON_ATTRIBUTES_SERVICE')
+    common_attributes_service = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0'
     common_attributes_fields = ['event_cn', 'name','date_completed','gis_acres','nfpors_treatment','nfpors_category','state_abbr','fund_codes','cost_per_unit','uom','activity']
     sweri_common_attributes_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
