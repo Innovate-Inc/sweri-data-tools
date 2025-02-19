@@ -1,0 +1,7 @@
+pygdal==3.6.2.11
+psycopg==3.2.4
+python-dotenv==1.0.1
+geopandas==0.14.4
+watchtower==3.3.1
+requests==2.32.3
+arcgis==2.3.0

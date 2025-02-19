@@ -206,7 +206,7 @@ def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema
 if __name__ == '__main__':
     load_dotenv()
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     arcpy.env.workspace = arcpy.env.scratchGDB
 
     sde_connection_file = os.getenv('SDE_FILE')
@@ -221,3 +221,4 @@ if __name__ == '__main__':
     nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
     common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
     hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
+    conn.close()
