@@ -38,5 +38,5 @@ We appreciate citations for TWIG, the Treatment Index, and this software because
 A forthcoming _Data Descriptor_ paper will include a DOI and it is recommended that users cite this paper when it becomes available. 
 Please [contact us](aidan-franko@nau.edu) for more information. 
 
-Open Code & Reproducible Science
+# Open Code & Reproducible Science
 SWERI Data Tools exist to facilitate open and reprobucible science and reporting. Internal discussions regarding the appropriate license are ongoing. 
