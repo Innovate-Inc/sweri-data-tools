@@ -138,9 +138,8 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
     else:
         logging.info(f'all {same} sweri {source_database} features matched source {source_database} features')
 
-def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
+def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
 
-    hazardous_fuels_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15'
     haz_fields = ['activity_cn', 'activity_sub_unit_name','date_completed','gis_acres','treatment_type','cat_nm','fund_code','cost_per_uom','uom','state_abbr','activity']
     sweri_haz_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code', 'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']
     source_database = 'FACTS Hazardous Fuels'
@@ -155,13 +154,12 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema):
         sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ()"
 
     logging.info('Running Hazardous Fuels sample comparison')
-    compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause,haz_fields, hazardous_fuels_url, date_field, source_database)
+    compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause,haz_fields, service_url, date_field, source_database)
 
 
 
 
-def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
-    nfpors_url = 'https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0'
+def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     nfpors_fields = ['trt_nm','act_comp_dt','gis_acres','type_name','cat_nm','st_abbr']
     sweri_nfpors_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'SHAPE@']
     source_database = 'NFPORS'
@@ -179,13 +177,12 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema):
     iterator_offset = 1
 
     logging.info('Running NFPORS sample comparison')
-    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, nfpors_url, date_field, source_database, iterator_offset)
+    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, service_url, date_field, source_database, iterator_offset)
 
                  
 
 
-def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema):
-    common_attributes_service = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0'
+def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     common_attributes_fields = ['event_cn', 'name','date_completed','gis_acres','nfpors_treatment','nfpors_category','state_abbr','fund_codes','cost_per_unit','uom','activity']
     sweri_common_attributes_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
@@ -201,7 +198,7 @@ def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema
     date_field = 'DATE_COMPLETED'
 
     logging.info('Running Common Attributes sample comparison')
-    compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause, common_attributes_fields, common_attributes_service, date_field, source_database)
+    compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause, common_attributes_fields, service_url, date_field, source_database)
 
 
 
@@ -214,13 +211,16 @@ if __name__ == '__main__':
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     treatment_index_table = 'treatment_index_facts_nfpors'
+    hazardous_fuels_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15'
+    nfpors_url = 'https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0'
+    common_attributes_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0'
 
     treatment_index_sweri_fc = os.path.join(sde_connection_file, f"sweri.{target_schema}.{treatment_index_table}")
 
     logging.info('new run')
     logging.info('______________________________________')
 
-    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
-    common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
-    hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema)
+    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
+    common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, common_attributes_url)
+    hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, hazardous_fuels_url)
     conn.close()
