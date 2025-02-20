@@ -213,7 +213,7 @@ if __name__ == '__main__':
     treatment_index_table = 'treatment_index_facts_nfpors'
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
-    common_attributes_url =  os.getenv('COMMON_ATTRIBUTES_SERVICE')
+    common_attributes_url =  os.getenv('COMMON_ATTRIBUTES_URL')
     treatment_index_sweri_fc = os.path.join(sde_connection_file, f"sweri.{target_schema}.{treatment_index_table}")
 
     logging.info('new run')
