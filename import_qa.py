@@ -211,10 +211,9 @@ if __name__ == '__main__':
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     treatment_index_table = 'treatment_index_facts_nfpors'
-    hazardous_fuels_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15'
-    nfpors_url = 'https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0'
-    common_attributes_url = 'https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0'
-
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
+    nfpors_url = os.getenv('NFPORS_URL')
+    common_attributes_url =  os.getenv('COMMON_ATTRIBUTES_SERVICE')
     treatment_index_sweri_fc = os.path.join(sde_connection_file, f"sweri.{target_schema}.{treatment_index_table}")
 
     logging.info('new run')
