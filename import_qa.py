@@ -104,7 +104,7 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
                 nfporsfid, trt_id = row[0].split('-',1)
                 service_where_clause = f"nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}'"
                 
-            params = {'f': 'json', 'outSR': 3857, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
+            params = {'f': 'geojson', 'outSR': 3857, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
             'where': service_where_clause}
         
             service_feature = fetch_features(service_url +'/query', params)
