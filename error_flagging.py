@@ -1,8 +1,9 @@
-from sweri_utils.sql import  connect_to_pg_db
+from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
 import os
 import logging
 from dotenv import load_dotenv
-import watchtower
+
+# import watchtower
 
 def create_duplicate_table(cursor, schema, table_name):
     
@@ -36,6 +37,18 @@ def create_duplicate_table(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
     logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+
+        CREATE INDEX
+        ON {schema}.treatment_index_duplicates
+        USING GIST (shape);
+
+    ''')
+    cursor.execute('COMMIT;')
+
+    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'activity')
+    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'actual_completion_date')
 
 def flag_duplicate_table(cursor, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
@@ -133,25 +146,6 @@ def flag_high_cost_each(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
-def flag_high_cost_miles(cursor, schema, table_name):
-    cursor.execute('BEGIN;')
-    cursor.execute(f'''
-        UPDATE {schema}.{table_name}
-        SET error = 
-            CASE
-                WHEN error IS NULL THEN 'HIGH_COST'
-                ELSE error || ';HIGH_COST'
-            END
-        WHERE
-        uom = 'MILES' 
-        AND
-        acres is not null
-        AND
-        cost_per_uom/(acres*640) > 10000;
-    ''')
-    cursor.execute('COMMIT;')
-    logging.info(f'High cost flagged in error field for {schema}.{table_name}')
-
 def flag_high_cost(cursor, schema, table_name):
     # Flags treatments with more than $10,000 spent per acre of treatment 
     # Different functions are needed based on the uom or Unit of Measure
@@ -159,7 +153,23 @@ def flag_high_cost(cursor, schema, table_name):
 
     flag_high_cost_acres(cursor, schema, table_name)
     flag_high_cost_each(cursor, schema, table_name)
-    flag_high_cost_miles(cursor, schema, table_name)
+
+def flag_uom_outliers(cursor, schema, table_name):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{table_name}
+        SET error = 
+            CASE
+                WHEN error IS NULL THEN 'CHECK_UOM'
+                ELSE error || ';CHECK_UOM'
+            END
+        WHERE
+        uom = 'MILES' 
+        OR
+        uom = 'EACH';
+    ''')
+    cursor.execute('COMMIT;')
+    logging.info(f'check uom flagged in error field for {schema}.{table_name}')
 
 if __name__ == "__main__":
     load_dotenv()
@@ -167,9 +177,11 @@ if __name__ == "__main__":
     target_schema = os.getenv('SCHEMA')
     logger = logging.getLogger(__name__)
     logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./error_flagging.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    logger.addHandler(watchtower.CloudWatchLogHandler())
+    # logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     flag_high_cost(cur, target_schema, target_table)
     flag_duplicates(cur, target_schema, target_table)
+    flag_uom_outliers(cur, target_schema, target_table) 
+    conn.close()
