@@ -21,12 +21,12 @@ def field_equality(comparison_feature, sweri_feature, iterator_offset = 0):
     if iterator_offset > 0:
         field_equal['id'] = sweri_feature[0]
 
-    for key in comparison_feature[0]['attributes']:
-        field_equal[key] = comparison_feature[0]['attributes'][key] == sweri_feature[iterator]
+    for key in comparison_feature['attributes']:
+        field_equal[key] = comparison_feature['attributes'][key] == sweri_feature[iterator]
         iterator += 1
 
-    if(sweri_feature[-1] is not None and comparison_feature[0]['geometry'] is not None):
-        field_equal['geom'] = arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1]) 
+    if(sweri_feature[-1] is not None and comparison_feature['geometry'] is not None):
+        field_equal['geom'] = arcpy.AsShape(comparison_feature['geometry'],True).equals(sweri_feature[-1]) 
     
     return field_equal
 
@@ -40,12 +40,12 @@ def value_comparison(comparison_feature, sweri_feature, source_database, iterato
     if iterator_offset > 0:
         value_compare['id'] = sweri_feature[0]
     
-    for key in comparison_feature[0]['attributes']:
-        value_compare[comparison_feature[0]['attributes'][key]] = sweri_feature[iterator]
+    for key in comparison_feature['attributes']:
+        value_compare[comparison_feature['attributes'][key]] = sweri_feature[iterator]
         iterator += 1
     
     if(sweri_feature[-1] != None):
-        value_compare['geom'] = arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1]) 
+        value_compare['geom'] = arcpy.AsShape(comparison_feature['geometry'],True).equals(sweri_feature[-1]) 
     
     return value_compare
 
@@ -53,17 +53,17 @@ def compare_features(comparison_feature, sweri_feature, iterator_offset = 0):
     iterator = 0 + iterator_offset
     total_compare = True
     
-    for key in comparison_feature[0]['attributes']:
+    for key in comparison_feature['attributes']:
         if type(sweri_feature[iterator]) == float:
-            total_compare = total_compare and ((comparison_feature[0]['attributes'][key]) - sweri_feature[iterator]) < 1
+            total_compare = total_compare and ((comparison_feature['attributes'][key]) - sweri_feature[iterator]) < 1
         elif type(sweri_feature[iterator]) == str:
-            total_compare = total_compare and comparison_feature[0]['attributes'][key].strip() == sweri_feature[iterator].strip()
+            total_compare = total_compare and comparison_feature['attributes'][key].strip() == sweri_feature[iterator].strip()
         else:
-            total_compare = total_compare and comparison_feature[0]['attributes'][key] == sweri_feature[iterator]
+            total_compare = total_compare and comparison_feature['attributes'][key] == sweri_feature[iterator]
         iterator += 1
 
     if(sweri_feature[-1] != None):
-        total_compare = total_compare and arcpy.AsShape(comparison_feature[0]['geometry'],True).equals(sweri_feature[-1])
+        total_compare = total_compare and arcpy.AsShape(comparison_feature['geometry'],True).equals(sweri_feature[-1])
     
     return total_compare
 
@@ -84,10 +84,10 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema):
     return comparison_ids
 
 
-def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url, date_field, source_database, iterator_offset = 0):
+def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url, date_field, source_database, iterator_offset = 0, wkid = 3857):
 
 
-    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause, spatial_reference=arcpy.SpatialReference(3857)) as service_cursor:
+    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause, spatial_reference=arcpy.SpatialReference(wkid)) as service_cursor:
         same = 0
         different = 0
         features_equal = False
@@ -104,7 +104,7 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
                 nfporsfid, trt_id = row[0].split('-',1)
                 service_where_clause = f"nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}'"
                 
-            params = {'f': 'geojson', 'outSR': 3857, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
+            params = {'f': 'json', 'outSR': wkid, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
             'where': service_where_clause}
         
             service_feature = fetch_features(service_url +'/query', params)
@@ -117,17 +117,21 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
             elif len(service_feature) > 1:
                 logging.warning(f'more than one feature returned for {row[0]} in {source_database}, skipping comparison')
                 continue
-  
-            if service_feature[0]['attributes'][date_field] is not None:
-                service_feature[0]['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=(service_feature[0]['attributes'][date_field]/1000))
             
-            features_equal = compare_features(service_feature, row, iterator_offset)  
+            target_feature = service_feature[0]
+
+            if target_feature['attributes'][date_field] is not None:
+                target_feature['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=(target_feature['attributes'][date_field]/1000))
+            
+            target_feature['geometry']['spatialReference'] = {'wkid':wkid}
+
+            features_equal = compare_features(target_feature, row, iterator_offset)  
 
             if features_equal == True:
                 same += 1
             else:
-                logging.warning(field_equality(service_feature, row, iterator_offset))
-                logging.warning(value_comparison(service_feature, row, source_database, iterator_offset))
+                logging.warning(field_equality(target_feature, row, iterator_offset))
+                logging.warning(value_comparison(target_feature, row, source_database, iterator_offset))
                 different += 1
     
     logging.info(f'{source_database} comparison complete')
