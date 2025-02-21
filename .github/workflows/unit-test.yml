@@ -16,7 +16,8 @@ jobs:
     steps:
       - name: Install libkrb5 for Kerberos on Linux
         run: |
-          sudo apt install -y libkrb5-dev
+          sudo apt-get update 
+          sudo apt-get install libkrb5-dev
           pip install requests-kerberos
       - name: checkout
         uses: actions/checkout@v3
