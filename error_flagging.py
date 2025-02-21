@@ -2,8 +2,7 @@ from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
 import os
 import logging
 from dotenv import load_dotenv
-
-# import watchtower
+import watchtower
 
 def create_duplicate_table(cursor, schema, table_name):
     
@@ -180,7 +179,7 @@ if __name__ == "__main__":
     target_schema = os.getenv('SCHEMA')
     logger = logging.getLogger(__name__)
     logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./error_flagging.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    # logger.addHandler(watchtower.CloudWatchLogHandler())
+    logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
     cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
