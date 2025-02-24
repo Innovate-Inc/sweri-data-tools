@@ -1,4 +1,5 @@
 import arcpy
+import json
 from os import path
 import sys, os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
@@ -17,14 +18,23 @@ tools = r"C:\path\to\sweri_utils"
 sys.path.append(tools)
 from intersections import configure_intersection_sources, update_schema_for_intersections_insert
 
+def format_message(progress, buffer, label):
+    data = {
+        'progress': progress,
+        'buffer': buffer,
+        'label': label
+    }
+    return json.dumps(data)
+
 if __name__ == '__main__':
     arcpy.env.overwriteOutput = True
     aoi = arcpy.GetParameterAsText(0) # AOI
     schema = arcpy.GetParameterAsText(1)
     sde_connection_file = arcpy.GetParameterAsText(2)
-    progressor_position = 0
-    arcpy.SetProgressor("step")
-    arcpy.SetProgressorLabel("Configuring data sources")
+    progress = 0
+    buffer = 2
+    label = "Configuring data sources"
+    arcpy.AddMessage(format_message(progress, buffer, label))
     treatment_intersections = path.join(sde_connection_file, 'sweri.{}.intersections'.format(schema))
     target_table = CreateTable(arcpy.env.scratchGDB, 'intersections', template=treatment_intersections)
 
@@ -32,14 +42,13 @@ if __name__ == '__main__':
 
     source_feature = {'source_key': 'custom', 'source_value': aoi}
     _, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
-    arcpy.AddMessage('Configured data sources')
-    progressor_position += 2
-    arcpy.SetProgressorPosition(progressor_position)
-    intersect_step_value = round(95/intersect_targets.items().length)
+    progress += buffer
+    buffer = round(95/intersect_targets.items().length)
 
     for target_key, target_value in intersect_targets.items():
         tv = target_value['name'] if 'name' in target_value else target_key
-        arcpy.SetProgressorLabel('Calculating intersections for ' + tv)
+        label = 'Calculating intersections for ' + tv
+        arcpy.AddMessage(format_message(progress, buffer, label))
         target_where = "feat_source = '{}'".format(target_key)
         target_layer = arcpy.management.MakeFeatureLayer(intersection_features, where_clause=target_where)
         intersect_output = os.path.join(arcpy.env.scratchGDB, target_key)
@@ -56,20 +65,17 @@ if __name__ == '__main__':
             arcpy.management.CalculateField(intersect_output, 'acre_overlap', '0', 'PYTHON3')
 
         arcpy.management.Append(intersect_output, target_table, 'NO_TEST')
-        arcpy.AddMessage('Calculated intersections for ' + tv)
-        progressor_position += intersect_step_value
-        arcpy.SetProgressorPosition(progressor_position)
+        progress += buffer
 
-    arcpy.SetProgressorLabel('Generating output')
+    buffer = 2
+    label = 'Generating output'
+    arcpy.AddMessage(format_message(progress, buffer, label))
+
     filename = '{}.json'.format(uuid4())
     export = path.join(arcpy.env.scratchFolder, filename)
     records = arcpy.RecordSet(target_table)
     j = records.JSON
     with open(export, 'w') as f:
         f.write(j)
-    
-    arcpy.AddMessage('Generated output')
-    progressor_position += 2
-    arcpy.SetProgressorPosition(progressor_position)
-    
+        
     arcpy.SetParameter(3, export)
