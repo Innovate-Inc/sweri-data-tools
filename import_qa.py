@@ -123,8 +123,9 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
             if target_feature['attributes'][date_field] is not None:
                 target_feature['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(seconds=(target_feature['attributes'][date_field]/1000))
             
-            target_feature['geometry']['spatialReference'] = {'wkid':wkid}
-
+            if 'geometry' in target_feature:
+                target_feature['geometry']['spatialReference'] = {'wkid':wkid}
+            
             features_equal = compare_features(target_feature, row, iterator_offset)  
 
             if features_equal == True:
@@ -223,7 +224,7 @@ if __name__ == '__main__':
     logging.info('new run')
     logging.info('______________________________________')
 
-    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
     common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, common_attributes_url)
+    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
     hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, hazardous_fuels_url)
     conn.close()
