@@ -84,12 +84,13 @@ if __name__ == '__main__':
 
     source_feature = {'source_key': 'custom', 'source_value': aoi}
     _, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
-    progress += buffer
-    buffer = round(95/len(intersect_targets.items()))
+    intersect_progress = round(95/len(intersect_targets.items()))
 
     for target_key, target_value in intersect_targets.items():
         tv = target_value['name'] if 'name' in target_value else target_key
         label = 'Calculating intersections for ' + tv
+        progress = buffer
+        buffer += intersect_progress
         arcpy.AddMessage(format_message(progress, buffer, label))
         target_where = "feat_source = '{}'".format(target_key)
         target_layer = arcpy.management.MakeFeatureLayer(intersection_features, where_clause=target_where)
@@ -107,9 +108,9 @@ if __name__ == '__main__':
             arcpy.management.CalculateField(intersect_output, 'acre_overlap', '0', 'PYTHON3')
 
         arcpy.management.Append(intersect_output, target_table, 'NO_TEST')
-        progress += buffer
 
-    buffer = 2
+    progress = buffer
+    buffer += 2
     label = 'Generating output'
     arcpy.AddMessage(format_message(progress, buffer, label))
 
