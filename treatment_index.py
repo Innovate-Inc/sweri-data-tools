@@ -628,10 +628,10 @@ def include_other_activites(cursor, schema, table):
 def common_attributes_type_filter(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''           
-        DELETE from staging.{treatment_index}_temp 
+        DELETE from {schema}.{treatment_index}_temp 
         WHERE
         type IN (
-            SELECT value from staging.common_attributes_lookup
+            SELECT value from {schema}.common_attributes_lookup
             WHERE filter = 'type'
             AND include = 'FALSE')
         AND
@@ -777,7 +777,7 @@ if __name__ == "__main__":
     #This is the path of the final table, _temp and _backup of this table must also exist
     insert_table = f'treatment_index_facts_nfpors'
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))[0]
     
     cur.execute(f'TRUNCATE {target_schema}.{insert_table}_temp')
 
