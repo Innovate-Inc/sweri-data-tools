@@ -48,10 +48,12 @@ def insert_from_db(
         from_table: str,
         from_fields: list[str],
         from_shape: str = 'shape',
-        to_shape: str = 'shape'
+        to_shape: str = 'shape',
+        wkid = 3857
 ) -> None:
     """
     Inserts records from one database into another in an enterprise geodatabase
+    :param wkid:
     :param to_shape:
     :param from_shape:
     :param cursor: psycopg2 connection cursor object
@@ -62,7 +64,7 @@ def insert_from_db(
     :param from_fields: list of field names mapping to insert fields
     :return: None
     """
-    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_TRANSFORM(ST_MakeValid({from_shape}), 4326), {','.join(from_fields)} from {schema}.{from_table};'''
+    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_TRANSFORM(ST_MakeValid({from_shape}), {wkid}), {','.join(from_fields)} from {schema}.{from_table};'''
     logging.info(q)
     cursor.execute('BEGIN;')
     cursor.execute(q)
