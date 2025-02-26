@@ -130,6 +130,9 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
     """
     logging.info('moving to postgres table updates')
     # rename backup  to temp table to make space for new backup
+    # drop temp backup table
+    drop_temp_table(cursor, schema, backup_table_name)
+
     rename_postgres_table(cursor, schema, backup_table_name,
                           f'{backup_table_name}_temp')
     logging.info(f'{schema}.{backup_table_name} renamed to {schema}.{backup_table_name}_temp')
@@ -144,15 +147,18 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
 
     # drop (default) or swap out temp table with new table
     if drop_temp:
-        # drop temp backup table
-        cursor.execute('BEGIN;')
-        cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
-        cursor.execute('COMMIT;')
-        logging.info(f'{schema}.{backup_table_name}_temp deleted')
+        drop_temp_table(cursor, schema, backup_table_name)
     else:
         # cycle temp backup into new table
         rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
         logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
+
+def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str) -> None:
+    # drop temp backup table
+    cursor.execute('BEGIN;')
+    cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
+    cursor.execute('COMMIT;')
+    logging.info(f'{schema}.{backup_table_name}_temp deleted')
 
 
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,

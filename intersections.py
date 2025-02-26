@@ -240,12 +240,20 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
                                 ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
                                 f'intersections_{docker_schema}.csv', s3_bucket)
     logger.info('completed upload to s3')
-    docker_conn.close()
+
+    # upload intersections to rds
     update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
+    # upload intersection features to rds
+    update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
+
+    #close connections
+    docker_conn.close()
+    rds_db_conn.close()
+
 
 
 def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
-    logger.info('importing csv into postgres')
+    logger.info('importing intersections csv into postgres')
     import_s3_csv_to_postgres_table(rds_cursor,
                                     rds_schema,
                                     ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
@@ -256,7 +264,14 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
     logger.info('swapping tables')
     rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
                   drop_temp=False)
-    rds_conn.close()
+
+
+def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
+    copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,'intersection_features_dump')
+    logger.info('importing intersection_features csv into postgres')
+    # swap the tables in the rds db
+    logger.info('swapping tables')
+    rotate_tables(rds_cursor, rds_schema, 'intersection_features', 'intersection_features_backup', 'intersection_features_dump',drop_temp=False)
 
 
 if __name__ == '__main__':
