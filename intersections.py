@@ -201,10 +201,9 @@ def setup_intersection_features_table_and_remove_old_features(docker_db_cursor, 
 
 def calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets):
     # setup table
-    configure_new_intersections_table(docker_db_cursor, docker_schema)
+    # configure_new_intersections_table(docker_db_cursor, docker_schema)
     # calculate intersections
-    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', docker_db_cursor,
-                                         docker_schema)
+    #calculate_intersections_from_sources(intersect_sources, intersect_targets, 'new_intersections', docker_db_cursor, docker_schema)
     # create the template for the new intersect
     rotate_tables(docker_db_cursor, docker_schema, 'intersections', 'intersections_backup', 'new_intersections',
                   drop_temp=True)
@@ -213,21 +212,21 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_list_url}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
-    # handle coded value domains
+    # # handle coded value domains
     cvs = create_coded_val_dict(intersection_src_url, 0)
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
-
-    ############## setting up intersection features ################
-    setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources)
-    ############## fetching features ################
-    # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
-                                rds_db_cursor, rds_schema, wkid)
-    # refresh the spatial index
-    refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
-
-    # run VACUUM ANALYZE to increase performance after bulk updates
-    run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
+    #
+    # ############## setting up intersection features ################
+    # setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources)
+    # ############## fetching features ################
+    # # get latest features based on source
+    # fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
+    #                             rds_db_cursor, rds_schema, wkid)
+    # # refresh the spatial index
+    # refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
+    #
+    # # run VACUUM ANALYZE to increase performance after bulk updates
+    # run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
     ############## calculating intersections ################
     calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets)
 
