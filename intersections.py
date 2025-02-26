@@ -269,9 +269,9 @@ def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor
     # we do not use the object id column in docker, but it is required in the rds db
     docker_cursor.execute('BEGIN;')
     docker_cursor.execute(f'''
-        INSERT INTO {docker_schema}.intersection_features (objectid)
-        SELECT row_number() OVER () AS objectid
-        FROM {docker_schema}.intersection_features;
+        DROP SEQUENCE IF EXISTS intersection_features_objectid_seq;
+        CREATE SEQUENCE intersection_features_objectid_seq START 1;
+        UPDATE {docker_schema}.intersection_features set objectid = nextval('intersection_features_objectid_seq')
     ''')
     docker_cursor.execute('COMMIT;')
 
