@@ -33,10 +33,10 @@ Current source databases:
 - [FACTS Hazardous Fuel Treatment Reduction: Polygon](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=Hazardous+Fuel+Treatment)
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
 	
-FACTS Common attributes records are a subset of the database detirmined to be treatments based on a process detailed in the _Data Descriptor_ paper
+FACTS Common attributes records are a subset of the database determined to be treatments based on a process detailed in the _Data Descriptor_ paper
 
 ## error_flagging.py
-Finds and flags errors in treatment index records. Error codes are added to the 'error' field and separed by a semicolon ';'
+Finds and flags errors in treatment index records. Error codes are added to the 'error' field and separated by a semicolon ';'
 Current error codes are:
 - DUPLICATE-KEEP : Record has duplicates and should be used as the representative record
 - DUPLICATE-DROP : Record is a duplicate and should be dropped during analysis
@@ -70,4 +70,4 @@ A forthcoming _Data Descriptor_ paper will include a DOI and it is recommended t
 Please [contact us](aidan-franko@nau.edu) for more information. 
 
 # Open Code & Reproducible Science
-SWERI Data Tools exist to facilitate open and reprobucible science and reporting. Internal discussions regarding the appropriate license are ongoing. 
+SWERI Data Tools exist to facilitate open and reproducible science and reporting. Internal discussions regarding the appropriate license are ongoing. 
