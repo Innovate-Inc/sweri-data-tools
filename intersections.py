@@ -8,7 +8,7 @@ from sweri_utils.conversion import create_csv_and_upload_to_s3, create_coded_val
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.s3 import import_s3_csv_to_postgres_table
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index, \
-    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze
+    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze, postgres_create_index
 import watchtower
 
 logger = logging.getLogger(__name__)
@@ -225,6 +225,10 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
     logger.info('swapping tables')
     rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
                   drop_temp=False)
+    # update indices
+    index_fields = ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap']
+    for f in index_fields:
+        postgres_create_index(rds_cursor, rds_schema, 'intersections', f)
 
 
 def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
@@ -237,6 +241,11 @@ def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor
     logger.info('swapping tables')
     rotate_tables(rds_cursor, rds_schema, 'intersection_features', 'intersection_features_backup',
                   'intersection_features_dump', drop_temp=False)
+    # update indices
+    index_fields = ['objectid', 'unique_id', 'unique_id', 'feat_source']
+    for f in index_fields:
+        postgres_create_index(rds_cursor, rds_schema, 'intersection_features', f)
+    refresh_spatial_index(rds_cursor, rds_schema, 'intersection_features')
 
 
 def create_intersection_features_objectid(docker_cursor, docker_schema):

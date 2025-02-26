@@ -95,8 +95,6 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     """
     Refreshes the spatial index on a specified table in a PostgreSQL database.
 
-    This function drops the existing spatial index (if any) and recreates it.
-
     :param cursor: The database cursor to execute the SQL commands.
     :param schema: The schema where the table is located.
     :param table: The name of the table for which the spatial index will be refreshed.
@@ -104,9 +102,7 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     """
     logging.info(f'refreshing spatial index on {schema}.{table}')
     cursor.execute('BEGIN;')
-    cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
-    # recreate index
-    cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
     cursor.execute('COMMIT;')
     logging.info(f'refreshed spatial index on {schema}.{table}')
 
@@ -206,3 +202,9 @@ def run_vacuum_analyze(connection, cursor, schema, table):
     connection.autocommit = True
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     connection.autocommit = False
+
+
+def postgres_create_index(cursor, schema, table_name, column_to_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
+    cursor.execute('COMMIT;')
