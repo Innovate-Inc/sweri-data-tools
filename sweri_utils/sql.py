@@ -162,11 +162,9 @@ def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str)
 
 
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,
-                              to_schema: str, to_table: str, fields = None) -> None:
+                              to_schema: str, to_table: str) -> None:
     """
     Copies a table from one PostgreSQL server to another.
-
-    :param fields:
     :param from_cursor: The cursor for the source database.
     :param from_schema: The schema of the source table.
     :param from_table: The name of the source table.
@@ -178,10 +176,7 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
     with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
         to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
-        q = f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)"
-        if fields:
-            q = f"COPY {to_schema}.{to_table} ({','.join(fields)}) FROM STDIN (FORMAT BINARY)"
-        with to_cursor.copy(q) as in_copy:
+        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)") as in_copy:
             for data in out_copy:
                 in_copy.write(data)
     logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')

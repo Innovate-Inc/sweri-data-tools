@@ -266,8 +266,16 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
 
 
 def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
-    copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,'intersection_features_dump',
-                              [f"sde.next_rowid('{rds_schema}', 'intersection_features_dump')",'unique_id', 'feat_source', 'gdb_geomattr_data','shape'])
+    # we do not use the object id column in docker, but it is required in the rds db
+    docker_cursor.execute('BEGIN;')
+    docker_cursor.execute(f'''
+        INSERT INTO {docker_schema}.intersection_features (objectid)
+        SELECT row_number() OVER () AS objectid
+        FROM {docker_schema}.intersection_features;
+    ''')
+    docker_cursor.execute('COMMIT;')
+
+    copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,'intersection_features_dump')
     logger.info('importing intersection_features csv into postgres')
     # swap the tables in the rds db
     logger.info('swapping tables')
