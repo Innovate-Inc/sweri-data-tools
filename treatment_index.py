@@ -250,6 +250,15 @@ def fund_source_updates(cursor, schema, treatment_index):
 
     logger.info(f'updated fund_source in {schema}.{treatment_index}_temp')
 
+def correct_biomass_removal_typo(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{treatment_index}_temp
+        SET type = 'Biomass Removal'
+        WHERE 
+        type = 'Biomass Removall'
+    ''')
+    cursor.execute('COMMIT;')
 
 def treatment_index_renames(cursor, schema, treatment_index):
     # backup to backup temp
@@ -792,6 +801,7 @@ if __name__ == "__main__":
 
     # Insert NFPORS, convert isbil Yes/No to fund_code 'BIL'/null
     fund_source_updates(cur, target_schema, insert_table)
+    correct_biomass_removal_typo(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
