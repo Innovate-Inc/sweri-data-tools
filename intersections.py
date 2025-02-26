@@ -267,7 +267,7 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
 
 def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
     copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,'intersection_features_dump',
-                              [f"sde.next_rowid({rds_schema}, 'intersection_features_dump')",'unique_id', 'feat_source', 'gdb_geomattr_data','shape'])
+                              [f"sde.next_rowid('{rds_schema}', 'intersection_features_dump')",'unique_id', 'feat_source', 'gdb_geomattr_data','shape'])
     logger.info('importing intersection_features csv into postgres')
     # swap the tables in the rds db
     logger.info('swapping tables')
