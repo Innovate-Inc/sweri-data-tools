@@ -172,9 +172,9 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :return: None
     """
     logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
-    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
+    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT") as out_copy:
         to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
-        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)") as in_copy:
+        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN") as in_copy:
             for data in out_copy:
                 in_copy.write(data)
     logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')

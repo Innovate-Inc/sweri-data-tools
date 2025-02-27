@@ -174,10 +174,12 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                                 wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
+            logger.info(f'fetching geojson features from {value["source"]}')
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
                 insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
+            logger.info(f'copying data from rds db for {value["source"]}')
             # this will copy the current table from the production server and use that data for intersections
             copy_table_across_servers(
                 rds_cursor,
@@ -192,6 +194,12 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                            (value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
+    logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
+    docker_cursor.execute('BEGIN;')
+    # remove null shapes and unique ids
+    docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
+    docker_cursor.execute('COMMIT;')
+    logger.info(f'Finished populating {docker_schema}.{insert_table}')
 
 
 def setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources):
@@ -273,29 +281,29 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
                                 rds_db_cursor, rds_schema, wkid)
-    # refresh the spatial index
+    # # refresh the spatial index
     refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
-
-    # run VACUUM ANALYZE to increase performance after bulk updates
-    run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
+    #
+    # # run VACUUM ANALYZE to increase performance after bulk updates
+    # run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
     ############## calculating intersections ################
-    calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets)
+    # calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets)
 
     ############## update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_src_url, 0)
-
-    ############## write to csv and upload to s3 ################
-    logger.info('uploading csv to s3')
-    create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
-                                ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-                                f'intersections_{docker_schema}.csv', s3_bucket)
-    logger.info('completed upload to s3')
-
-    # upload intersections to rds
-    update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
-
-    # upload intersection features to rds
-    update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
+    # update_last_run(intersections, start, intersection_src_url, 0)
+    #
+    # ############## write to csv and upload to s3 ################
+    # logger.info('uploading csv to s3')
+    # create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
+    #                             ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+    #                             f'intersections_{docker_schema}.csv', s3_bucket)
+    # logger.info('completed upload to s3')
+    #
+    # # upload intersections to rds
+    # update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
+    #
+    # # upload intersection features to rds
+    # update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
 
     # close connections
     docker_conn.close()
