@@ -174,10 +174,12 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                                 wkid):
     for key, value in intersect_sources.items():
         if value['source_type'] == 'url':
+            logger.info(f'fetching geojson features from {value["source"]}')
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
                 insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'])
         elif value['source_type'] == 'db_table':
+            logger.info(f'copying data from rds db for {value["source"]}')
             # this will copy the current table from the production server and use that data for intersections
             copy_table_across_servers(
                 rds_cursor,
@@ -192,6 +194,12 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                            (value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
+    logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
+    docker_cursor.execute('BEGIN;')
+    # remove null shapes and unique ids
+    docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
+    docker_cursor.execute('COMMIT;')
+    logger.info(f'Finished populating {docker_schema}.{insert_table}')
 
 
 def setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources):
