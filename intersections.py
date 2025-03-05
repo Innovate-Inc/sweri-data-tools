@@ -123,14 +123,14 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, n
             logger.info(f'completed intersections on {source_key} and {target_key}')
 
 
-def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field):
+def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field, to_srid=3857):
     if ('geometry' not in feature) or ('properties' not in feature):
         raise KeyError('missing geometry or properties')
     if id_field not in feature['properties']:
         raise KeyError(f'missing or incorrect id field: {id_field}')
 
     json_geom = json.dumps(feature['geometry'])
-    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), 3857)));"
+    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
     try:
         cursor.execute('BEGIN;')
         cursor.execute(q)
@@ -177,7 +177,7 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
             logger.info(f'fetching geojson features from {value["source"]}')
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
             for f in out_feat:
-                insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'])
+                insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
         elif value['source_type'] == 'db_table':
             logger.info(f'copying data from rds db for {value["source"]}')
             # this will copy the current table from the production server and use that data for intersections
@@ -187,11 +187,11 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                 value['source'],
                 docker_cursor,
                 docker_schema,
-                value['source'])
-            insert_from_db(docker_cursor, docker_schema, insert_table,
-                           ('unique_id', 'feat_source'), value['source'],
-                           # do not need to specify object id as we are using sde.net_rowid() in the insert
-                           (value['id'], f"'{key}'"))
+                'intersection_features',[value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'], ['unique_id', 'feat_source', 'shape'])
+            # insert_from_db(docker_cursor, docker_schema, insert_table,
+            #                ('unique_id', 'feat_source'), value['source'],
+            #                # do not need to specify object id as we are using sde.net_rowid() in the insert
+            #                (value['id'], f"'{key}'"))
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
     logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
@@ -275,6 +275,10 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     cvs = create_coded_val_dict(intersection_src_url, 0)
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
     #
+    if len(intersect_sources.keys()) == 0:
+        logging.info('no intersections to run')
+        return
+
     # ############## setting up intersection features ################
     setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources)
     ############## fetching features ################
@@ -291,30 +295,39 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
 
     ############## update run info on intersection sources table ################
     # update_last_run(intersections, start, intersection_src_url, 0)
-    #
-    # ############## write to csv and upload to s3 ################
+
+    ############## write to csv and upload to s3 ################
     # logger.info('uploading csv to s3')
     # create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
     #                             ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
     #                             f'intersections_{docker_schema}.csv', s3_bucket)
     # logger.info('completed upload to s3')
-    #
-    # # upload intersections to rds
     # update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
-    #
-    # # upload intersection features to rds
-    # update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
-
     # close connections
-    docker_conn.close()
-    rds_db_conn.close()
+    # docker_conn.close()
+    # rds_db_conn.close()
+
+def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
+    logger.info('importing csv into postgres')
+    import_s3_csv_to_postgres_table(rds_cursor,
+                                    rds_schema,
+                                    ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                    'intersections_s3',
+                                    s3_bucket,
+                                    f'intersections_{rds_schema}.csv')
+    # swap the tables in the rds db
+    logger.info('swapping tables')
+    rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
+                  drop_temp=False)
+    rds_conn.close()
+
 
 
 if __name__ == '__main__':
     logger.info('starting intersection processing')
     load_dotenv('.env')
     script_start = datetime.now()
-    sr_wkid = 4326
+    sr_wkid = 3857
 
     # s3 bucket used for intersections
     s3_bucket_name = os.getenv('S3_BUCKET')

@@ -158,9 +158,15 @@ def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str)
     cursor.execute('COMMIT;')
     logging.info(f'{schema}.{backup_table_name}_temp deleted')
 
+def fetch_and_order_columns(cursor, schema, table):
+    columns_query = f"SELECT column_name FROM information_schema.columns WHERE table_schema = '{schema}' AND table_name = '{table}'"
+    cursor.execute(columns_query)
+    columns = [row[0] for row in cursor.fetchall()]
+    columns.sort()
+    return columns
 
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,
-                              to_schema: str, to_table: str) -> None:
+                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows = False) -> None:
     """
     Copies a table from one PostgreSQL server to another.
     :param from_cursor: The cursor for the source database.
@@ -171,13 +177,25 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :param to_table: The name of the destination table.
     :return: None
     """
-    logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
-    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT") as out_copy:
-        to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
-        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN") as in_copy:
+
+    from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT"
+    logging.info(f'running {from_copy}')
+
+    with from_cursor.copy(from_copy) as out_copy:
+        # optionally
+        if delete_to_rows:
+            delete_q = f"DELETE FROM {to_schema}.{to_table}"
+            logging.warning(f'deleting all features from {to_schema}.{to_table}')
+            to_cursor.execute(delete_q)
+        to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN"
+        to_cursor.execute('BEGIN;')
+        with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
                 in_copy.write(data)
-    logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
+        to_cursor.execute('COMMIT;')
+
+
+    logging.info(f'copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
 
 def delete_from_table(cursor: psycopg.Cursor, schema: str, table: str, where: str) -> None:
