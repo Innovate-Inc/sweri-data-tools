@@ -48,10 +48,12 @@ def insert_from_db(
         from_table: str,
         from_fields: list[str],
         from_shape: str = 'shape',
-        to_shape: str = 'shape'
+        to_shape: str = 'shape',
+        wkid = 3857
 ) -> None:
     """
     Inserts records from one database into another in an enterprise geodatabase
+    :param wkid:
     :param to_shape:
     :param from_shape:
     :param cursor: psycopg2 connection cursor object
@@ -62,7 +64,7 @@ def insert_from_db(
     :param from_fields: list of field names mapping to insert fields
     :return: None
     """
-    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_TRANSFORM(ST_MakeValid({from_shape}), 4326), {','.join(from_fields)} from {schema}.{from_table};'''
+    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} from {schema}.{from_table};'''
     logging.info(q)
     cursor.execute('BEGIN;')
     cursor.execute(q)
@@ -93,8 +95,6 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     """
     Refreshes the spatial index on a specified table in a PostgreSQL database.
 
-    This function drops the existing spatial index (if any) and recreates it.
-
     :param cursor: The database cursor to execute the SQL commands.
     :param schema: The schema where the table is located.
     :param table: The name of the table for which the spatial index will be refreshed.
@@ -102,9 +102,7 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     """
     logging.info(f'refreshing spatial index on {schema}.{table}')
     cursor.execute('BEGIN;')
-    cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
-    # recreate index
-    cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
     cursor.execute('COMMIT;')
     logging.info(f'refreshed spatial index on {schema}.{table}')
 
@@ -130,6 +128,9 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
     """
     logging.info('moving to postgres table updates')
     # rename backup  to temp table to make space for new backup
+    # drop temp backup table
+    drop_temp_table(cursor, schema, backup_table_name)
+
     rename_postgres_table(cursor, schema, backup_table_name,
                           f'{backup_table_name}_temp')
     logging.info(f'{schema}.{backup_table_name} renamed to {schema}.{backup_table_name}_temp')
@@ -144,22 +145,30 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
 
     # drop (default) or swap out temp table with new table
     if drop_temp:
-        # drop temp backup table
-        cursor.execute('BEGIN;')
-        cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
-        cursor.execute('COMMIT;')
-        logging.info(f'{schema}.{backup_table_name}_temp deleted')
+        drop_temp_table(cursor, schema, backup_table_name)
     else:
         # cycle temp backup into new table
         rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
         logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
 
+def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str) -> None:
+    # drop temp backup table
+    cursor.execute('BEGIN;')
+    cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
+    cursor.execute('COMMIT;')
+    logging.info(f'{schema}.{backup_table_name}_temp deleted')
+
+def fetch_and_order_columns(cursor, schema, table):
+    columns_query = f"SELECT column_name FROM information_schema.columns WHERE table_schema = '{schema}' AND table_name = '{table}'"
+    cursor.execute(columns_query)
+    columns = [row[0] for row in cursor.fetchall()]
+    columns.sort()
+    return columns
 
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,
-                              to_schema: str, to_table: str) -> None:
+                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows = False) -> None:
     """
     Copies a table from one PostgreSQL server to another.
-
     :param from_cursor: The cursor for the source database.
     :param from_schema: The schema of the source table.
     :param from_table: The name of the source table.
@@ -168,13 +177,25 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :param to_table: The name of the destination table.
     :return: None
     """
-    logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
-    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
-        to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
-        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)") as in_copy:
+
+    from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT"
+    logging.info(f'running {from_copy}')
+
+    with from_cursor.copy(from_copy) as out_copy:
+        # optionally
+        if delete_to_rows:
+            delete_q = f"DELETE FROM {to_schema}.{to_table}"
+            logging.warning(f'deleting all features from {to_schema}.{to_table}')
+            to_cursor.execute(delete_q)
+        to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN"
+        to_cursor.execute('BEGIN;')
+        with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
                 in_copy.write(data)
-    logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
+        to_cursor.execute('COMMIT;')
+
+
+    logging.info(f'copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
 
 def delete_from_table(cursor: psycopg.Cursor, schema: str, table: str, where: str) -> None:
@@ -199,3 +220,9 @@ def run_vacuum_analyze(connection, cursor, schema, table):
     connection.autocommit = True
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     connection.autocommit = False
+
+
+def postgres_create_index(cursor, schema, table_name, column_to_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
+    cursor.execute('COMMIT;')
