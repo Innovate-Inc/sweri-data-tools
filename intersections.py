@@ -8,7 +8,8 @@ from sweri_utils.conversion import create_csv_and_upload_to_s3, create_coded_val
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.s3 import import_s3_csv_to_postgres_table
 from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index, \
-    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze, postgres_create_index
+    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze, postgres_create_index, \
+    calculate_index_for_fields
 import watchtower
 
 logger = logging.getLogger(__name__)
@@ -187,7 +188,9 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                 value['source'],
                 docker_cursor,
                 docker_schema,
-                'intersection_features',[value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'], ['unique_id', 'feat_source', 'shape'])
+                'intersection_features',
+                [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
+                ['unique_id', 'feat_source', 'shape'])
             # insert_from_db(docker_cursor, docker_schema, insert_table,
             #                ('unique_id', 'feat_source'), value['source'],
             #                # do not need to specify object id as we are using sde.net_rowid() in the insert
@@ -221,7 +224,7 @@ def calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, int
                   drop_temp=True)
 
 
-def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
+def update_intersections_rds_db(rds_cursor, rds_schema, s3_bucket):
     logger.info('importing intersections csv into postgres')
     import_s3_csv_to_postgres_table(rds_cursor,
                                     rds_schema,
@@ -234,26 +237,24 @@ def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
     rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
                   drop_temp=False)
     # update indices
-    index_fields = ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap']
-    for f in index_fields:
-        postgres_create_index(rds_cursor, rds_schema, 'intersections', f)
+    calculate_index_for_fields(rds_cursor, rds_schema, 'intersections',
+                               ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'])
 
 
 def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
     # we do not use the object id column in docker, but it is required in the rds db
     create_intersection_features_objectid(docker_cursor, docker_schema)
     copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,
-                              'intersection_features_dump')
+                              'intersection_features_dump', ['objectid', 'unique_id', 'feat_source', 'shape'],
+                              ['objectid', 'unique_id', 'feat_source', 'shape'])
     logger.info('importing intersection_features csv into postgres')
     # swap the tables in the rds db
     logger.info('swapping tables')
     rotate_tables(rds_cursor, rds_schema, 'intersection_features', 'intersection_features_backup',
                   'intersection_features_dump', drop_temp=False)
     # update indices
-    index_fields = ['objectid', 'unique_id', 'unique_id', 'feat_source']
-    for f in index_fields:
-        postgres_create_index(rds_cursor, rds_schema, 'intersection_features', f)
-    refresh_spatial_index(rds_cursor, rds_schema, 'intersection_features')
+    calculate_index_for_fields(rds_cursor, rds_schema, 'intersection_features',
+                               ['objectid', 'unique_id', 'unique_id', 'feat_source'], True)
 
 
 def create_intersection_features_objectid(docker_cursor, docker_schema):
@@ -285,42 +286,31 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
                                 rds_db_cursor, rds_schema, wkid)
-    # # refresh the spatial index
+    # refresh the spatial index
     refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
     #
-    # # run VACUUM ANALYZE to increase performance after bulk updates
-    # run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
-    ############## calculating intersections ################
-    # calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets)
+    # run VACUUM ANALYZE to increase performance after bulk updates
+    run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
+    ############## calculate intersections ################
+    calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets)
 
-    ############## update run info on intersection sources table ################
-    # update_last_run(intersections, start, intersection_src_url, 0)
+    ############## write to csv, upload to s3, and swap in new intersections ################
+    logger.info('uploading csv to s3')
+    create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
+                                ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
+                                f'intersections_{docker_schema}.csv', s3_bucket)
+    logger.info('completed upload to s3')
+    update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
 
-    ############## write to csv and upload to s3 ################
-    # logger.info('uploading csv to s3')
-    # create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
-    #                             ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-    #                             f'intersections_{docker_schema}.csv', s3_bucket)
-    # logger.info('completed upload to s3')
-    # update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
+    ############# update intersection features table ################
+    update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
+
+    ############# update run info on intersection sources table ################
+    update_last_run(intersections, start, intersection_src_url, 0)
+
     # close connections
-    # docker_conn.close()
-    # rds_db_conn.close()
-
-def update_intersections_rds_db(rds_cursor, rds_conn, rds_schema, s3_bucket):
-    logger.info('importing csv into postgres')
-    import_s3_csv_to_postgres_table(rds_cursor,
-                                    rds_schema,
-                                    ['objectid', 'id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-                                    'intersections_s3',
-                                    s3_bucket,
-                                    f'intersections_{rds_schema}.csv')
-    # swap the tables in the rds db
-    logger.info('swapping tables')
-    rotate_tables(rds_cursor, rds_schema, 'intersections', 'intersections_backup', 'intersections_s3',
-                  drop_temp=False)
-    rds_conn.close()
-
+    docker_conn.close()
+    rds_db_conn.close()
 
 
 if __name__ == '__main__':
@@ -358,4 +348,4 @@ if __name__ == '__main__':
     run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
                       s3_bucket_name,
                       script_start, sr_wkid, intersection_src_url)
-    logger.info('completed intersection processing')
+    logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
