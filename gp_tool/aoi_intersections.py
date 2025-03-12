@@ -16,7 +16,7 @@ from arcpy.management import CreateTable
 #                         stderrToServer=True)
 #########################################################map
 
-def configure_intersection_sources(sde_connection_file, schema):
+def configure_intersection_sources(intersections_source_list):
     """
     configures intersection sources fetched from intersection source list
     :param sde_connection_file: sde connection file path
@@ -25,10 +25,9 @@ def configure_intersection_sources(sde_connection_file, schema):
     """
     intersect_sources = {}
     intersect_targets = {}
-    domains = fetch_domains(sde_connection_file,
-                            path.join(sde_connection_file, 'sweri.{}.intersections_source_list'.format(schema)))
+    domains = fetch_domains(intersections_source_list)
     fields = ['source', 'id_source', 'uid_fields', 'use_as_target', 'source_type', 'name']
-    with arcpy.da.SearchCursor(path.join(sde_connection_file, 'sweri.{}.intersections_source_list'.format(schema)),
+    with arcpy.da.SearchCursor(intersections_source_list,
                                field_names=fields, sql_clause=(None, "ORDER BY source_type ASC")) as source_cursor:
         for r in source_cursor:
             s = {'source': r[0], 'id': r[2], 'source_type': r[4]}
@@ -51,14 +50,14 @@ def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_nam
     arcpy.management.CalculateField(intersect_result, 'id_2_source', "'{}'".format(fc_2_name), 'PYTHON3')
 
 
-def fetch_domains(sde_connection_file, in_table):
+def fetch_domains(in_table):
     """
     fetches domains from a table
     :param sde_connection_file: sde connection file path
     :param in_table: table to fetch domains from
     :return: dictionary of domains
     """
-    all_domains = {d.name: d for d in arcpy.da.ListDomains(sde_connection_file)}
+    all_domains = {d.name: d for d in arcpy.da.ListDomains(os.path.join(in_table, '..'))}
     domain_dict = {
         fld.name: {k: v for k, v in all_domains[fld.domain].codedValues.items()}
         for fld in arcpy.ListFields(in_table) if fld.domain
@@ -77,19 +76,17 @@ def format_message(progress, buffer, label):
 if __name__ == '__main__':
     arcpy.env.overwriteOutput = True
     aoi = arcpy.GetParameterAsText(0) # AOI
-    schema = arcpy.GetParameterAsText(1)
-    sde_connection_file = arcpy.GetParameterAsText(2)
+    treatment_intersections = arcpy.GetParameterAsText(1) # Treatment Intersections
+    intersection_features = arcpy.GetParameterAsText(2)
+    intersections_source_list = arcpy.GetParameterAsText(3)
     progress = 0
     buffer = 2
     label = "Configuring data sources"
     arcpy.AddMessage(format_message(progress, buffer, label))
-    treatment_intersections = path.join(sde_connection_file, 'sweri.{}.intersections'.format(schema))
     target_table = CreateTable(arcpy.env.scratchGDB, 'intersections', template=treatment_intersections)
 
-    intersection_features = os.path.join(sde_connection_file, 'sweri.{}.intersection_features'.format(schema))
-
     source_feature = {'source_key': 'custom', 'source_value': aoi}
-    _, intersect_targets = configure_intersection_sources(sde_connection_file, schema)
+    _, intersect_targets = configure_intersection_sources(intersections_source_list)
     intersect_progress = round(95 / len(intersect_targets.items()))
 
     for target_key, target_value in intersect_targets.items():
@@ -127,4 +124,4 @@ if __name__ == '__main__':
     with open(export, 'w') as f:
         f.write(j)
 
-    arcpy.SetParameter(3, export)
+    arcpy.SetParameter(4, export)
