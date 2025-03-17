@@ -180,7 +180,7 @@ def fetch_and_order_columns(cursor: psycopg.Cursor, schema: str, table: str) -> 
 
 
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,
-                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows: bool = False) -> None:
+                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows: bool = False, where=None) -> None:
     """
     Copies a table from one PostgreSQL server to another.
 
@@ -195,13 +195,20 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :param delete_to_rows: If True, deletes all rows in the destination table before copying.
     :return: None
     """
+
     from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT"
+    if where is not None:
+        from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table} WHERE {where}) TO STDOUT"
     logging.info(f'Running {from_copy}')
 
     with from_cursor.copy(from_copy) as out_copy:
         if delete_to_rows:
             delete_q = f"DELETE FROM {to_schema}.{to_table}"
-            logging.warning(f'Deleting all features from {to_schema}.{to_table}')
+            if where:
+                delete_q += f" WHERE {where}"
+            else:
+                logging.warning(f'Deleting all features from {to_schema}.{to_table}')
+            logging.info(f'Running {delete_q}')
             to_cursor.execute(delete_q)
         to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN"
         to_cursor.execute('BEGIN;')
