@@ -391,9 +391,11 @@ class ConversionTests(TestCase):
         mock_conn = Mock()
         mock_conn.execute.return_value = True
         insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'], False)
-        expected = 'insert into dev.insert_here (shape, field1,field2) select ST_TRANSFORM(ST_MakeValid(False), 4326), from1,from2 from dev.from_here;'
+                       'from_here', ['from1', 'from2'])
 
+        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) 
+            SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 
+            FROM dev.from_here;'''
         self.assertEqual(
             mock_conn.execute.call_args_list,
             [
@@ -449,7 +451,6 @@ class ConversionTests(TestCase):
         with self.assertRaises(ValueError) as context:
             create_coded_val_dict(url, layer)
         self.assertEqual(str(context.exception), 'missing coded values or incorrect domain type')
-
 
 class SqlTests(TestCase):
     def test_rename_postgres_table(self):
@@ -621,7 +622,6 @@ class SqlTests(TestCase):
             f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
         to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table};")
         to_cursor.copy.assert_called_once_with(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)")
-
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
