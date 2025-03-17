@@ -177,24 +177,23 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
         if value['source_type'] == 'url':
             logger.info(f'fetching geojson features from {value["source"]}')
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
+            # delete incoming features from intersection_features
+            docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE feat_source = '{key}';")
+            logging.info(f'deleted {key} source from {docker_schema}.{insert_table}')
             for f in out_feat:
                 insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
         elif value['source_type'] == 'db_table':
             logger.info(f'copying data from rds db for {value["source"]}')
-            # this will copy the current table from the production server and use that data for intersections
+            # this will copy the current table from the production server and use that data for intersections, and remove the older sourcegeatures
             copy_table_across_servers(
                 rds_cursor,
                 rds_schema,
                 value['source'],
                 docker_cursor,
                 docker_schema,
-                'intersection_features',
+                insert_table,
                 [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
-                ['unique_id', 'feat_source', 'shape'])
-            # insert_from_db(docker_cursor, docker_schema, insert_table,
-            #                ('unique_id', 'feat_source'), value['source'],
-            #                # do not need to specify object id as we are using sde.net_rowid() in the insert
-            #                (value['id'], f"'{key}'"))
+                ['unique_id', 'feat_source', 'shape'], True, f"feat_source = '{key}'" )
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
     logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
