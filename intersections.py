@@ -246,8 +246,8 @@ def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor
     create_intersection_features_objectid(docker_cursor, docker_schema)
     copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,
                               'intersection_features_dump', ['objectid', 'unique_id', 'feat_source', 'shape'],
-                              ['objectid', 'unique_id', 'feat_source', 'shape'])
-    logger.info('importing intersection_features csv into postgres')
+                              ['objectid', 'unique_id', 'feat_source', 'shape'], True)
+    logger.info('importing intersection_features into postgres')
     # swap the tables in the rds db
     logger.info('swapping tables')
     rotate_tables(rds_cursor, rds_schema, 'intersection_features', 'intersection_features_backup',
@@ -275,20 +275,20 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     # handle coded value domains
     cvs = create_coded_val_dict(intersection_src_url, 0)
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
-    #
+    
     if len(intersect_sources.keys()) == 0:
         logging.info('no intersections to run')
         return
 
-    # ############## setting up intersection features ################
+    ############## setting up intersection features ################
     setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources)
     ############## fetching features ################
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
-                                rds_db_cursor, rds_schema, wkid)
+                               rds_db_cursor, rds_schema, wkid)
     # refresh the spatial index
     refresh_spatial_index(docker_db_cursor, docker_schema, 'intersection_features')
-    #
+    
     # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_db_cursor, docker_schema, 'intersection_features')
     ############## calculate intersections ################
@@ -298,15 +298,15 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     logger.info('uploading csv to s3')
     create_csv_and_upload_to_s3(docker_db_cursor, docker_schema, 'intersections',
                                 ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'],
-                                f'intersections_{docker_schema}.csv', s3_bucket)
+                               f'intersections_{docker_schema}.csv', s3_bucket)
     logger.info('completed upload to s3')
-    update_intersections_rds_db(rds_db_cursor, rds_db_conn, rds_schema, s3_bucket)
+    update_intersections_rds_db(rds_db_cursor, rds_schema, s3_bucket)
 
     ############# update intersection features table ################
     update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
 
     ############# update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_src_url, 0)
+    update_last_run(intersections, start, intersection_source_list_url, 0)
 
     # close connections
     docker_conn.close()
@@ -342,7 +342,7 @@ if __name__ == '__main__':
     rds_db_user = os.getenv('RDS_DB_USER')
     rds_db_password = os.getenv('RDS_DB_PASSWORD')
     rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password)
-
+    print(intersection_src_url)
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
