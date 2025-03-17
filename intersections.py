@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 from sweri_utils.conversion import create_csv_and_upload_to_s3, create_coded_val_dict
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.s3 import import_s3_csv_to_postgres_table
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table, insert_from_db, refresh_spatial_index, \
-    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze, postgres_create_index, \
+from sweri_utils.sql import connect_to_pg_db, rename_postgres_table,  refresh_spatial_index, \
+    rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze,  \
     calculate_index_for_fields
 import watchtower
 
@@ -173,18 +173,18 @@ def configure_new_intersections_table(cursor, schema):
 
 def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema, insert_table, rds_cursor, rds_schema,
                                 wkid):
+
     for key, value in intersect_sources.items():
+        # remove existing features
+        delete_from_table(docker_cursor, docker_schema, insert_table, f"feat_source = '{key}'")
         if value['source_type'] == 'url':
             logger.info(f'fetching geojson features from {value["source"]}')
             out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
-            # delete incoming features from intersection_features
-            docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE feat_source = '{key}';")
-            logging.info(f'deleted {key} source from {docker_schema}.{insert_table}')
             for f in out_feat:
                 insert_feature_into_db(docker_cursor, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
         elif value['source_type'] == 'db_table':
             logger.info(f'copying data from rds db for {value["source"]}')
-            # this will copy the current table from the production server and use that data for intersections, and remove the older sourcegeatures
+            # this will copy the current table from the production server and use that data for intersections, and remove the older source
             copy_table_across_servers(
                 rds_cursor,
                 rds_schema,
@@ -193,7 +193,7 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
                 docker_schema,
                 insert_table,
                 [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
-                ['unique_id', 'feat_source', 'shape'], True, f"feat_source = '{key}'" )
+                ['unique_id', 'feat_source', 'shape'])
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
     logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
@@ -202,14 +202,6 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
     docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
     docker_cursor.execute('COMMIT;')
     logger.info(f'Finished populating {docker_schema}.{insert_table}')
-
-
-def setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources):
-    # setup intersection features table
-    configure_intersection_features_table(docker_db_cursor, docker_schema)
-    # delete source features and fetch new ones
-    for src in intersect_sources.keys():
-        delete_from_table(docker_db_cursor, docker_schema, 'intersection_features', f"feat_source = '{src}'")
 
 
 def calculate_intersections_and_swap_tables(docker_db_cursor, docker_schema, intersect_sources, intersect_targets):
@@ -280,7 +272,7 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
         return
 
     ############## setting up intersection features ################
-    setup_intersection_features_table_and_remove_old_features(docker_db_cursor, docker_schema, intersect_sources)
+    configure_intersection_features_table(docker_db_cursor, docker_schema)
     ############## fetching features ################
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_db_cursor, docker_schema, 'intersection_features',
@@ -341,7 +333,6 @@ if __name__ == '__main__':
     rds_db_user = os.getenv('RDS_DB_USER')
     rds_db_password = os.getenv('RDS_DB_PASSWORD')
     rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password)
-    print(intersection_src_url)
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
