@@ -65,9 +65,7 @@ def insert_from_db(
     :param wkid: The spatial reference ID to use for the geometry transformation.
     :return: None
     """
-    q = f'''INSERT INTO {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) 
-            SELECT ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
-            FROM {schema}.{from_table};'''
+    q = f'''INSERT INTO {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
     logging.info(q)
     cursor.execute('BEGIN;')
     cursor.execute(q)
@@ -196,9 +194,9 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :return: None
     """
 
-    from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT"
+    from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)"
     if where is not None:
-        from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table} WHERE {where}) TO STDOUT"
+        from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table} WHERE {where}) TO STDOUT (FORMAT BINARY)"
     logging.info(f'Running {from_copy}')
 
     with from_cursor.copy(from_copy) as out_copy:
@@ -210,7 +208,7 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
                 logging.warning(f'Deleting all features from {to_schema}.{to_table}')
             logging.info(f'Running {delete_q}')
             to_cursor.execute(delete_q)
-        to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN"
+        to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN (FORMAT BINARY)"
         to_cursor.execute('BEGIN;')
         with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
