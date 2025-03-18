@@ -394,9 +394,7 @@ class ConversionTests(TestCase):
         insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
                        'from_here', ['from1', 'from2'])
 
-        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) 
-            SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 
-            FROM dev.from_here;'''
+        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 FROM dev.from_here;'''
         self.assertEqual(
             mock_conn.execute.call_args_list,
             [
