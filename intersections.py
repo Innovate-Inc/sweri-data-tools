@@ -30,12 +30,10 @@ def configure_intersection_sources(features, coded_vals, start):
             'id': att['uid_fields'],
             'source_type': att['source_type'],
             'last_run': att['last_run'],
-            'frequency_days': att['frequency_days']
+            'frequency_days': att['frequency_days'],
+            'name': att['name']
         }
-        if att['name'] in coded_vals:
-            s['name'] = coded_vals[att['name']]
 
-        att = att
         # always set targets
         if att['use_as_target'] == 1:
             intersection_targets[att['id_source']] = s
@@ -263,9 +261,8 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_list_url}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
-    # handle coded value domains
-    cvs = create_coded_val_dict(intersection_src_url, 0)
-    intersect_sources, intersect_targets = configure_intersection_sources(intersections, cvs, script_start)
+
+    intersect_sources, intersect_targets = configure_intersection_sources(intersections, script_start)
     
     if len(intersect_sources.keys()) == 0:
         logging.info('no intersections to run')
