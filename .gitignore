@@ -9,3 +9,7 @@ sweri_utils/__pycache__/*
 nfpors_testing.py
 __pycache__/*
 ogr_env
+.vscode/launch.json
+docker/pgadmin4.db
+/docker/sessions/
+*.geojson
