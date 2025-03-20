@@ -8,18 +8,19 @@ import geopandas
 import json
 import io
 import logging
+import sys
+import shutil
 
 
 def find_layer_by_name(layers, target_name):
-
     for layer in layers:
         if layer['title'] == target_name:
-            return  layer
-        
+            return layer
+
     return None
 
-def return_treatment_index_symbology(webmap_id, group_layer_name, layer_name):
 
+def return_treatment_index_symbology(webmap_id, group_layer_name, layer_name):
     webmap = gis.content.get(webmap_id)
     webmap_data = webmap.get_data()
 
@@ -29,102 +30,106 @@ def return_treatment_index_symbology(webmap_id, group_layer_name, layer_name):
     extracted_symbology = symbology_layer['layerDefinition']['drawingInfo']['renderer']
     return extracted_symbology
 
-def return_db_connection_url(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> tuple:
 
+def return_db_connection_url(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) :
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-         
 
-def postgis_query_to_geojson(pg_con, query, output_path='output1.geojson'):
 
-    if os.path.exists(output_path):
-        os.remove(output_path)
+def postgis_query_to_geojson(pg_con, pg_query, output_path='output2.geojson'):
 
-    gdf = geopandas.GeoDataFrame.from_postgis(query, pg_con, geom_col='shape')
-    gdf.to_file(output_path, driver="FileGDB") 
+    """Okay we're going to switch from using geodataframes vectortranslate using
 
-    return output_path
-        
-def postgres_chunk_query(schema, table, min, max):
+    https://gdal.org/en/latest/api/python/utilities.html#osgeo.gdal.VectorTranslate
+    Example:
+        where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL"
+        options = VectorTranslateOptions(format='PostgreSQL', makeValid=True, dstSRS=f'EPSG:{projection}', where=where,
+                                         accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
+                                         layers=[fc_name])
 
-    sql_query = f"""
-    SELECT * FROM {schema}.{table} 
-    WHERE
-    objectid >= {min}
-    AND
-    objectid <= {max};
+        gdb_path = os.path.join(os.getcwd(), gdb_name)
+        pg = f'PG:host=db user=staging dbname=sweri password=sweri4postgres'
+
+        logging.info(f'sending layer {postgres_table_name} to postgres using VectorTranslate')
+        VectorTranslate(destNameOrDestDS=pg, srcDS=gdb_path, options=options)
     """
-    return sql_query
+    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con, geom_col='shape')
 
-def overwrite_portal_geojson(gis_con, item_id, path):
+    if gdf.empty:
+        return None
+
+    max_objectid = gdf.iloc[-1]['objectid'] #set max_objectid to the max or last record in the gdf for objectid column (can do by -1 index most likely)
+    esri_json_str = gdf.to_file(output_path, driver='ESRIJSON')
+
+    # gdf.to_file(output_path, driver="ESRIJSON")
+    #if gdf is empty, return max_objectid as -1 or none to stop loop 
+
+    return max_objectid
+
+def postgres_chunk_query(schema, table, chunk_size, objectid = 0):
+
+    query = f"""
+        SELECT * FROM {schema}.{table}
+        WHERE
+        objectid > {objectid}
+        ORDER BY objectid ASC
+        limit {chunk_size};
+    """
+    return query
+
+
+def overwrite_portal_geojson(gis_con, item_id, geojson_data):
     item = gis_con.content.get(item_id)
-    with open(path, "rb") as f:
-        geojson_data = io.BytesIO(f.read())
-    item.update(data = geojson_data)
+    item.update(data=geojson_data)
+
 
 def append_geojson_to_service(feature_layer, geojson_id):
-        feature_layer.append(
-            item_id = geojson_id,
-            upload_format='geojson',
-            upsert = False,
-            use_globalids=False,
-            )
-
-def return_max_and_min_objectid(connection, table, schema):
-
-    table_ref = Table(table, MetaData(), autoload_with=connection, schema=schema)
-
-    with connection.connect() as conn:
-        min_objectid, max_objectid = conn.execute(
-            select(func.min(table_ref.c.objectid), func.max(table_ref.c.objectid))
-        ).fetchone()
-
-    return min_objectid, max_objectid
-
-def delete_features(feature_layer):
-    feature_layer.delete_features(
-        where = '1=1'
+    feature_layer.append(
+        item_id=geojson_id,
+        upload_format='geojson',
+        upsert=False,
+        use_globalids=False,
     )
 
+def delete_features(feature_layer, where_clause = '1=1'):
+    feature_layer.delete_features(
+        where = where_clause
+    )
+
+
 if __name__ == '__main__':
-    load_dotenv()
-    logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./hosted_upload.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+    load_dotenv('.env')
+    logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='./hosted_upload.log',
+                        encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
     gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"))
-    target_schema = os.getenv('SCHEMA')
-    target_table = "treatment_index"
+    target_schema = "sweri"
+    target_table = "treatment_index_wgs84"
     geojson_item_id = '945554c6954a4d7691bea98060b1bb2c'
     hosted_feature_id = 'e1c81818ee184b2993d041abd8a330a7'
     hosted_item = gis.content.get(hosted_feature_id)
     hosted_feature_layer = hosted_item.layers[0]
-    # Delete Features where 1=1 arcgis for python api https://developers.arcgis.com/rest/services-reference/enterprise/delete-features/
-
     # Change view to look at newly updated hosted feature layer
 
     # Create 2 hosted feature layers in the test folder
-    # delete_features(hosted_feature_layer)
-    db_connection_url = return_db_connection_url(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    delete_features(hosted_feature_layer)
+    db_connection_url = return_db_connection_url(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
+                                                 os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
     con = create_engine(db_connection_url)
-    
-    min_objectid, max_objectid = return_max_and_min_objectid(con, target_table, target_schema)
 
-    start = min_objectid
-    chunk_size = 10000
+    logging.info(f"{target_table}, {target_schema}")
 
-    while start < max_objectid:
-        logging.info(start)
-        sql_query = postgres_chunk_query(target_schema, target_table, start, start+chunk_size)
-        geojson_path = postgis_query_to_geojson(con, sql_query) 
-        overwrite_portal_geojson(gis,geojson_item_id, geojson_path)
+    current_objectid = 0
+    chunk_size = 1000
+
+    while True:
+        sql_query = postgres_chunk_query(target_schema, target_table, chunk_size, current_objectid)
+        with io.BytesIO() as geojson_data:
+            current_objectid = postgis_query_to_geojson(con, sql_query, geojson_data)
+            if current_objectid is None:
+                break
+
+            overwrite_portal_geojson(gis,geojson_item_id, geojson_data)
         append_geojson_to_service(hosted_feature_layer, geojson_item_id)
-        start += chunk_size
-        # Append geojson item to hosted feature layer using id of geojson item
+        logging.info(current_objectid)
 
-
-    # rehsape_webmap_id = "ed19286412494bd280393b6eaeb126c6"
-    # reshape_group_layer_name = 'Staging Treatments'
-    # reshape_layer_name = 'Staging TWIG Treatment Index and Intersections'
-
-    # treatment_index_symbology = return_treatment_index_symbology(rehsape_webmap_id, reshape_group_layer_name, reshape_layer_name)
-    
-    # https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.from_postgis.html
-    # https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoDataFrame.to_json.html
+    print('hello')

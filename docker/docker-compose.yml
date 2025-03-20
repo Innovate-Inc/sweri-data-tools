@@ -34,6 +34,8 @@ services:
     build:
       context: ../
       dockerfile: ./docker/Dockerfile
+    command: ["sh", "-c", "python hosted_upload.py"]
+
     env_file:
       - "../.env"
     environment:
