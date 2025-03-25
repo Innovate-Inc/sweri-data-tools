@@ -13,3 +13,5 @@ ogr_env
 docker/pgadmin4.db
 /docker/sessions/
 *.geojson
+*.json
+
