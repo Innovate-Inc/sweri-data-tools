@@ -325,6 +325,7 @@ def update_total_cost(cursor, schema, treatment_index):
     cursor.execute('COMMIT;')
 
 
+
 def treatment_index_renames(cursor, schema, treatment_index, sde_file):
     # backup to backup temp
     rename_postgres_table(cursor, schema, f'{treatment_index}_backup', f'{treatment_index}_backup_temp')
@@ -862,7 +863,9 @@ if __name__ == "__main__":
 
     # Insert NFPORS, convert isbil Yes/No to fund_code 'BIL'/null
     fund_source_updates(cur, target_schema, insert_table)
+
     update_total_cost(cur, target_schema, insert_table)
+
     correct_biomass_removal_typo(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')

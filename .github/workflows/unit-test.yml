@@ -28,4 +28,3 @@ jobs:
         run: pip install -r requirements.testing.txt
       - name: run tests
         run: pytest --cov=sweri_utils ./sweri_utils/tests.py
-
