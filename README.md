@@ -162,8 +162,8 @@ module.
 
 # TWIG Treatment Index Database Replica
 The treatment index and associated lookup tables are available for download as a zipped file geodatabase from the following links:
-- [Full TWIG Treatment Index Copy]()
-- [Lookup Tables and Treatment Index Schema]()
+- [Full TWIG Treatment Index Copy](https://sweri-treament-index.s3.us-west-2.amazonaws.com/treatment_index.zip)
+- [Lookup Tables and Treatment Index Schema](https://sweri-treament-index.s3.us-west-2.amazonaws.com/database_scaffolding.zip)
 
 # Citing the Treatment Index
 
