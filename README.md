@@ -112,7 +112,8 @@ Contains python modules with helper utilities used by scripts throughout the swe
     └── tests.py        # Unit tests for utilities
 ```
 ## analysis
-This directory contains the initial R scripts the treatment index is based off of.
+
+This directory contains the R scripts which the treatment index was origninally based off of.
 
 ## docker
 
