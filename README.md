@@ -169,9 +169,9 @@ Download a replica:
 Create a replica using [treatment_index.py](#treatment_indexpy):
 - [Lookup Tables and Treatment Index Schema](https://sweri-treament-index.s3.us-west-2.amazonaws.com/database_scaffolding.zip)
 
-Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run treatment_index.py
-on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema, treatment_index.py
-can then be targeted at that schema and run to populate the treatment_index feature class. 
+The Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run treatment_index.py
+on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema. Then treatment_index.py
+can target that schema and populate the treatment_index feature class. 
 
 # Citing the Treatment Index
 
