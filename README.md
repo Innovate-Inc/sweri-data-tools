@@ -111,6 +111,9 @@ Contains python modules with helper utilities used by scripts throughout the swe
     ├── sql.py          # SQL utilities
     └── tests.py        # Unit tests for utilities
 ```
+## analysis
+
+This directory contains the R scripts which the treatment index was origninally based off of.
 
 ## docker
 
