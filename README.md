@@ -33,7 +33,9 @@ The scripts SWERI data tools are:
 
 ## treatment_index.py
 
-Queries source databases and crosswalks attributes from each source into a common schema.
+Queries source databases and crosswalks attributes from each source into a common schema. To run treatment_index.py, 
+see [TWIG Treatment Index Database Replica](#TWIG-Treatment-Index-Database-Replica) below.
+
 Current source databases:
 
 - [NFPORS](https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0)
@@ -161,9 +163,15 @@ a [GitHub Actions workflow file](.github/workflows/unit-test.yml) that runs unit
 module.
 
 # TWIG Treatment Index Database Replica
-The treatment index and associated lookup tables are available for download as a zipped file geodatabase from the following links:
+Download a replica:
 - [Full TWIG Treatment Index Copy](https://sweri-treament-index.s3.us-west-2.amazonaws.com/treatment_index.zip)
+
+Create a replica using [treatment_index.py](#treatment_indexpy):
 - [Lookup Tables and Treatment Index Schema](https://sweri-treament-index.s3.us-west-2.amazonaws.com/database_scaffolding.zip)
+
+Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run treatment_index.py
+on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema, treatment_index.py
+can then be targeted at that schema and run to populate the treatment_index feature class. 
 
 # Citing the Treatment Index
 
