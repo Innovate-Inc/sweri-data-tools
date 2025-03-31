@@ -23,8 +23,9 @@ def get_new_definition(root_url, new_service_name, token):
     new_service_url = f'{root_url}/arcgis/rest/services/Hosted/{new_service_name}/FeatureServer'
 
     based_info = requests.get(new_service_url, params={'f': 'json', 'token': token})
-    layers = based_info.json().get('layers')
-    tables = based_info.json().get('tables')
+    based_info_json = based_info.json()
+    layers = based_info_json.get('layers')
+    tables = based_info_json.get('tables')
     new_definition = dict(tables=[], layers=[])
     for l in layers:
         new_definition['layers'].append(get_layer_definition(new_service_url, l['id'], new_service_name, token))
