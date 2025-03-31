@@ -749,8 +749,7 @@ class SwizzleTests(TestCase):
     @patch('scripts.sweri_utils.swizzle.requests.post')
     def test_swizzle_service_success(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
-            {'layers': [{'id': 1}]},  # get_new_definition
-            {'tables': [{'id': 2}]},  # get_new_definition
+            {'layers': [{'id': 1}], 'tables': [{'id': 2}]},  # get_new_definition
             {}, # get_layer_definition
             {}, # get_layer_definition
             {'layers': [{'id': 1}], 'tables': [{'id': 2}]}   # clear_current_definition
@@ -767,7 +766,6 @@ class SwizzleTests(TestCase):
     def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'layers': [], 'tables': []},  # get_new_definition
-            {'layers': [], 'tables': []},  # get_new_definition
             {'layers': [], 'tables': []}   # clear_current_definition
         ]
         mock_post.return_value = MagicMock()
@@ -781,7 +779,6 @@ class SwizzleTests(TestCase):
     @patch('scripts.sweri_utils.swizzle.requests.post')
     def test_swizzle_service_invalid_token(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
-            {'error': 'Invalid token'},  # get_new_definition
             {'error': 'Invalid token'},  # get_new_definition
             {'error': 'Invalid token'}   # clear_current_definition
         ]
