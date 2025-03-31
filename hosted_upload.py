@@ -8,6 +8,7 @@ import geopandas
 import logging
 import pandas as pd
 import json
+import math
 
 def return_db_connection_url(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) :
     return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
@@ -42,6 +43,29 @@ def postgres_chunk_query(schema, table, chunk_size, objectid = 0):
     """
     return query
 
+def postgis_table_to_hosted_feature_class(feature_layer, db_con, schema, table, chunk, current_objectid):
+    while True:
+        sql_query = postgres_chunk_query(schema, table, chunk, current_objectid)
+        features_gdf, current_objectid = postgres_query_to_gdf(sql_query, db_con, geom_field = 'shape')
+
+        if current_objectid is None:
+            break
+
+        features = gdf_to_features(features_gdf)
+
+        date_fields = features_gdf.select_dtypes(include=['datetime64[ns]', 'datetime']).columns.tolist()
+
+        #null dates get set to nan and break the feature class
+        for feature in features:
+            for field in date_fields:
+                if math.isnan(feature.attributes[field]):
+                    feature.attributes[field] = None
+
+        additions = feature_layer.edit_features(adds=features)
+
+        logging.info(additions)
+        logging.info(current_objectid)
+
 if __name__ == '__main__':
     load_dotenv('.env')
 
@@ -52,13 +76,13 @@ if __name__ == '__main__':
     target_schema = os.getenv('DOCKER_DB_SCHEMA')
     target_table = 'treatment_index'
 
-    hosted_feature_id = '1557c605657b413886df816a8796fce8'
+    hosted_feature_id = '1bb527c9800b4519b5c2d1923c1d6870'
     hosted_item = gis.content.get(hosted_feature_id)
     hosted_feature_layer = hosted_item.layers[0]
     # Change view to look at newly updated hosted feature layer
 
     # Create 2 hosted feature layers in the test folder
-    hosted_feature_layer.delete_features(where = '1=1')
+    hosted_feature_layer.manager.truncate()
 
     db_connection_url = return_db_connection_url(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
                                                  os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
@@ -66,20 +90,9 @@ if __name__ == '__main__':
 
     logging.info(f"{target_table}, {target_schema}")
 
-    current_objectid = 0
-    chunk_size = 10
+    start_objectid = 0
+    chunk_size = 1000
 
-    while True:
-        sql_query = postgres_chunk_query(target_schema, target_table, chunk_size, current_objectid)
-        features_gdf, current_objectid = postgres_query_to_gdf(sql_query, con, geom_field = 'shape')
+    postgis_table_to_hosted_feature_class(hosted_feature_layer, con, target_schema, target_table, chunk_size, start_objectid)
 
-        if current_objectid is None:
-            break
 
-        features = gdf_to_features(features_gdf)
-        additions = hosted_feature_layer.edit_features(adds=features)
-
-        print(additions)
-        logging.info(current_objectid)
-        if "'success': False" in additions:
-            logging.info(additions)
