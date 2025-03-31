@@ -745,8 +745,8 @@ class SwizzleTests(TestCase):
 
 
 
-    @patch('scripts.sweri_utils.swizzle.requests.get')
-    @patch('scripts.sweri_utils.swizzle.requests.post')
+    @patch('requests.get')
+    @patch('requests.post')
     def test_swizzle_service_success(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'layers': [{'id': 1}], 'tables': [{'id': 2}]},  # get_new_definition
@@ -761,8 +761,8 @@ class SwizzleTests(TestCase):
         self.assertTrue(mock_get.called)
         self.assertTrue(mock_post.called)
 
-    @patch('scripts.sweri_utils.swizzle.requests.get')
-    @patch('scripts.sweri_utils.swizzle.requests.post')
+    @patch('requests.get')
+    @patch('requests.post')
     def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'layers': [], 'tables': []},  # get_new_definition
@@ -775,8 +775,8 @@ class SwizzleTests(TestCase):
         self.assertTrue(mock_get.called)
         self.assertTrue(mock_post.called)
 
-    @patch('scripts.sweri_utils.swizzle.requests.get')
-    @patch('scripts.sweri_utils.swizzle.requests.post')
+    @patch('requests.get')
+    @patch('requests.post')
     def test_swizzle_service_invalid_token(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'error': 'Invalid token'},  # get_new_definition
