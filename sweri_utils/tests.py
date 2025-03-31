@@ -8,6 +8,9 @@ from .s3 import import_s3_csv_to_postgres_table
 from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
     refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
 
+from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
+    add_to_definition, swizzle_service
+
 
 class DownloadTests(TestCase):
     def setUp(self):
@@ -709,3 +712,80 @@ class S3Tests(TestCase):
             # Assert
             mock_boto_client.assert_called_once_with('s3')
             mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
+
+class SwizzleTests(TestCase):
+    @patch('requests.get')
+    def test_retrieves_layer_definition_when_all_parameters_are_valid(self, mock_get):
+        mock_get.return_value.json.return_value = {"some_key": "some_value"}
+        result = get_layer_definition("any_url", 1, "any_service", "any_token")
+        assert "some_key" in result
+
+    @patch('requests.get')
+    def test_returns_empty_sets_when_service_has_no_layers_or_tables(self, mock_get):
+        mock_get.return_value.json.return_value = {'layers': [], 'tables': []}
+        result = get_new_definition("any_url", "any_service", "any_token")
+        assert result["layers"] == []
+        assert result["tables"] == []
+
+    def test_constructs_administrative_url_correctly(self):
+        result = get_view_admin_url("any_url", "any_service")
+        assert "arcgis/rest/admin/services/Hosted/any_service/FeatureServer" in result
+
+    @patch('requests.get')
+    @patch('requests.post')
+    def test_clears_definition_when_layers_and_tables_exist(self, mock_post, mock_get):
+        mock_get.return_value.json.return_value = {"layers": [{"id": 1}], "tables": [{"id": 2}]}
+        resp = clear_current_definition("any_view_url", "any_token")
+        assert mock_post.called
+
+    @patch('requests.post')
+    def test_adds_provided_definition(self, mock_post):
+        resp = add_to_definition("any_view_url", {"layers": [], "tables": []}, "any_token")
+        assert mock_post.called
+
+
+
+    @patch('scripts.sweri_utils.swizzle.requests.get')
+    @patch('scripts.sweri_utils.swizzle.requests.post')
+    def test_swizzle_service_success(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'layers': [{'id': 1}]},  # get_new_definition
+            {'tables': [{'id': 2}]},  # get_new_definition
+            {}, # get_layer_definition
+            {}, # get_layer_definition
+            {'layers': [{'id': 1}], 'tables': [{'id': 2}]}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
+
+        self.assertTrue(mock_get.called)
+        self.assertTrue(mock_post.called)
+
+    @patch('scripts.sweri_utils.swizzle.requests.get')
+    @patch('scripts.sweri_utils.swizzle.requests.post')
+    def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'layers': [], 'tables': []},  # get_new_definition
+            {'layers': [], 'tables': []},  # get_new_definition
+            {'layers': [], 'tables': []}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
+
+        self.assertTrue(mock_get.called)
+        self.assertTrue(mock_post.called)
+
+    @patch('scripts.sweri_utils.swizzle.requests.get')
+    @patch('scripts.sweri_utils.swizzle.requests.post')
+    def test_swizzle_service_invalid_token(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'error': 'Invalid token'},  # get_new_definition
+            {'error': 'Invalid token'},  # get_new_definition
+            {'error': 'Invalid token'}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        with self.assertRaises(TypeError):
+            swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')

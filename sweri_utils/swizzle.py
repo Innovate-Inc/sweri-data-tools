@@ -1,3 +1,5 @@
+import logging
+
 import requests
 import json
 
@@ -67,7 +69,11 @@ def swizzle_service(root_url, view_name, new_service_name, token):
     Returns:
         None
     """
-    view_url = get_view_admin_url(root_url, view_name)
-    new_def = get_new_definition(root_url, new_service_name, token)
-    clear_current_definition(view_url, token)
-    add_to_definition(view_url, new_def, token)
+    try:
+        view_url = get_view_admin_url(root_url, view_name)
+        new_def = get_new_definition(root_url, new_service_name, token)
+        clear_current_definition(view_url, token)
+        add_to_definition(view_url, new_def, token)
+    except Exception as e:
+        logging.error(e)
+        raise e
