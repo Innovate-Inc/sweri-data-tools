@@ -3,6 +3,8 @@ from urllib.parse import urljoin
 import zipfile
 import requests
 import logging
+from osgeo.gdal import VectorTranslate, VectorTranslateOptions
+
 try:
     import arcpy
 except ModuleNotFoundError:
@@ -90,40 +92,37 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     return outfile
 
 
-def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema):
+def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
     # Downloads a gdb with a single feature class
     # And uploads that featureclass to postgres
-    zip_file = f'{postgres_table_name}.zip'
 
-    # Download and extract gdb file
-    logging.info(f'Downloading {url}')
-    download_file_from_url(url, zip_file)
-
-    logging.info(f'Extracting {zip_file}')
-    extract_and_remove_zip_file(zip_file)
-
+    os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
     # Set Workspace to Downloaded GDB and set paths for feature class and reprojection
-    gdb_path = os.path.join(os.getcwd(), gdb_name)
-    feature_class = os.path.join(gdb_path, fc_name)
-    reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
-    postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
+    # could not get options="PG_USE_COPY YES", to work in options but that is supposed to be the default if it is creating the table
+    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL" # todo: move this to parameter or env
 
-    # Reproject layer
-    logging.info(f'reprojecting {feature_class}')
-    arcpy.management.Project(feature_class, reprojected_fc, projection)
-    logging.info('layer reprojected')
+    options = VectorTranslateOptions(format='PostgreSQL',
+                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
+                                     # makeValid=True,
+                                     skipFailures=True,
+                                     dstSRS=f'EPSG:{projection}', where=where,
+                                     accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
+                                     layers=[fc_name])
+
+    gdb_path = os.path.join(os.getcwd(), gdb_name)
 
     # Clear space in postgres for table
-    if (arcpy.Exists(postgres_table_location)):
-        arcpy.management.Delete(postgres_table_location)
-        logging.info(f'existing {postgres_table_name} postgres table has been deleted')
+    # todo: use postgres to drop this?
+    # if (arcpy.Exists(postgres_table_location)):
+    #     arcpy.management.Delete(postgres_table_location)
+    #     logging.info(f'existing {postgres_table_name} postgres table has been deleted')
 
     # Upload fc to postgres
-    arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)
-    logging.info(f'{postgres_table_location} now in geodatabase')
+    logging.info(f'{postgres_table_name} now in geodatabase')
+    VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
 
     # Remove gdb
-    arcpy.management.Delete(gdb_path)
+    # arcpy.management.Delete(gdb_path)
     logging.info(f'{gdb_path} gdb deleted')
 
 

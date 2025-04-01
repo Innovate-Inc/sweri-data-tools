@@ -9,7 +9,7 @@ import watchtower
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
 from sweri_utils.download import get_ids, service_to_postgres
-from sweri_utils.files import gdb_to_postgres
+from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['cost_per_uom', 'DOUBLE', 'Cost per Unit of Measure', '', '', ''],
             ['uom', 'TEXT', 'Unit of Measure', 255, '', ''],
             ['error', 'TEXT', 'Error Code', 255, '', '']
-            
+
         ]
     )
 
@@ -71,7 +71,7 @@ def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     database = 'sweri'
-    
+
     service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
@@ -731,7 +731,7 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
-def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
+def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
@@ -753,11 +753,11 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
-        postgres_fc = os.path.join(sde_file, table_name)
+        # postgres_fc = os.path.join(sde_file, table_name)
 
-        gdb_to_postgres(url, gdb, projection, common_attributes_fc_name, table_name, sde_file, schema)
+        gdb_to_postgres(url, gdb, projection, common_attributes_fc_name, table_name, ogr_db_string, schema)
 
-        add_fields_and_indexes(postgres_fc, region_number) 
+        # add_fields_and_indexes(postgres_fc, region_number)
 
         common_attributes_date_filtering(cursor, schema, table_name)
         exclude_by_acreage(cursor, schema, table_name)
@@ -777,8 +777,8 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
 
         #Deletes singluar region pg table after processing that table
-        if arcpy.Exists(postgres_fc):
-            arcpy.management.Delete(postgres_fc)
+        # if arcpy.Exists(postgres_fc):
+        #     arcpy.management.Delete(postgres_fc)
 
 def add_twig_category(cursor, schema):
     common_attributes_twig_category(cursor, schema)
@@ -801,7 +801,7 @@ def common_attributes_twig_category(cursor, schema):
         ti.equipment = tc.equipment;
     ''')
     cursor.execute('COMMIT;')
-    
+
 def facts_nfpors_twig_category(cursor, schema):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
@@ -818,7 +818,7 @@ def facts_nfpors_twig_category(cursor, schema):
         ti.type = tc.type;
     ''')
     cursor.execute('COMMIT;')
-    
+
 if __name__ == "__main__":
 
     load_dotenv()
@@ -841,12 +841,23 @@ if __name__ == "__main__":
 
     cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
-    create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)  
+    create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
 
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
-    common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
+    common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
-    gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+
+    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    # Download and extract gdb file
+    logging.info(f'Downloading {facts_haz_gdb_url}')
+    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+
+    logging.info(f'Extracting {hazardous_fuels_zip_file}')
+    extract_and_remove_zip_file(hazardous_fuels_zip_file)
+
+    gdb_to_postgres(facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table,
+                    target_schema, ogr_db_string)
 
     common_attributes_type_filter(cur, target_schema, insert_table)
 
