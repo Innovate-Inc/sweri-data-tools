@@ -55,8 +55,8 @@ jobs:
         id: build-image
         uses: docker/build-push-action@v4
         with:
-          file: Dockerfile
-          context: .:docker
+          file: ./docker/Dockerfile
+          context: ./docker
           load: true
           tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
@@ -65,7 +65,7 @@ jobs:
         id: push-image
         uses: docker/build-push-action@v4
         with:
-          file: Dockerfile
-          context: .:docker
+          file: ./docker/Dockerfile
+          context: ./docker
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
