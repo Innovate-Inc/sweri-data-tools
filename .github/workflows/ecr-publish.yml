@@ -1,0 +1,71 @@
+name: Unit test python library
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: sweri-data-tools
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  deploy:
+    name: Update latest ECR image
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{secrets.AWS_ECR_IAM_ARN}}
+          aws-region: us-west-2
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          mask-password: 'true'
+
+      - name: Set up Docker Build
+        uses: docker/setup-buildx-action@v2
+
+      - name: Get tags for backend image
+        id: backend-metadata
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and tag backend image
+        id: build-image-backend
+        uses: docker/build-push-action@v4
+        with:
+          file: Dockerfile
+          context: .
+          load: true
+          tags: ${{ steps.backend-metadata.outputs.tags }}
+          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+
+      - name: Push backend image to Amazon ECR
+        id: push-image-backend
+        uses: docker/build-push-action@v4
+        with:
+          file: Dockerfile.backend
+          context: .
+          push: true
+          tags: ${{ steps.backend-metadata.outputs.tags }}
