@@ -57,15 +57,15 @@ jobs:
         with:
           file: ./docker/Dockerfile
           context: .
-          load: true
+          push: true
           tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
-      - name: Push backend image to Amazon ECR
-        id: push-image
-        uses: docker/build-push-action@v4
-        with:
-          file: ./docker/Dockerfile
-          context: .
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
+#      - name: Push backend image to Amazon ECR
+#        id: push-image
+#        uses: docker/build-push-action@v4
+#        with:
+#          file: ./docker/Dockerfile
+#          context: .
+#          push: true
+#          tags: ${{ steps.metadata.outputs.tags }}
