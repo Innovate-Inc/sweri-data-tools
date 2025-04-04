@@ -1,21 +1,19 @@
 
-############### for local debugging only #################
-import sys
-sys.path.append("C:\Program Files\JetBrains\PyCharm 2024.3.1.1\debug-eggs\pydevd-pycharm.egg")
-import pydevd_pycharm
-
-pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True,
-                        stderrToServer=True)
+############### for local debugging with PyCharm only #################
+# import sys
+# sys.path.append("C:\Program Files\JetBrains\PyCharm 2024.3.1.1\debug-eggs\pydevd-pycharm.egg")
+# import pydevd_pycharm
+#
+# pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True,
+#                         stderrToServer=True)
 ##########################################################
 import arcpy
 import datetime as dt
 import os
 import sys
 
-# from sweri_utils import files, download
-
 ################ Local Path to sweri_utils directory, must be hard-coded when publishing #################
-mod = r"C:\Users\Keaton Shennan\projects\sweri-data-tools\sweri_utils"
+mod = r"C:\path_to_your_local_sweri_utils_directory"
 ##########################################################################################################
 sys.path.append(mod)
 import files
