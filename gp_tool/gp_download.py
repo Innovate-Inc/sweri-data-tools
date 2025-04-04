@@ -1,18 +1,21 @@
 
 ############### for local debugging only #################
-# import sys
-# sys.path.append("C:\Program Files\JetBrains\PyCharm 2024.2.0.1\debug-eggs\pydevd-pycharm.egg")
-# import pydevd_pycharm
-#
-# pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True,
-#                         stderrToServer=True)
+import sys
+sys.path.append("C:\Program Files\JetBrains\PyCharm 2024.3.1.1\debug-eggs\pydevd-pycharm.egg")
+import pydevd_pycharm
+
+pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True,
+                        stderrToServer=True)
 ##########################################################
 import arcpy
 import datetime as dt
 import os
 import sys
+
+# from sweri_utils import files, download
+
 ################ Local Path to sweri_utils directory, must be hard-coded when publishing #################
-mod = r"C:\path_to_your_local_sweri_utils_directory"
+mod = r"C:\Users\Keaton Shennan\projects\sweri-data-tools\sweri_utils"
 ##########################################################################################################
 sys.path.append(mod)
 import files
@@ -22,7 +25,7 @@ import download
 if __name__ == "__main__":
     # get params
     url = arcpy.GetParameterAsText(0)
-    fc = arcpy.GetParameterAsText(1)
+    fc_in = arcpy.GetParameterAsText(1)
     filetype = arcpy.GetParameterAsText(2)
     where = arcpy.GetParameterAsText(3)
     geom = arcpy.GetParameterAsText(4)
@@ -31,6 +34,9 @@ if __name__ == "__main__":
     # set workspace
     arcpy.env.overwriteOutput = True
     gdb = arcpy.env.scratchGDB
+
+    # replace invalid characters in the feature class name with _
+    fc = "".join([x if x.isalnum() else "_" for x in fc_in])
 
     # set out name and create output directory
     out_name = f"{fc}_{dt.datetime.now().strftime('%m-%d-%Y_%H-%M-%S')}"

@@ -11,7 +11,7 @@ except ModuleNotFoundError:
 
 def get_disclaimer(out_dir):
     try:
-        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://gis.reshapewildfire.org/cms/api/v2/'
+        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://cms.reshapewildfire.org/api/v2/'
         file_name = os.path.join(out_dir, 'disclaimer.html')
 
         response = requests.get(urljoin(url, 'snippets/download_disclaimer/'))
