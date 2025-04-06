@@ -46,6 +46,7 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['equipment', 'TEXT', 'Equipment', 255, '', ''],
             ['category', 'TEXT', 'Category', 255, '', ''],
             ['type', 'TEXT', 'Type', 255, '', ''],
+            ['twig_category', 'TEXT', 'TWIG Category', 255, '', ''],
             ['agency', 'TEXT', 'Agency', 255, '', ''],
             ['fund_source', 'TEXT', 'Fund Source', 255, '', ''],
             ['fund_code', 'TEXT', 'Fund Code', 255, '', 'fund_name'],
@@ -53,12 +54,13 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
             ['cost_per_uom', 'DOUBLE', 'Cost per Unit of Measure', '', '', ''],
             ['uom', 'TEXT', 'Unit of Measure', 255, '', ''],
             ['error', 'TEXT', 'Error Code', 255, '', '']
+            
         ]
     )
 
     fields_to_index = ['unique_id','name','state','acres','treatment_date','date_source',
     'identifier_database','date_current','actual_completion_date','activity','activity_code','method','equipment',
-    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error']
+    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error', 'twig_category']
 
     for field in fields_to_index:
         postgres_create_index(cur, schema, f'{table_name}_temp', field)
@@ -298,7 +300,7 @@ def fund_source_updates(cursor, schema, treatment_index):
 
     logger.info(f'updated fund_source in {schema}.{treatment_index}_temp')
 
-def fix_typos(cursor, schema, treatment_index):
+def correct_biomass_removal_typo(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp
@@ -321,6 +323,7 @@ def update_total_cost(cursor, schema, treatment_index):
             END;
     ''')
     cursor.execute('COMMIT;')
+
 
 
 def treatment_index_renames(cursor, schema, treatment_index, sde_file):
@@ -353,7 +356,7 @@ def create_treatment_points(schema, sde_file, treatment_index):
 
     fields_to_index = ['unique_id','name','state','acres','treatment_date','date_source',
     'identifier_database','date_current','actual_completion_date','activity','activity_code','method','equipment',
-    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error']
+    'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error','twig_category']
 
     for field in fields_to_index:
         postgres_create_index(cur, schema, f'{treatment_index}_points_temp', field)
@@ -783,7 +786,45 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
         if arcpy.Exists(postgres_fc):
             arcpy.management.Delete(postgres_fc)
 
+def add_twig_category(cursor, schema):
+    common_attributes_twig_category(cursor, schema)
+    facts_nfpors_twig_category(cursor, schema)
 
+def common_attributes_twig_category(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.treatment_index_temp ti
+        SET twig_category = tc.twig_category
+        FROM
+        {schema}.twig_category_lookup tc
+        WHERE
+        ti.identifier_database = 'FACTS Common Attributes'
+        AND
+        ti.activity = tc.activity
+        AND
+        ti.method = tc.method
+        AND
+        ti.equipment = tc.equipment;
+    ''')
+    cursor.execute('COMMIT;')
+    
+def facts_nfpors_twig_category(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.treatment_index_temp ti
+        SET twig_category = tc.twig_category
+        FROM
+        {schema}.twig_category_lookup tc
+        WHERE(
+            ti.identifier_database = 'NFPORS'
+            OR
+            ti.identifier_database = 'FACTS Hazardous Fuels'
+            )     
+        AND
+        ti.type = tc.type;
+    ''')
+    cursor.execute('COMMIT;')
+    
 if __name__ == "__main__":
 
     load_dotenv()
@@ -804,7 +845,7 @@ if __name__ == "__main__":
     #This is the path of the final table, _backup of this table must also exist
     insert_table = f'treatment_index'
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
     create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)  
 
@@ -828,12 +869,17 @@ if __name__ == "__main__":
 
     # Insert NFPORS, convert isbil Yes/No to fund_code 'BIL'/null
     fund_source_updates(cur, target_schema, insert_table)
+
     update_total_cost(cur, target_schema, insert_table)
-    fix_typos(cur, target_schema, insert_table)
+
+    correct_biomass_removal_typo(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
     flag_errors(cur, target_schema, f'{insert_table}_temp')
+    flag_high_cost(cur, target_schema, f'{insert_table}_temp')
+    flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    add_twig_category(cur, target_schema)
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
     rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
@@ -842,3 +888,5 @@ if __name__ == "__main__":
     # temp -> current
     # delete backup temp
     treatment_index_renames(cur, target_schema, insert_table, sde_connection_file)
+
+    conn.close()
