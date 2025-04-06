@@ -9,6 +9,8 @@ import pandas as pd
 import math
 from sweri_utils.swizzle import swizzle_service
 from sweri_utils.download import retry
+from sweri_utils.sql import connect_to_pg_db
+from datetime import datetime
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -18,14 +20,13 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def return_db_connection_url(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) :
-    return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-
 def get_view_data_source_id(view):
     view_flc = FeatureLayerCollection.fromitem(view)
 
     if len(view_flc.manager.properties.get('adminServiceInfo').get('serviceSource')) ==  1:
-        source_id = view_flc.manager.properties.get('adminServiceInfo').get('serviceSource')[0].get('serviceItemId')
+        service_sources = view_flc.manager.properties.get('adminServiceInfo').get('serviceSource')
+        source_id = next(iter(service_sources)).get('serviceItemId')
+
     else:
         raise ValueError(f"{len(view_flc.manager.properties.get('adminServiceInfo').get('serviceSource'))} sources returned, 1 expected")
 
@@ -33,6 +34,7 @@ def get_view_data_source_id(view):
 
 def gdf_to_features(gdf):
 
+    # Step 1: Convert GeoDataFrame to SEDF
     sdf = pd.DataFrame.spatial.from_geodataframe(gdf)
     features_to_add = sdf.spatial.to_featureset().features
 
@@ -62,15 +64,17 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field = 'shape'):
     return gdf, max_objectid
 
 def retry_upload(func, *args, **kwargs):
-    chunk = kwargs.get('chunk_size', args[3])
+    chunk = args[3]
     if chunk > 1:
-        new_chunk = chunk/2
-        func(chunk_size=new_chunk, *args, **kwargs)
+        new_chunk = int(chunk/2)
+        new_args = list(args)
+        new_args[3] = new_chunk
+        return func(*new_args, **kwargs)
     else:
         raise Exception('Upload Tries Exceeded')
 
-@retry(retries=2, on_failure=retry_upload)
-def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, current_objectid, db_con, date_fields):
+@retry(retries=1, on_failure=retry_upload)
+def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, current_objectid, db_con):
     sql_query = build_postgis_chunk_query(schema, table, chunk_size, current_objectid)
     features_gdf, current_objectid = postgis_query_to_gdf(sql_query, db_con, geom_field='shape')
 
@@ -79,11 +83,14 @@ def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, cur
 
     features = gdf_to_features(features_gdf)
 
-    # null dates get set to nan and break the feature class
+    print(datetime.now())
+
     for feature in features:
-        for field in date_fields:
-            if math.isnan(feature.attributes[field]):
-                feature.attributes[field] = None
+        for key, value in feature.attributes.items():
+            if isinstance(value, float) and math.isnan(value):
+                feature.attributes[key] = None
+
+    print(datetime.now())
 
     additions = feature_layer.edit_features(adds=features)
 
@@ -94,22 +101,17 @@ def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, cur
 
 
 
-def load_postgis_to_feature_layer(feature_layer, db_con, schema, table, chunk_size, current_objectid):
-
-    #pull 1 feature to scrape date fields
-    sql_query = build_postgis_chunk_query(schema, table, 1, current_objectid)
-    features_gdf, unused_id = postgis_query_to_gdf(sql_query, db_con, geom_field='shape')
-    date_fields = features_gdf.select_dtypes(include=['datetime64[ns]', 'datetime']).columns.tolist()
+def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
 
     while True:
-        current_objectid = upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, db_con, date_fields)
+        current_objectid = upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, sqla_engine)
         if current_objectid is None:
             break
 
 
-def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_layer_ids, con, schema, table, chunk_size, start_objectid):
+def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size, start_objectid):
 
-    token = gis_con.session.auth.token
+    sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
 
     view_item = gis.content.get(view_id)
 
@@ -119,33 +121,46 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
     new_source_item = gis.content.get(new_data_source_id)
 
     if(len(new_source_item.layers)) == 1:
-        new_source_feature_layer = new_source_item.layers[0]
+        new_source_feature_layer = next(iter(new_source_item.layers))
     else:
         raise ValueError(f"{len(new_source_item.layers)} sources returned, 1 expected")
 
     new_source_feature_layer.manager.truncate()
 
-    load_postgis_to_feature_layer(new_source_feature_layer, con, schema, table, chunk_size, start_objectid)
+
+    load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
+
+    #refreshing old references before swizzle service
+    view_item = gis.content.get(view_id)
+    new_source_item = gis.content.get(new_data_source_id)
+    token = gis_con.session.auth.token
+
     swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
 
 if __name__ == '__main__':
     load_dotenv('.env')
 
-    db_connection_url = return_db_connection_url(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'),
-                                                 os.getenv('DOCKER_DB_NAME'),
-                                                 os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
-    pg_con = create_engine(db_connection_url)
-    postgis_schema = os.getenv('DOCKER_DB_SCHEMA')
-    postgis_table = os.getenv('DOCKER_DB_TABLE')
+    cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
+
+    postgis_schema = os.getenv('RDS_DB_SCHEMA')
+    postgis_table = os.getenv('RDS_DB_TABLE')
     start_objectid = 0
     chunk = 1000
 
     gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"))
 
-    hosted_feature_ids = ['1bb527c9800b4519b5c2d1923c1d6870', '27164729c8bc48cd81e9308e691560ac']
-    view_item_id = '6b819ca96ceb4d0fb31465932344515f'
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
 
     # For polygon layer
-    refresh_feature_data_and_swap_view_source(gis, view_item_id, hosted_feature_ids, pg_con, postgis_schema, postgis_table, chunk, start_objectid)
+    refresh_feature_data_and_swap_view_source(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
 
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
 
+    refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
+
+    daily_progression_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+
+    refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
