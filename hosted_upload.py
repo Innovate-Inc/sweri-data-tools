@@ -152,15 +152,17 @@ if __name__ == '__main__':
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
 
-    # For polygon layer
+    # Treatment Index Polygons
     refresh_feature_data_and_swap_view_source(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
 
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
 
+    # Treatment Index Points
     refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
 
     daily_progression_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
     daily_progression_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
 
+    # Daily Progression
     refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
