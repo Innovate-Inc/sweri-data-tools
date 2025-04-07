@@ -10,7 +10,6 @@ import math
 from sweri_utils.swizzle import swizzle_service
 from sweri_utils.download import retry
 from sweri_utils.sql import connect_to_pg_db
-from datetime import datetime
 
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
@@ -83,23 +82,16 @@ def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, cur
 
     features = gdf_to_features(features_gdf)
 
-    print(datetime.now())
-
     for feature in features:
         for key, value in feature.attributes.items():
             if isinstance(value, float) and math.isnan(value):
                 feature.attributes[key] = None
 
-    print(datetime.now())
-
     additions = feature_layer.edit_features(adds=features)
 
     print(additions)
-    logging.info(current_objectid)
-
+    print(current_objectid)
     return current_objectid
-
-
 
 def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
 
@@ -110,7 +102,6 @@ def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chu
 
 
 def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size, start_objectid):
-
     sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
 
     view_item = gis.content.get(view_id)
@@ -127,6 +118,8 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
 
     new_source_feature_layer.manager.truncate()
 
+    print(f'beginning update for {new_source_item.name} from {schema}.{table}')
+
 
     load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
 
@@ -135,6 +128,7 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
     new_source_item = gis.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
+    print(f'swapping {view_item.name} to data source {new_source_item.name}')
     swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
 
 if __name__ == '__main__':
@@ -143,26 +137,32 @@ if __name__ == '__main__':
     cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
 
     postgis_schema = os.getenv('RDS_DB_SCHEMA')
-    postgis_table = os.getenv('RDS_DB_TABLE')
     start_objectid = 0
     chunk = 1000
 
     gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"))
 
-    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
-
-    # Treatment Index Polygons
-    refresh_feature_data_and_swap_view_source(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
-
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
-    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-
     # Treatment Index Points
-    refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
+                                       os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+    treatment_index_points_table = 'treatment_index_points'
 
-    daily_progression_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
-    daily_progression_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+    refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids,
+                                              conn, postgis_schema, treatment_index_points_table, chunk, start_objectid)
 
     # Daily Progression
-    refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids, conn, postgis_schema, postgis_table, chunk, start_objectid)
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
+    daily_progression_table = 'daily_progression'
+
+    refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids,
+                                              conn, postgis_schema, daily_progression_table, chunk, start_objectid)
+
+    # Treatment Index Polygons
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
+    treatment_index_table = 'treatment_index'
+
+    refresh_feature_data_and_swap_view_source(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, treatment_index_table, chunk, start_objectid)
+
