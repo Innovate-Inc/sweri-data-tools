@@ -1,17 +1,8 @@
-
-############### for local debugging with PyCharm only #################
-# import sys
-# sys.path.append("C:\Program Files\JetBrains\PyCharm 2024.3.1.1\debug-eggs\pydevd-pycharm.egg")
-# import pydevd_pycharm
-#
-# pydevd_pycharm.settrace('localhost', port=12345, stdoutToServer=True,
-#                         stderrToServer=True)
-##########################################################
 import arcpy
 import datetime as dt
 import os
 import sys
-
+from urllib.parse import urljoin
 ################ Local Path to sweri_utils directory, must be hard-coded when publishing #################
 mod = r"C:\path_to_your_local_sweri_utils_directory"
 ##########################################################################################################
@@ -28,6 +19,12 @@ if __name__ == "__main__":
     where = arcpy.GetParameterAsText(3)
     geom = arcpy.GetParameterAsText(4)
     geom_type = arcpy.GetParameterAsText(5)
+    api_url = arcpy.GetParameterAsText(6)
+
+    # set defaults CMS API url
+    if not api_url:
+        api_base_url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://cms.reshapewildfire.org/api/v2/'
+        api_url = urljoin(api_base_url, 'snippets/download_disclaimer/')
 
     # set workspace
     arcpy.env.overwriteOutput = True
@@ -58,7 +55,7 @@ if __name__ == "__main__":
         arcpy.AddMessage(result_file)
         # get disclaimer and put it in the same directory as the result file
         arcpy.AddMessage('retrieving disclaimer')
-        files.get_disclaimer(out_dir)
+        files.get_disclaimer(out_dir, api_url)
         # return zip file containing both
         arcpy.AddMessage('creating zip of result file and disclaimer')
         zip_file = files.create_zip(out_dir, out_name)
@@ -69,5 +66,5 @@ if __name__ == "__main__":
         raise e
 
     # return it
-    arcpy.SetParameterAsText(6, zip_file)
+    arcpy.SetParameterAsText(7, zip_file)
 
