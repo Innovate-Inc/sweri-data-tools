@@ -102,9 +102,9 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
     where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL" # todo: move this to parameter or env
 
     options = VectorTranslateOptions(format='PostgreSQL',
-                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                     # makeValid=True,
-                                     skipFailures=True,
+                                     # geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
+                                     makeValid=True,
+                                     # skipFailures=True,
                                      dstSRS=f'EPSG:{projection}', where=where,
                                      accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
                                      layers=[fc_name])
