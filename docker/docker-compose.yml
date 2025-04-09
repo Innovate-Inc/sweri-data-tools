@@ -47,7 +47,27 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
     volumes:
       - ..:/code
+  app_console:
+    extends:
+      service:
+        app
+    ports: !reset [ ]
+    volumes:
+      - ..:/code
+  rabbit:
+    image: rabbitmq:4.0.1-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+  celery:
+    extends:
+      service: app # todo: change to image
+    volumes:
+      - ..:/code
+    command: celery -A worker worker --loglevel=debug
+
 volumes:
   postgres_data:

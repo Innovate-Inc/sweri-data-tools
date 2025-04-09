@@ -2,12 +2,17 @@ import json
 import logging
 import os
 from datetime import datetime
+from celery import group
+
 import requests as r
 from dotenv import load_dotenv
+
+from utils import create_db_conn_cursor_from_envs
+from tasks import calculate_intersections_and_insert
 from sweri_utils.conversion import create_csv_and_upload_to_s3, create_coded_val_dict
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.s3 import import_s3_csv_to_postgres_table
-from sweri_utils.sql import connect_to_pg_db, rename_postgres_table,  refresh_spatial_index, \
+from sweri_utils.sql import  rename_postgres_table,  refresh_spatial_index, \
     rotate_tables, copy_table_across_servers, delete_from_table, run_vacuum_analyze,  \
     calculate_index_for_fields
 import watchtower
@@ -15,7 +20,7 @@ import watchtower
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 logger.setLevel(logging.INFO)
 
 
@@ -79,48 +84,17 @@ def update_last_run(features, start_time, url, layer_id):
     logger.info('completed last run update')
 
 
-def calculate_intersections_and_insert(cursor, schema, insert_table, source_key, target_key):
-    """
-    Calculate intersections between features from two sources and insert the results into a specified table.
-    ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap is used so we can calculate the geodesic area
-    Args:
-        cursor: Database cursor for executing SQL commands.
-        schema (str): The schema name where the tables are located.
-        insert_table (str): The name of the table to insert intersection results into.
-        source_key (str): The key identifying the source features.
-        target_key (str): The key identifying the target features.
-
-    Returns:
-        None
-    """
-    # delete existing intersections and replace with new ones
-    delete_from_table(cursor, schema, insert_table, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
-    logger.info(f'beginning intersections on {source_key} and {target_key}')
-    query = f""" insert into {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
-         select ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
-         a.unique_id as id_1, 
-         a.feat_source as id_1_source, 
-         b.unique_id as id_2, 
-         b.feat_source as id_2_source
-         from {schema}.intersection_features a, {schema}.intersection_features b
-         where ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape)  
-         and a.feat_source = '{source_key}'
-         and b.feat_source = '{target_key}';"""
-    cursor.execute('BEGIN;')
-    cursor.execute(query)
-    cursor.execute('COMMIT;')
-    logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
-
-
 def calculate_intersections_from_sources(intersect_sources, intersect_targets, new_intersections_name, cursor, schema):
+    t = []
     for source_key, source_value in intersect_sources.items():
         for target_key, target_value in intersect_targets.items():
             if target_key == source_key:
                 continue
-            logger.info(f'performing intersections on {source_key} and {target_key}')
-            calculate_intersections_and_insert(cursor, schema, new_intersections_name, source_key, target_key)
-            logger.info(f'completed intersections on {source_key} and {target_key}')
-
+            # logger.info(f'performing intersections on {source_key} and {target_key}')
+            t.append(calculate_intersections_and_insert.s(schema, new_intersections_name, source_key, target_key))
+            # logger.info(f'completed intersections on {source_key} and {target_key}')
+    g = group(t)()
+    g.get()
 
 def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field, to_srid=3857):
     if ('geometry' not in feature) or ('properties' not in feature):
@@ -300,10 +274,9 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     docker_conn.close()
     rds_db_conn.close()
 
-
 if __name__ == '__main__':
     logger.info('starting intersection processing')
-    load_dotenv('.env')
+    load_dotenv('../.env')
     script_start = datetime.now()
     sr_wkid = 3857
 
@@ -314,22 +287,11 @@ if __name__ == '__main__':
     ############### database connections ################
     # local docker db environment variables
     docker_db_schema = os.getenv('DOCKER_DB_SCHEMA')
-    docker_db_host = os.getenv('DOCKER_DB_HOST')
-    docker_db_port = int(os.getenv('DOCKER_DB_PORT'))
-    docker_db_name = os.getenv('DOCKER_DB_NAME')
-    docker_db_user = os.getenv('DOCKER_DB_USER')
-    docker_db_password = os.getenv('DOCKER_DB_PASSWORD')
-    docker_pg_cursor, docker_pg_conn = connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user,
-                                                        docker_db_password)
+    docker_pg_cursor, docker_pg_conn = create_db_conn_cursor_from_envs('DOCKER')
 
     # rds db params
     rds_db_schema = os.getenv('RDS_SCHEMA')
-    rds_db_host = os.getenv('RDS_DB_HOST')
-    rds_db_port = int(os.getenv('RDS_DB_PORT'))
-    rds_db_name = os.getenv('RDS_DB_NAME')
-    rds_db_user = os.getenv('RDS_DB_USER')
-    rds_db_password = os.getenv('RDS_DB_PASSWORD')
-    rds_pg_cursor, rds_pg_conn = connect_to_pg_db(rds_db_host, rds_db_port, rds_db_name, rds_db_user, rds_db_password)
+    rds_pg_cursor, rds_pg_conn = create_db_conn_cursor_from_envs('RDS')
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,

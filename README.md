@@ -127,7 +127,7 @@ Docker environment and a named volume postgres_data to persist PostgreSQL data
 - **db**: Runs a PostgreSQL database with PostGIS extensions. It uses environment variables for configuration, maps a
   host
   directory to store database data, and includes a health check to ensure the database is ready.
-- **app**: Builds and runs the [intersections script](intersections.py). It depends on the database service, uses
+- **app**: Builds and runs the [intersections script](intersections/intersections.py). It depends on the database service, uses
   environment variables for
   configuration, and mounts the project directory to the container.
 
