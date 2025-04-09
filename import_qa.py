@@ -15,9 +15,6 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='./import_qa.log', encoding='utf-8',
                     level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
 
-
-# logger.addHandler(watchtower.CloudWatchLogHandler())
-
 def field_equality(comparison_feature, sweri_feature, iterator_offset=0):
     field_equal = {}
     iterator = 0 + iterator_offset
@@ -128,8 +125,11 @@ def prepare_feature_for_comparison(target_feature, date_field, wkid):
         target_feature['attributes'][date_field] = datetime.datetime(1970, 1, 1) + datetime.timedelta(
             seconds=(target_feature['attributes'][date_field] / 1000))
 
-    if 'geometry' in target_feature:
-        target_feature['geometry']['spatialReference'] = {'wkid': wkid}
+    geometry = target_feature.get('geometry')
+    if geometry:
+        geometry['spatialReference'] = {'wkid': wkid}
+    else:
+        logging.debug(f"Missing geometry in feature: {target_feature}")
 
     return target_feature
 
