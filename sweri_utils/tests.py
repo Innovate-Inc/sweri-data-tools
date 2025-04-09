@@ -8,6 +8,9 @@ from .s3 import import_s3_csv_to_postgres_table
 from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
     refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
 
+from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
+    add_to_definition, swizzle_service
+
 
 class DownloadTests(TestCase):
     def setUp(self):
@@ -101,8 +104,8 @@ class DownloadTests(TestCase):
     @patch('arcpy.management.DefineProjection')
     def test_fetch_create_new_fc(self, mock_project, mock_json_to_fc, mock_exists):
         with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
-            'sweri_utils.download.get_all_features') as get_feat_mock, patch(
-                'sweri_utils.download.get_fields') as get_fields_mock:
+                'sweri_utils.download.get_all_features') as get_feat_mock, patch(
+            'sweri_utils.download.get_fields') as get_fields_mock:
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
@@ -184,10 +187,9 @@ class DownloadTests(TestCase):
 
     @patch('arcgis.features.FeatureLayer')
     def test_service_to_postgres(self, fl_mock):
-        with patch('sweri_utils.download.get_ids') as get_ids_mock,patch(
-            'sweri_utils.download.query_by_id_and_save_to_fc') as query_and_save_mock:
-
-            get_ids_mock.return_value = [1,2,3]
+        with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
+                'sweri_utils.download.query_by_id_and_save_to_fc') as query_and_save_mock:
+            get_ids_mock.return_value = [1, 2, 3]
             query_and_save_mock.return_value = (10, 'out_filepath')
             url = 'http://some.url/'
             where_clause = '1=1'
@@ -199,9 +201,10 @@ class DownloadTests(TestCase):
             sde_file = 'test_sde'
             insert_function = Mock()
             chunk_size = 2
-            expected_pg_path = os.path.join('test_sde','test_db.test_schema.test_table_additions')
+            expected_pg_path = os.path.join('test_sde', 'test_db.test_schema.test_table_additions')
 
-            service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, insert_function, chunk_size)
+            service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file,
+                                insert_function, chunk_size)
 
             cursor.execute.assert_called_once_with(f'TRUNCATE {schema}.{destination_table}')
             get_ids_mock.assert_called_once_with(url, where=where_clause)
@@ -211,7 +214,7 @@ class DownloadTests(TestCase):
             )
             insert_function.assert_has_calls(
                 [call(cursor, schema),
-                call(cursor, schema)]
+                 call(cursor, schema)]
             )
 
     @patch('arcpy.management.GetCount')
@@ -236,11 +239,12 @@ class DownloadTests(TestCase):
 
         self.assertEqual(count, 5)
         self.assertEqual(saved_fc, 'saved_fc_path')
-        fl_mock.query.assert_called_once_with(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+        fl_mock.query.assert_called_once_with(object_ids=id_list, out_fields="*", return_geometry=True, out_sr=wkid)
         mock_exists.assert_called_once_with(sde_fc_path)
         mock_delete.assert_called_once_with(sde_fc_path)
         mock_query.save.assert_called_once_with(sde_file, out_fc_name)
         mock_get_count.assert_called_once_with('saved_fc_path')
+
 
 class FilesTests(TestCase):
     @patch('zipfile.ZipFile')
@@ -306,24 +310,23 @@ class FilesTests(TestCase):
     @patch('arcpy.management.Project')
     def test_gdb_to_postgres(self, mock_project, mock_exist, mock_delete, mock_fc_gdb):
         with patch('sweri_utils.files.download_file_from_url') as download_file_mock, patch(
-            'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
+                'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
             mock_exist.return_value = True
             sde_file = 'fake_sde_connection_file'
             gdb_name = 'test_gdb'
-            gdb_path = os.path.join(os.getcwd(),gdb_name)
+            gdb_path = os.path.join(os.getcwd(), gdb_name)
             projection = arcpy.SpatialReference(3857)
             postgres_table_name = 'test_table'
             schema = 'test_schema'
             postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
             fc_name = 'Activity_HazFuelTrt_PL'
 
-            feature_class = os.path.join(gdb_path,fc_name)
+            feature_class = os.path.join(gdb_path, fc_name)
             reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
             url = 'http://test.url'
             zip_file = f'{postgres_table_name}.zip'
 
             gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
-
 
             download_file_mock.assert_called_once_with(url, zip_file)
             extract_zip_mock.assert_called_once_with(zip_file)
@@ -336,6 +339,7 @@ class FilesTests(TestCase):
                 ]
             )
             mock_fc_gdb.assert_called_once_with(reprojected_fc, sde_file)
+
 
 class ConversionTests(TestCase):
     @patch('arcpy.Describe')
@@ -391,9 +395,9 @@ class ConversionTests(TestCase):
         mock_conn = Mock()
         mock_conn.execute.return_value = True
         insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'], False)
-        expected = 'insert into dev.insert_here (shape, field1,field2) select ST_TRANSFORM(ST_MakeValid(False), 4326), from1,from2 from dev.from_here;'
+                       'from_here', ['from1', 'from2'])
 
+        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 FROM dev.from_here;'''
         self.assertEqual(
             mock_conn.execute.call_args_list,
             [
@@ -552,8 +556,7 @@ class SqlTests(TestCase):
         refresh_spatial_index(cursor, schema, table)
 
         cursor.execute.assert_any_call('BEGIN;')
-        cursor.execute.assert_any_call(f'DROP INDEX IF EXISTS {table}_shape_idx;')
-        cursor.execute.assert_any_call(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+        cursor.execute.assert_any_call(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
         cursor.execute.assert_any_call('COMMIT;')
 
     @patch('psycopg.connect')
@@ -594,18 +597,18 @@ class SqlTests(TestCase):
         insert_fields = ['field1', 'field2']
         from_table = 'source_table'
         from_fields = ['field1', 'field2']
-
+        expected_q = f'''INSERT INTO {schema}.{insert_table} (shape, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), {','.join(from_fields)} FROM {schema}.{from_table};'''
         # Call the function
         insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields)
 
         # Check if the correct SQL commands were executed
-        cursor.execute.assert_any_call('BEGIN;')
-        cursor.execute.assert_any_call(
-            f"insert into {schema}.{insert_table} (shape, {','.join(insert_fields)}) "
-            f"select ST_TRANSFORM(ST_MakeValid(shape), 4326), {','.join(from_fields)} "
-            f"from {schema}.{from_table};"
+        cursor.execute.assert_has_calls(
+            [
+                call('BEGIN;'),
+                call(expected_q),
+                call('COMMIT;')
+            ]
         )
-        cursor.execute.assert_any_call('COMMIT;')
 
     def test_copy_table_across_servers(self):
         from_cursor = MagicMock()
@@ -614,13 +617,55 @@ class SqlTests(TestCase):
         from_table = 'source_table'
         to_schema = 'public'
         to_table = 'destination_table'
+        from_columns = ['field1', 'field2']
+        to_columns = ['field1', 'field2']
 
-        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table)
+        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+                                  to_columns)
 
         from_cursor.copy.assert_called_once_with(
-            f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
-        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table};")
-        to_cursor.copy.assert_called_once_with(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)")
+            f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
+        assert call(f"DELETE FROM {to_schema}.{to_table};") not in to_cursor.execute.call_args_list
+        to_cursor.copy.assert_called_once_with(
+            f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
+
+    def test_copy_table_across_servers_with_delete(self):
+        from_cursor = MagicMock()
+        to_cursor = MagicMock()
+        from_schema = 'public'
+        from_table = 'source_table'
+        to_schema = 'public'
+        to_table = 'destination_table'
+        from_columns = ['field1', 'field2']
+        to_columns = ['field1', 'field2']
+
+        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+                                  to_columns, True)
+
+        from_cursor.copy.assert_called_once_with(
+            f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
+        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table}")
+        to_cursor.copy.assert_called_once_with(
+            f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
+
+    def test_copy_table_across_servers_with_delete_with_where(self):
+        from_cursor = MagicMock()
+        to_cursor = MagicMock()
+        from_schema = 'public'
+        from_table = 'source_table'
+        to_schema = 'public'
+        to_table = 'destination_table'
+        from_columns = ['field1', 'field2']
+        to_columns = ['field1', 'field2']
+
+        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+                                  to_columns, True, 'field1 = 1')
+
+        from_cursor.copy.assert_called_once_with(
+            f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table} WHERE field1 = 1) TO STDOUT (FORMAT BINARY)")
+        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table} WHERE field1 = 1")
+        to_cursor.copy.assert_called_once_with(
+            f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
 
 
 class S3Tests(TestCase):
@@ -644,7 +689,8 @@ class S3Tests(TestCase):
             [
                 call('BEGIN;'),
                 call(f'DELETE FROM {db_schema}.{destination_table};'),
-                call(f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
+                call(
+                    f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
                 call('COMMIT;')
             ]
         )
@@ -666,3 +712,77 @@ class S3Tests(TestCase):
             # Assert
             mock_boto_client.assert_called_once_with('s3')
             mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
+
+class SwizzleTests(TestCase):
+    @patch('requests.get')
+    def test_retrieves_layer_definition_when_all_parameters_are_valid(self, mock_get):
+        mock_get.return_value.json.return_value = {"some_key": "some_value"}
+        result = get_layer_definition("any_url", 1, "any_service", "any_token")
+        assert "some_key" in result
+
+    @patch('requests.get')
+    def test_returns_empty_sets_when_service_has_no_layers_or_tables(self, mock_get):
+        mock_get.return_value.json.return_value = {'layers': [], 'tables': []}
+        result = get_new_definition("any_url", "any_service", "any_token")
+        assert result["layers"] == []
+        assert result["tables"] == []
+
+    def test_constructs_administrative_url_correctly(self):
+        result = get_view_admin_url("any_url", "any_service")
+        assert "arcgis/rest/admin/services/Hosted/any_service/FeatureServer" in result
+
+    @patch('requests.get')
+    @patch('requests.post')
+    def test_clears_definition_when_layers_and_tables_exist(self, mock_post, mock_get):
+        mock_get.return_value.json.return_value = {"layers": [{"id": 1}], "tables": [{"id": 2}]}
+        resp = clear_current_definition("any_view_url", "any_token")
+        assert mock_post.called
+
+    @patch('requests.post')
+    def test_adds_provided_definition(self, mock_post):
+        resp = add_to_definition("any_view_url", {"layers": [], "tables": []}, "any_token")
+        assert mock_post.called
+
+
+
+    @patch('requests.get')
+    @patch('requests.post')
+    def test_swizzle_service_success(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'layers': [{'id': 1}], 'tables': [{'id': 2}]},  # get_new_definition
+            {}, # get_layer_definition
+            {}, # get_layer_definition
+            {'layers': [{'id': 1}], 'tables': [{'id': 2}]}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
+
+        self.assertTrue(mock_get.called)
+        self.assertTrue(mock_post.called)
+
+    @patch('requests.get')
+    @patch('requests.post')
+    def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'layers': [], 'tables': []},  # get_new_definition
+            {'layers': [], 'tables': []}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
+
+        self.assertTrue(mock_get.called)
+        self.assertTrue(mock_post.called)
+
+    @patch('requests.get')
+    @patch('requests.post')
+    def test_swizzle_service_invalid_token(self, mock_post, mock_get):
+        mock_get.return_value.json.side_effect = [
+            {'error': 'Invalid token'},  # get_new_definition
+            {'error': 'Invalid token'}   # clear_current_definition
+        ]
+        mock_post.return_value = MagicMock()
+
+        with self.assertRaises(TypeError):
+            swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
