@@ -52,21 +52,24 @@ def value_comparison(comparison_feature, sweri_feature, source_database, iterato
 def compare_features(comparison_feature, sweri_feature, iterator_offset = 0):
     iterator = 0 + iterator_offset
     total_compare = True
-    try:
-        for key in comparison_feature['attributes']:
+
+    for key in comparison_feature['attributes']:
+        try:
             if type(sweri_feature[iterator]) == float:
-                total_compare = total_compare and ((comparison_feature['attributes'][key]) - sweri_feature[iterator]) < 1
+                total_compare = total_compare and abs((comparison_feature['attributes'][key]) - sweri_feature[iterator]) < 1
             elif type(sweri_feature[iterator]) == str:
                 total_compare = total_compare and comparison_feature['attributes'][key].strip() == sweri_feature[iterator].strip()
             else:
                 total_compare = total_compare and comparison_feature['attributes'][key] == sweri_feature[iterator]
-            iterator += 1
 
-        if(sweri_feature[-1] != None):
-            total_compare = total_compare and arcpy.AsShape(comparison_feature['geometry'],True).equals(sweri_feature[-1])
-    except TypeError as e:
-        print(f"Comparison error: {e}")
-        total_compare = False
+        except (TypeError, AttributeError) as e:
+            print(f"Comparison error: {e}")
+            total_compare = False
+
+        iterator += 1
+
+    if(sweri_feature[-1] is not None):
+        total_compare = total_compare and arcpy.AsShape(comparison_feature['geometry'],True).equals(sweri_feature[-1])
 
     return total_compare
 
