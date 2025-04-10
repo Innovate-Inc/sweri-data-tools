@@ -93,18 +93,13 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
 
 
 def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
-    # Downloads a gdb with a single feature class
-    # And uploads that featureclass to postgres
-
     os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
-    # Set Workspace to Downloaded GDB and set paths for feature class and reprojection
-    # could not get options="PG_USE_COPY YES", to work in options but that is supposed to be the default if it is creating the table
-    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL" # todo: move this to parameter or env
+
+    # todo: move this to parameter or env
+    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL"
 
     options = VectorTranslateOptions(format='PostgreSQL',
-                                     # geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                     makeValid=True,
-                                     # skipFailures=True,
+                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
                                      dstSRS=f'EPSG:{projection}', where=where,
                                      accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
                                      layers=[fc_name])
@@ -113,6 +108,7 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
 
     # Clear space in postgres for table
     # todo: use postgres to drop this?
+    # currently the accessMode=overwrite handles this
     # if (arcpy.Exists(postgres_table_location)):
     #     arcpy.management.Delete(postgres_table_location)
     #     logging.info(f'existing {postgres_table_name} postgres table has been deleted')
@@ -122,8 +118,12 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
     VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
 
     # Remove gdb
-    # arcpy.management.Delete(gdb_path)
-    logging.info(f'{gdb_path} gdb deleted')
+    if os.path.exists(gdb_path):
+        try:
+            os.remove(gdb_path)
+            logging.info(f'{gdb_path} gdb deleted')
+        except OSError as e:
+            logging.error(f'Error deleting {gdb_path}: {e}')
 
 
 def create_gdb(out_name, out_dir):
