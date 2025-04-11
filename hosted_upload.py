@@ -7,10 +7,13 @@ import geopandas
 import logging
 import pandas as pd
 import math
+import watchtower
+
 from sweri_utils.swizzle import swizzle_service
 from sweri_utils.download import retry
 from sweri_utils.sql import connect_to_pg_db
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s %(levelname)-8s %(message)s',
     filename='./hosted_upload.log',
@@ -18,6 +21,7 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S'
 )
+logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def get_view_data_source_id(view):
     view_flc = FeatureLayerCollection.fromitem(view)
@@ -89,8 +93,8 @@ def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, cur
 
     additions = feature_layer.edit_features(adds=features)
 
-    logging.info(additions)
-    logging.info(current_objectid)
+    logger.info(additions)
+    logger.info(current_objectid)
     return current_objectid
 
 def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
@@ -118,7 +122,7 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
 
     new_source_feature_layer.manager.truncate()
 
-    logging.info(f'beginning update for {new_source_item.name} from {schema}.{table}')
+    logger.info(f'beginning update for {new_source_item.name} from {schema}.{table}')
 
 
     load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
@@ -128,7 +132,7 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
     new_source_item = gis.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
-    logging.info(f'swapping {view_item.name} to data source {new_source_item.name}')
+    logger.info(f'swapping {view_item.name} to data source {new_source_item.name}')
     swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
 
 if __name__ == '__main__':
