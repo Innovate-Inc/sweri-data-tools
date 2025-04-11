@@ -55,6 +55,6 @@ services:
         app
     ports: !reset [ ]
     volumes:
-      - .:/code
+      - ..:/code
 volumes:
   postgres_data:

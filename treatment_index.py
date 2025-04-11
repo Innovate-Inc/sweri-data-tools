@@ -1,30 +1,31 @@
 import os
+
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
-import arcpy
 from dotenv import load_dotenv
 import logging
 import re
-from arcgis.features import FeatureLayer
 import watchtower
 
-from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
+from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index, add_column
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8',
+                    level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S', force=True)
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def create_temp_table(sde_file, table_name, projection, cur, schema):
 
-    table_location = os.path.join(sde_file,f'{table_name}_temp')
+    table_location = os.path.join(sde_file,f'{table_name}')
     if arcpy.Exists(table_location):
         arcpy.management.Delete(table_location)
 
     arcpy.management.CreateFeatureclass(
         out_path=sde_file,
-        out_name=f'{table_name}_temp',
+        out_name=f'{table_name}',
         geometry_type='POLYGON',
         spatial_reference=projection
     )
@@ -63,16 +64,16 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
     'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error', 'twig_category']
 
     for field in fields_to_index:
-        postgres_create_index(cur, schema, f'{table_name}_temp', field)
+        postgres_create_index(cur, schema, f'{table_name}', field)
 
 
-def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
+def update_nfpors(cursor, schema, wkid, insert_nfpors_additions, ogr_db_string):
     nfpors_url = os.getenv('NFPORS_URL')
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
-    database = 'sweri'
+    # database = 'sweri'
 
-    service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
+    service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, cursor, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -117,7 +118,7 @@ def nfpors_insert(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
-    INSERT INTO {schema}.{treatment_index}_temp(
+    INSERT INTO {schema}.{treatment_index}(
 
         objectid, 
         name,  date_current, actual_completion_date, 
@@ -128,7 +129,7 @@ def nfpors_insert(cursor, schema, treatment_index):
     )
     SELECT
 
-        sde.next_rowid('{schema}', '{treatment_index}_temp'),
+        sde.next_rowid('{schema}', '{treatment_index}'),
         trt_nm AS name, modifiedon AS date_current, act_comp_dt AS actual_completion_date,
         gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
         'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
@@ -140,13 +141,13 @@ def nfpors_insert(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    logger.info(f'NFPORS entries inserted into {schema}.{treatment_index}_temp')
+    logger.info(f'NFPORS entries inserted into {schema}.{treatment_index}')
 
 def hazardous_fuels_insert(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
-    INSERT INTO {schema}.{treatment_index}_temp(
+    INSERT INTO {schema}.{treatment_index}(
 
         objectid, name, 
         date_current, actual_completion_date, acres,    
@@ -159,7 +160,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     )
     SELECT
 
-        sde.next_rowid('{schema}', '{treatment_index}_temp'), activity_sub_unit_name AS name,
+        sde.next_rowid('{schema}', '{treatment_index}'), activity_sub_unit_name AS name,
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
         treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
@@ -173,7 +174,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    logger.info(f'FACTS entries inserted into {schema}.{treatment_index}_temp')
+    logger.info(f'FACTS entries inserted into {schema}.{treatment_index}')
     #FACTS Insert Complete 
 
 def hazardous_fuels_date_filtering(cursor, schema):
@@ -189,7 +190,7 @@ def hazardous_fuels_date_filtering(cursor, schema):
 def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp t
+        UPDATE {schema}.{treatment_index} t
         SET treatment_date = f.date_planned,
         date_source = 'date_planned'
         FROM {schema}.facts_haz_3857_2 f
@@ -198,7 +199,7 @@ def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
         AND t.unique_id = f.activity_cn;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}')
 
 def nfpors_date_filtering(cursor, schema):
     cursor.execute('BEGIN;')
@@ -217,7 +218,7 @@ def nfpors_fund_code(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''   
-        UPDATE {schema}.{treatment_index}_temp
+        UPDATE {schema}.{treatment_index}
         SET fund_code = null
         WHERE fund_code = 'No';        
     ''')
@@ -225,19 +226,19 @@ def nfpors_fund_code(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''   
-        UPDATE {schema}.{treatment_index}_temp
+        UPDATE {schema}.{treatment_index}
         SET fund_code = 'BIL'
         WHERE fund_code = 'Yes';
     ''')
     cursor.execute('COMMIT;')
 
-    logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}')
 
 
 def nfpors_treatment_date(cursor, schema,treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp t
+        UPDATE {schema}.{treatment_index} t
         SET treatment_date = n.plan_int_dt,
         date_source = 'plan_int_dt'
         FROM {schema}.nfpors n
@@ -249,7 +250,7 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp t
+        UPDATE {schema}.{treatment_index} t
         SET treatment_date = n.col_date,
         date_source = 'col_date'
         FROM {schema}.nfpors n
@@ -259,12 +260,12 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}')
 
 def fund_source_updates(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp 
+        UPDATE {schema}.{treatment_index} 
         SET fund_source = 'Multiple'
         WHERE fund_code LIKE '%,%';
     ''')
@@ -272,7 +273,7 @@ def fund_source_updates(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp 
+        UPDATE {schema}.{treatment_index} 
         SET fund_source = 'No Funding Code'
         WHERE fund_code is null;
     ''')
@@ -280,7 +281,7 @@ def fund_source_updates(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp ti
+        UPDATE {schema}.{treatment_index} ti
         SET fund_source = lt.fund_source
         FROM {schema}.fund_source_lookup lt
         WHERE ti.fund_code = lt.fund_code
@@ -290,7 +291,7 @@ def fund_source_updates(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp
+        UPDATE {schema}.{treatment_index}
         SET fund_source = 'Other'
         WHERE fund_source IS null 
         AND
@@ -298,12 +299,12 @@ def fund_source_updates(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    logger.info(f'updated fund_source in {schema}.{treatment_index}_temp')
+    logger.info(f'updated fund_source in {schema}.{treatment_index}')
 
 def correct_biomass_removal_typo(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp
+        UPDATE {schema}.{treatment_index}
         SET type = 'Biomass Removal'
         WHERE 
         type = 'Biomass Removall'
@@ -313,7 +314,7 @@ def correct_biomass_removal_typo(cursor, schema, treatment_index):
 def update_total_cost(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''      
-        UPDATE {schema}.{treatment_index}_temp
+        UPDATE {schema}.{treatment_index}
         SET total_cost = 
             CASE
                 WHEN uom = 'EACH' THEN cost_per_uom
@@ -328,25 +329,25 @@ def update_total_cost(cursor, schema, treatment_index):
 
 def treatment_index_renames(cursor, schema, treatment_index, sde_file):
     # backup to backup temp
-    rename_postgres_table(cursor, schema, f'{treatment_index}_backup', f'{treatment_index}_backup_temp')
-    logger.info(f'{schema}.{treatment_index}_backup renamed to {schema}.{treatment_index}_backup_temp')
+    rename_postgres_table(cursor, schema, f'{treatment_index}_backup', f'{treatment_index}_backup')
+    logger.info(f'{schema}.{treatment_index}_backup renamed to {schema}.{treatment_index}_backup')
 
     # current to backup
     rename_postgres_table(cursor, schema, f'{treatment_index}', f'{treatment_index}_backup')
     logger.info(f'{schema}.{treatment_index} renamed to {schema}.{treatment_index}_backup')
 
     # temp to current
-    rename_postgres_table(cursor, schema, f'{treatment_index}_temp', f'{treatment_index}')
-    logger.info(f'{schema}.{treatment_index}_temp renamed to {schema}.{treatment_index}')
+    rename_postgres_table(cursor, schema, f'{treatment_index}', f'{treatment_index}')
+    logger.info(f'{schema}.{treatment_index} renamed to {schema}.{treatment_index}')
 
-    backup_temp_location = os.path.join(sde_file, f'{treatment_index}_backup_temp')
+    backup_location = os.path.join(sde_file, f'{treatment_index}_backup_temp')
 
     if arcpy.Exists(backup_temp_location):
         arcpy.management.Delete(backup_temp_location)
 
 def create_treatment_points(schema, sde_file, treatment_index):
-    temp_polygons = os.path.join(sde_file, f"sweri.{schema}.{treatment_index}_temp")
-    temp_points = os.path.join(sde_file, f"sweri.{schema}.{treatment_index}_points_temp")
+    temp_polygons = os.path.join(sde_file, f"sweri.{schema}.{treatment_index}")
+    temp_points = os.path.join(sde_file, f"sweri.{schema}.{treatment_index}_points")
 
     arcpy.management.FeatureToPoint(
         in_features=temp_polygons,
@@ -359,18 +360,8 @@ def create_treatment_points(schema, sde_file, treatment_index):
     'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error','twig_category']
 
     for field in fields_to_index:
-        postgres_create_index(cur, schema, f'{treatment_index}_points_temp', field)
+        postgres_create_index(cur, schema, f'{treatment_index}_points', field)
 
-    arcpy.management.EnableFeatureBinning(
-        in_features=temp_points,
-    )
-    arcpy.management.ManageFeatureBinCache(
-        in_features=temp_points,
-        bin_type="FLAT_HEXAGON",
-        max_lod="COUNTY",
-        add_cache_statistics="acres SUM",
-        delete_cache_statistics=None
-    )
     logger.info(f'points layer created at {temp_points}')
 
 
@@ -382,39 +373,45 @@ def rename_treatment_points(schema, sde_file, cursor, treatment_index):
     logger.info(f'{schema}.{treatment_index}_points renamed to {schema}.{treatment_index}_points_backup')
 
     # rename temp to current table
-    rename_postgres_table(cursor, schema, f'{treatment_index}_points_temp', f'{treatment_index}_points')
-    logger.info(f'{schema}.{treatment_index}_points_temp renamed to {schema}.{treatment_index}_points')
+    rename_postgres_table(cursor, schema, f'{treatment_index}_points', f'{treatment_index}_points')
+    logger.info(f'{schema}.{treatment_index}_points renamed to {schema}.{treatment_index}_points')
 
     # rename backup to temp so we can delete it
-    rename_postgres_table(cursor, schema, f'{treatment_index}_points_backup', f'{treatment_index}_points_temp')
-    logger.info(f'{schema}.{treatment_index}_points_backup renamed to {schema}.{treatment_index}_points_temp')
+    rename_postgres_table(cursor, schema, f'{treatment_index}_points_backup', f'{treatment_index}_points')
+    logger.info(f'{schema}.{treatment_index}_points_backup renamed to {schema}.{treatment_index}_points')
 
     # clean up so we can create points again later
-    backup_points_temp_location = os.path.join(sde_file, f'{treatment_index}_backup_temp')
+    backup_points_temp_location = os.path.join(sde_file, f'{treatment_index}_backup')
 
     if arcpy.Exists(backup_points_temp_location):
         arcpy.management.Delete(backup_points_temp_location)
 
-    arcpy.management.Delete(os.path.join(sde_file, f"sweri.{schema}.{treatment_index}_points_temp"))
+    arcpy.management.Delete(os.path.join(sde_file, f"sweri.{schema}.{treatment_index}_points"))
 
 # BEGIN Common Attributes Functions
 
-def add_fields_and_indexes(feature_class, region):
+def add_fields_and_indexes(cursor, schema, feature_class, region):
     #adds fields that will contain the pass/fail for each rule, as well as an overall included to be populated later
 
     new_fields = ('included', 'r2', 'r3', 'r4','r5', 'r6')
     for field in new_fields:
-        arcpy.management.AddField(feature_class, field, 'TEXT')
-        arcpy.management.AddIndex(feature_class, field, f'{field}_idx_{region}', ascending="ASCENDING")
+        add_column(cursor, schema, feature_class, field, 'TEXT')
+        postgres_create_index(cursor, schema, feature_class, field)
 
-    arcpy.management.AddIndex(feature_class, 'event_cn', f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'date_completed', f'date_completed_idx_{region}', ascending="ASCENDING")
-    arcpy.management.AddIndex(feature_class, 'act_created_date', f'act_created_date_idx_{region}', ascending="ASCENDING")
+    postgres_create_index(cursor, schema, feature_class, 'event_cn')
+    postgres_create_index(cursor, schema, feature_class, 'date_completed')
+    postgres_create_index(cursor, schema, feature_class, 'act_created_date')
+    # todo: determine if this level of control over indexes is needed
+    # arcpy.management.AddIndex(feature_class, , f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
+    # arcpy.management.AddIndex(feature_class, 'date_completed', f'date_completed_idx_{region}', ascending="ASCENDING")
+    # arcpy.management.AddIndex(feature_class, 'act_created_date', f'act_created_date_idx_{region}', ascending="ASCENDING")
 
 
-    new_indexes = ('gis_acres', 'activity', 'equipment', 'method')
-    for index in new_indexes: 
-            arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
+    new_indexes = ('event_cn', 'date_completed', 'act_created_date', 'gis_acres', 'activity', 'equipment', 'method')
+    for column in new_indexes:
+        postgres_create_index(cursor, schema, feature_class, column)
+
+        # arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
 
 def common_attributes_date_filtering(cursor, schema, table_name):
     # Excludes treatment entries before 1984
@@ -650,7 +647,7 @@ def include_other_activites(cursor, schema, table):
 def common_attributes_type_filter(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''           
-        DELETE from {schema}.{treatment_index}_temp 
+        DELETE from {schema}.{treatment_index} 
         WHERE
         type IN (
             SELECT value from {schema}.common_attributes_lookup
@@ -688,7 +685,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
                    
-    INSERT INTO {schema}.{insert_table}_temp(
+    INSERT INTO {schema}.{insert_table}(
 
         objectid, name, date_current, actual_completion_date, acres, 
         type, category, fund_code, cost_per_uom, identifier_database, 
@@ -698,7 +695,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
     )
     SELECT
 
-        sde.next_rowid('{schema}', '{insert_table}_temp'),
+        sde.next_rowid('{schema}', '{insert_table}'),
         name AS name, act_modified_date AS date_current, 
         date_completed AS actual_completion_date, gis_acres AS acres, 
         nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
@@ -715,12 +712,12 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
 
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f"{schema}.{table} inserted into {schema}.{treatment_index}_temp where included = 'yes'")
+    logger.info(f"{schema}.{table} inserted into {schema}.{treatment_index} where included = 'yes'")
 
 def common_attributes_treatment_date(cursor, schema, table, treatment_index):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}_temp t
+        UPDATE {schema}.{treatment_index} t
         SET treatment_date = f.act_created_date,
         date_source = 'act_created_date'
         FROM {schema}.{table} f
@@ -729,13 +726,13 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
         AND t.unique_id = f.event_cn;
     ''')
     cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
+    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}')
 
 def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
+    # 'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
+    # 'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
@@ -754,10 +751,17 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
         # postgres_fc = os.path.join(sde_file, table_name)
+        zip_file = f'{table_name}.zip'
 
-        gdb_to_postgres(url, gdb, projection, common_attributes_fc_name, table_name, ogr_db_string, schema)
+        # logging.info(f'Downloading {url}')
+        # download_file_from_url(url, zip_file)
 
-        # add_fields_and_indexes(postgres_fc, region_number)
+        logging.info(f'Extracting {zip_file}')
+        extract_and_remove_zip_file(zip_file)
+
+        gdb_to_postgres(gdb, projection, common_attributes_fc_name, table_name, schema, ogr_db_string)
+
+        add_fields_and_indexes(cursor, schema, table_name, region_number)
 
         common_attributes_date_filtering(cursor, schema, table_name)
         exclude_by_acreage(cursor, schema, table_name)
@@ -787,7 +791,7 @@ def add_twig_category(cursor, schema):
 def common_attributes_twig_category(cursor, schema):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.treatment_index_temp ti
+        UPDATE {schema}.treatment_index ti
         SET twig_category = tc.twig_category
         FROM
         {schema}.twig_category_lookup tc
@@ -805,7 +809,7 @@ def common_attributes_twig_category(cursor, schema):
 def facts_nfpors_twig_category(cursor, schema):
     cursor.execute('BEGIN;')
     cursor.execute(f'''
-        UPDATE {schema}.treatment_index_temp ti
+        UPDATE {schema}.treatment_index ti
         SET twig_category = tc.twig_category
         FROM
         {schema}.twig_category_lookup tc
@@ -820,15 +824,10 @@ def facts_nfpors_twig_category(cursor, schema):
     cursor.execute('COMMIT;')
 
 if __name__ == "__main__":
-
     load_dotenv()
 
-    arcpy.env.workspace = arcpy.env.scratchGDB
-    arcpy.env.overwriteOutput = True
     out_wkid = 3857
-    target_projection = arcpy.SpatialReference(out_wkid)
 
-    sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
@@ -841,13 +840,10 @@ if __name__ == "__main__":
 
     cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
-    create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
+    # create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
-    common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
-
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
     # Download and extract gdb file
     logging.info(f'Downloading {facts_haz_gdb_url}')
@@ -856,9 +852,11 @@ if __name__ == "__main__":
     logging.info(f'Extracting {hazardous_fuels_zip_file}')
     extract_and_remove_zip_file(hazardous_fuels_zip_file)
 
-    gdb_to_postgres(facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table,
+    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
                     target_schema, ogr_db_string)
 
+    # common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    # update_nfpors(cur, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
     common_attributes_type_filter(cur, target_schema, insert_table)
 
     #MERGE
@@ -879,18 +877,22 @@ if __name__ == "__main__":
 
     correct_biomass_removal_typo(cur, target_schema, insert_table)
 
-    arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
+    # todo: index rebuild is probably still useful even though not hosting with postgres
+    # use postgres for this?
+    # arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
 
-    flag_high_cost(cur, target_schema, f'{insert_table}_temp')
-    flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    flag_high_cost(cur, target_schema, f'{insert_table}')
+    flag_duplicates(cur, target_schema, f'{insert_table}')
     add_twig_category(cur, target_schema)
 
-    create_treatment_points(target_schema, sde_connection_file, insert_table)
-    rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
+    # todo: use st_centroid
+    # create_treatment_points(target_schema, sde_connection_file, insert_table)
+    # rename_treatment_points(target_schema, sde_connection_file, cur, insert_table)
 
+    # todo: dont do this anymore?
     # current -> backup
     # temp -> current
     # delete backup temp
-    treatment_index_renames(cur, target_schema, insert_table, sde_connection_file)
+    # treatment_index_renames(cur, target_schema, insert_table, sde_connection_file)
 
     conn.close()

@@ -60,7 +60,7 @@ def download_file_from_url(url, destination_path):
 def extract_and_remove_zip_file(zip_filepath):
     with zipfile.ZipFile(zip_filepath, 'r') as zip_file:
         zip_file.extractall()
-    os.remove(zip_filepath)
+    # os.remove(zip_filepath)
 
 ########################### arcpy required for below functions ###########################
 def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):

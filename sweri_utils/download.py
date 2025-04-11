@@ -1,13 +1,11 @@
 import logging
 import json
 import os
+from io import BytesIO
 from time import sleep
 import requests
 import arcgis
-try:
-    import arcpy
-except ModuleNotFoundError:
-    logging.warning('Missing arcpy, some functions will not work')
+from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 
 
 def get_fields(service_url):
@@ -198,7 +196,6 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
     return out_features
 
 
-########################### arcpy required for below functions ###########################
 
 def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=None, geom_type=None, out_sr=3857,
                                   out_fields=None, chunk_size = 2000):
@@ -230,24 +227,22 @@ def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=Non
     with open(f'{fc_name}.json', 'w') as f:
         json.dump(fset, f)
     out_fc = os.path.join(gdb, fc_name)
-    if arcpy.Exists(out_fc):
-        arcpy.management.Delete(out_fc)
-    out_fc = arcpy.conversion.JSONToFeatures(f.name, out_fc)
-    # define the projection, without this FeaturesToJSON fails
-    arcpy.management.DefineProjection(out_fc, arcpy.SpatialReference(out_sr))
+
+    json_to_gdb(f'{fc_name}.json', gdb, fc_name, 'overwrite')
+
     # delete JSON
     os.remove(f.name)
     return out_fc
 
 
-def service_to_postgres(service_url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, call_insert_function,chunk_size = 70):
+def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, cursor, call_insert_function,chunk_size = 70):
     """
     service_to_postgres allows the capture of records from services that break other methods
     this method is much slower, and should be used when other methods are exhauseted
     :param service_url: REST endpoint of feature service
     :param where_clause:  where clause for filtering features to fetch
     :param wkid: out spatial reference WKID
-    :param database: destination postgres database
+    :param ogr_db_string: OGR connection string for Postgres
     :param schema: destination postgres schema
     :param destination_table: destination postgres table
     :param cursor: psycopg2 cursor
@@ -260,38 +255,66 @@ def service_to_postgres(service_url, where_clause, wkid, database, schema, desti
     cursor.execute(f'TRUNCATE {schema}.{destination_table}')
 
     service_fl = arcgis.features.FeatureLayer(service_url)
-    service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
+    # service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
 
     #fetches all ids that will be added
     ids = get_ids(service_url, where=where_clause)
-    str_ids = [str(i) for i in ids]
-    start = 0
-    total_len = len(ids)
+    # str_ids = [str(i) for i in ids]
+    # start = 0
+    # total_len = len(ids)
 
-    while start < total_len:
-        id_list = ','.join(str_ids[start:start + chunk_size])
-        count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, sde_file, f'{destination_table}_additions')
+    # overwrite to create table on first run then append
+    access_mode = 'overwrite'
+    for features in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size):
+        json_to_postgres(json.dumps(features), ogr_db_string, f'{destination_table}_additions', access_mode)
+        access_mode = 'append'
+        # count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, f'{destination_table}_additions')
 
-        if (count > 0):
-            try:
-                #insert additions to destination table
-                call_insert_function(cursor, schema)
+    # todo: expand try to writing each chunk to the database?
+    # if (count > 0):
+    #     try:
+    #         #insert additions to destination table
+    #         call_insert_function(cursor, schema)
+    #
+    #     except Exception as e:
+    #         logging.error(e.args[0])
+    #         raise e
 
-            except Exception as e:
-                logging.error(e.args[0])
-                raise e
+    # todo: fix logging here
+    # logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
+    # start+=chunk_size
 
-        logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
-        start+=chunk_size
 
-def query_by_id_and_save_to_fc(id_list, feature_layer, sde_fc_path, wkid, sde_file, out_fc_name):
+def json_to_postgres(json_string, ogr_db_string, table_name, access_mode='overwrite'):
+    """
+    Function to convert JSON to Postgres table
+    :param json_string: JSON string to convert
+    :param ogr_db_string: OGR connection string for Postgres
+    :param table_name: name of the table to create in Postgres
+    :return: None
+    """
 
-        service_fl_query = feature_layer.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
+    options = VectorTranslateOptions(format='PostgreSQL',
+                                     accessMode=access_mode,
+                                     layerName=table_name)
+    ogr_db_string = f'PG: {ogr_db_string}'
 
-        #make space for additions
-        if(arcpy.Exists(sde_fc_path)):
-            arcpy.management.Delete(sde_fc_path)
+    with BytesIO(json_string) as f:
+        VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f, options=options)
 
-        service_additions_fc = service_fl_query.save(sde_file, f'{out_fc_name}')
-        count = int(arcpy.management.GetCount(service_additions_fc)[0])
-        return count, service_additions_fc
+
+def json_to_gdb(json_string, gdb, table_name, access_mode='overwrite'):
+    """
+    Function to convert JSON to Postgres table
+    :param json_string: JSON string to convert
+    :param ogr_db_string: OGR connection string for Postgres
+    :param table_name: name of the table to create in Postgres
+    :return: None
+    """
+
+    options = VectorTranslateOptions(format='FileGDB',
+                                     accessMode=access_mode,
+                                     layerName=table_name)
+
+    with BytesIO(json_string) as f:
+        VectorTranslate(destNameOrDestDS=gdb, srcDS=f, options=options)

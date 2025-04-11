@@ -285,3 +285,19 @@ def calculate_index_for_fields(cursor: psycopg.Cursor, schema: str, table: str, 
         postgres_create_index(cursor, schema, table, field)
     if spatial:
         refresh_spatial_index(cursor, schema, table)
+
+
+def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str, column_type: str) -> None:
+    """
+    Adds a new column to a specified table in a PostgreSQL database.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to add the column to.
+    :param column_name: The name of the new column to be added.
+    :param column_type: The data type of the new column.
+    :return: None
+    """
+    cursor.execute('BEGIN;')
+    cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
+    cursor.execute('COMMIT;')
