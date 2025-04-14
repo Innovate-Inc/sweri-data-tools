@@ -13,14 +13,17 @@ from sweri_utils.swizzle import swizzle_service
 from sweri_utils.download import retry
 from sweri_utils.sql import connect_to_pg_db
 
+#logger setup
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    format='%(asctime)s %(levelname)-8s %(message)s',
-    filename='./hosted_upload.log',
-    encoding='utf-8',
-    level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+logger.setLevel(logging.INFO)
+logger.propagate = False
+
+file_handler = logging.FileHandler('./hosted_upload.log', encoding='utf-8')
+file_formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+file_handler.setFormatter(file_formatter)
+file_handler.setLevel(logging.INFO)
+
+logger.addHandler(file_handler)
 logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def get_view_data_source_id(view):
