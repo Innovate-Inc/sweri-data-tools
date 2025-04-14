@@ -139,7 +139,7 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
     swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
 
 if __name__ == '__main__':
-    load_dotenv('.env')
+    load_dotenv()
 
     cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
 
