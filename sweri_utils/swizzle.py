@@ -2,7 +2,7 @@ import logging
 
 import requests
 import json
-
+from urllib.parse import urljoin
 
 def get_layer_definition(root_url, id, service_name, token):
     url = f'{root_url}/{id}'
@@ -20,8 +20,7 @@ def get_layer_definition(root_url, id, service_name, token):
 
 
 def get_new_definition(root_url, new_service_name, token):
-    new_service_url = f'{root_url}/arcgis/rest/services/Hosted/{new_service_name}/FeatureServer'
-
+    new_service_url = urljoin(root_url, f'/arcgis/rest/services/Hosted/{new_service_name}/FeatureServer')
     based_info = requests.get(new_service_url, params={'f': 'json', 'token': token})
     based_info_json = based_info.json()
     layers = based_info_json.get('layers')
@@ -35,7 +34,7 @@ def get_new_definition(root_url, new_service_name, token):
 
 
 def get_view_admin_url(root_url, service_name):
-    return f'{root_url}/arcgis/rest/admin/services/Hosted/{service_name}/FeatureServer'
+    return urljoin(root_url, f'/arcgis/rest/admin/services/Hosted/{service_name}/FeatureServer')
 
 
 def clear_current_definition(view_url, token):
@@ -45,13 +44,13 @@ def clear_current_definition(view_url, token):
         tables=[{'id': x['id']} for x in current_def['tables']],
         layers=[{'id': x['id']} for x in current_def['layers']],
     )
-    r = requests.post(f'{view_url}/deleteFromDefinition',
+    r = requests.post(urljoin(view_url, f'/deleteFromDefinition'),
                       data={'f': 'json', 'token': token, 'deleteFromDefinition': json.dumps(deleted_def)})
     return r
 
 
 def add_to_definition(view_url, new_definition, token):
-    r = requests.post(f'{view_url}/addToDefinition',
+    r = requests.post(urljoin(view_url, f'/addToDefinition'),
                       data={'f': 'json', 'token': token, 'addToDefinition': json.dumps(new_definition)})
     return r
 

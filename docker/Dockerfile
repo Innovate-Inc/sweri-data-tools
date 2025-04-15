@@ -14,4 +14,4 @@ RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
 # Set the default command to run python
-CMD ["python3", "intersections.py"]
+# CMD ["python3", "hosted_upload.py"]
