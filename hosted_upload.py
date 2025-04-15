@@ -147,7 +147,7 @@ if __name__ == '__main__':
     start_objectid = 0
     chunk = 1000
 
-    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"))
+    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
 
     # Treatment Index Points
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
@@ -158,6 +158,9 @@ if __name__ == '__main__':
     refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids,
                                               conn, postgis_schema, treatment_index_points_table, chunk, start_objectid)
 
+    #Refresh gis since it lasts 1 hour
+    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
+
     # Daily Progression
     daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
@@ -165,6 +168,9 @@ if __name__ == '__main__':
 
     refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids,
                                               conn, postgis_schema, daily_progression_table, chunk, start_objectid)
+
+    # Refresh gis since it lasts 1 hour
+    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
 
     # Treatment Index Polygons
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
