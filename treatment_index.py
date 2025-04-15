@@ -74,6 +74,16 @@ def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
     
     service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
+
+def update_ifprs(cursor, schema, sde_file, wkid, insert_ifprs_additions):
+    ifprs_url = os.getenv('IFPRS_URL')
+    where = '1=1'
+    destination_table = 'ifprs_actual_treatment'
+    database = 'sweri'
+
+    service_to_postgres(ifprs_url, where, wkid, database, schema, destination_table, cursor, sde_file,
+                        insert_ifprs_additions)
+
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
     exclusion_ids = os.getenv('EXCLUSION_IDS')
@@ -110,6 +120,52 @@ def insert_nfpors_additions(cursor, schema):
         {common_fields},
         sde.next_globalid()
     FROM {schema}.nfpors_additions;
+    ''')
+    cursor.execute('COMMIT;')
+
+def insert_ifprs_additions(cursor, schema):
+    common_fields = '''
+        actualtreatmentid, ispoint, createdby, name, unit, region,
+        agency, department, isdepartmentmanual, latitude, longitude,
+        calculatedacres, iswui, initiationdate, initiationfiscalyear,
+        initiationfiscalquarter, completiondate, completionfiscalyear,
+        completionfiscalquarter, notes, lastmodifiedby, createdondate,
+        lastmodifieddate, status, statusreason, isarchived, class,
+        category, type, durability, priority, fundingsource,
+        congressionaldistrictnumber, county, state, estimatedpersonnelcost, 
+        estimatedassetcost, estimatedgrantsfixedcost, estimatedcontractualcost,
+        estimatedothercost, estimatedtotalcost, localapprovaldate, 
+        regionalapprovaldate, agencyapprovaldate, departmentapprovaldate,
+        fundeddate, estimatedsuccessprobability, feasibility, isapproved,
+        isfunded, tribename, totalacres, fundingunit, fundingregion,
+        fundingagency, fundingdepartment, fundingtribe, wbsid, costcenter,
+        functionalarea, costcode, cancelleddate, hasgroup, groupcount,
+        unitid, vegdeparturepercentagederived, vegdeparturepercentagemanual,
+        isvegetationmanual, isrtrl, fundingsubunit, fundingunittype, isbil
+        bilfunding, treatmentdriver, contributedfundingsource, contributednotes,
+        contributedpersonnelcost, contributedassetcost, contributedgrantsfixedcost,
+        contributedcontractualcost, contributedothercost, contributedtotalcost,
+        contributedcostcenter, contributedfunctionalarea, contributedcostcode,
+        fundingsourceprogram, fundingsourcecategory, fundingsourcesubcategory,
+        obligationfiscalyear, carryoverfiscalyear, iscarryover, iscanceled,
+        entityid, entitytype, entitycategory, subtype, fundingunitid,
+        originalinitiationdate, originalinitiationfiscalyear, 
+        originalinitiationfiscalquarter, issagebrush, unapprovaldate,
+        unapprovalreason, isfundingacresmanual, shape
+        '''
+
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+    INSERT INTO {schema}.ifprs_actual_treatment (
+        objectid,
+        {common_fields},
+        globalid
+        )
+    SELECT 
+        sde.next_rowid('{schema}', 'ifprs_actual_treatment'),
+        {common_fields},
+        sde.next_globalid()
+    FROM {schema}.ifprs_additions;
     ''')
     cursor.execute('COMMIT;')
 
@@ -844,9 +900,11 @@ if __name__ == "__main__":
     create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)  
 
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
+    gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
-    gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
+    update_ifprs(cur, target_schema, sde_connection_file, out_wkid, insert_ifprs_additions)
 
     common_attributes_type_filter(cur, target_schema, insert_table)
 
