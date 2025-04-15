@@ -141,7 +141,7 @@ def insert_ifprs_additions(cursor, schema):
         fundingagency, fundingdepartment, fundingtribe, wbsid, costcenter,
         functionalarea, costcode, cancelleddate, hasgroup, groupcount,
         unitid, vegdeparturepercentagederived, vegdeparturepercentagemanual,
-        isvegetationmanual, isrtrl, fundingsubunit, fundingunittype, isbil
+        isvegetationmanual, isrtrl, fundingsubunit, fundingunittype, isbil,
         bilfunding, treatmentdriver, contributedfundingsource, contributednotes,
         contributedpersonnelcost, contributedassetcost, contributedgrantsfixedcost,
         contributedcontractualcost, contributedothercost, contributedtotalcost,
