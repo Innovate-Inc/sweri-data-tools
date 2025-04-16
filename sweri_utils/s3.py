@@ -20,7 +20,7 @@ def import_s3_csv_to_postgres_table(cursor, db_schema, fields, destination_table
     cursor.execute('COMMIT;')
     logging.info(f'completed import of {csv_file} into {db_schema}.{destination_table}')
 
-def fetch_secrets(secret_name, region_name="us-west-2", out_file=".env"):
+def fetch_secrets(secret_name, out_file=".env",region_name="us-west-2"):
     """
     Fetches a secret from AWS Secrets Manager and writes it to a specified file.
 
@@ -30,8 +30,8 @@ def fetch_secrets(secret_name, region_name="us-west-2", out_file=".env"):
 
     Args:
         secret_name (str): The name of the secret to retrieve.
-        region_name (str, optional): The AWS region where the secret is stored. Defaults to "us-west-2".
         out_file (str, optional): The file path where the secret will be written. Defaults to ".env".
+        region_name (str, optional): The AWS region where the secret is stored. Defaults to "us-west-2".
 
     Returns:
         file: The file object after writing the secret.
