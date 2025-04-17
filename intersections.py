@@ -262,7 +262,7 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     intersections = fetch_features(f'{intersection_source_list_url}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
 
-    intersect_sources, intersect_targets = configure_intersection_sources(intersections, script_start)
+    intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
     
     if len(intersect_sources.keys()) == 0:
         logging.info('no intersections to run')
