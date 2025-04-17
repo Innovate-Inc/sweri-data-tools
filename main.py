@@ -18,13 +18,6 @@ logger.addHandler(watchtower.CloudWatchLogHandler())
 logger.setLevel(logging.INFO)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 5:
-        print("missing args")
-        sys.exit(1)
-
-    fetch_secrets(secret_name=sys.argv[1], out_file=sys.argv[2])
-    fetch_secrets(secret_name=sys.argv[3], out_file=sys.argv[4])
-
     logger.info('starting intersection processing')
     load_dotenv('.env')
     script_start = datetime.now()
