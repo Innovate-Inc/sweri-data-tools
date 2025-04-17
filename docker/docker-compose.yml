@@ -34,7 +34,7 @@ services:
     build:
       context: ../
       dockerfile: ./docker/Dockerfile
-    command: ["sh", "-c", "python main.py"]
+    command: ["sh", "-c", "python intersections.py"]
     env_file:
       - "../.env"
     environment:
