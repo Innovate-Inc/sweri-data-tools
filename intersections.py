@@ -19,7 +19,7 @@ logger.addHandler(watchtower.CloudWatchLogHandler())
 logger.setLevel(logging.INFO)
 
 
-def configure_intersection_sources(features, coded_vals, start):
+def configure_intersection_sources(features, start):
     intersection_sources = {}
     intersection_targets = {}
 
