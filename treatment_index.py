@@ -690,8 +690,8 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
 def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
-    # 'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
-    # 'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
@@ -709,11 +709,11 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         region_number = re.sub("\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
-        # postgres_fc = os.path.join(sde_file, table_name)
+
         zip_file = f'{table_name}.zip'
 
-        # logging.info(f'Downloading {url}')
-        # download_file_from_url(url, zip_file)
+        logging.info(f'Downloading {url}')
+        download_file_from_url(url, zip_file)
 
         logging.info(f'Extracting {zip_file}')
         extract_and_remove_zip_file(zip_file)
@@ -739,16 +739,12 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         common_attributes_insert(cursor, schema, table_name, treatment_index)
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
 
-        #Deletes singluar region pg table after processing that table
-        # if arcpy.Exists(postgres_fc):
-        #     arcpy.management.Delete(postgres_fc)
 
 def add_twig_category(cursor, schema):
     common_attributes_twig_category(cursor, schema)
     facts_nfpors_twig_category(cursor, schema)
 
 def common_attributes_twig_category(cursor, schema):
-    
     cursor.execute(f'''
         UPDATE {schema}.treatment_index ti
         SET twig_category = tc.twig_category
@@ -766,7 +762,6 @@ def common_attributes_twig_category(cursor, schema):
     cursor.execute('COMMIT;')
 
 def facts_nfpors_twig_category(cursor, schema):
-    
     cursor.execute(f'''
         UPDATE {schema}.treatment_index ti
         SET twig_category = tc.twig_category
