@@ -82,7 +82,7 @@ def update_ifprs(cursor, schema, sde_file, wkid, insert_ifprs_additions):
     database = 'sweri'
 
     service_to_postgres(ifprs_url, where, wkid, database, schema, destination_table, cursor, sde_file,
-                        insert_ifprs_additions)
+                        insert_ifprs_additions, chunk_size=250)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -336,7 +336,7 @@ def nfpors_date_filtering(cursor, schema):
     cursor.execute('COMMIT;')
     logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
-def nfpors_and_ifprs_fund_code(cursor, schema, treatment_index):
+def nfpors_fund_code(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''   
@@ -447,8 +447,6 @@ def update_total_cost(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-
-
 def treatment_index_renames(cursor, schema, treatment_index, sde_file):
     # backup to backup temp
     rename_postgres_table(cursor, schema, f'{treatment_index}_backup', f'{treatment_index}_backup_temp')
@@ -495,7 +493,6 @@ def create_treatment_points(schema, sde_file, treatment_index):
         delete_cache_statistics=None
     )
     logger.info(f'points layer created at {temp_points}')
-
 
 
 def rename_treatment_points(schema, sde_file, cursor, treatment_index):
@@ -868,7 +865,6 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
 
     ]
-    
 
     for url in urls:
 
@@ -898,6 +894,7 @@ def common_attributes_download_and_insert(projection, sde_file, schema, cursor, 
 
         common_attributes_insert(cursor, schema, table_name, treatment_index)
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
+        common_attributes_type_filter(cursor, schema, treatment_index)
 
         #Deletes singluar region pg table after processing that table
         if arcpy.Exists(postgres_fc):
@@ -971,7 +968,6 @@ if __name__ == "__main__":
     update_ifprs(cur, target_schema, sde_connection_file, out_wkid, insert_ifprs_additions)
     update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
 
-    common_attributes_type_filter(cur, target_schema, insert_table)
 
     #IFPRS processing and insert
     ifprs_date_filtering(cur, target_schema)
@@ -981,7 +977,7 @@ if __name__ == "__main__":
     #NFPORS processing and insert
     nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
-    nfpors_and_ifprs_fund_code(cur, target_schema, insert_table)
+    nfpors_fund_code(cur, target_schema, insert_table)
     nfpors_treatment_date(cur, target_schema, insert_table)
 
     # Insert FACTS entries and enter proper treatement dates
