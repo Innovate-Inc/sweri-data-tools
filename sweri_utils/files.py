@@ -4,6 +4,7 @@ import zipfile
 import requests
 import logging
 from osgeo.gdal import VectorTranslate, VectorTranslateOptions
+import shutil
 
 try:
     import arcpy
@@ -60,7 +61,37 @@ def download_file_from_url(url, destination_path):
 def extract_and_remove_zip_file(zip_filepath):
     with zipfile.ZipFile(zip_filepath, 'r') as zip_file:
         zip_file.extractall()
-    # os.remove(zip_filepath)
+    os.remove(zip_filepath)
+
+
+
+
+def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
+    os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
+
+    # todo: move this to parameter or env
+    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL"
+
+    options = VectorTranslateOptions(format='PostgreSQL',
+                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
+                                     dstSRS=f'EPSG:{projection}', where=where,
+                                     accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
+                                     layers=[fc_name])
+
+    gdb_path = os.path.join(os.getcwd(), gdb_name)
+
+    # Upload fc to postgres
+    VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
+    logging.info(f'{postgres_table_name} now in geodatabase')
+
+    # Remove gdb
+    if os.path.exists(gdb_path):
+        try:
+            shutil.rmtree(gdb_path)
+            logging.info(f'{gdb_path} gdb deleted')
+        except OSError as e:
+            logging.error(f'Error deleting {gdb_path}: {e}')
+
 
 ########################### arcpy required for below functions ###########################
 def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
@@ -90,40 +121,6 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     except Exception as e:
         raise e
     return outfile
-
-
-def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
-    os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
-
-    # todo: move this to parameter or env
-    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL"
-
-    options = VectorTranslateOptions(format='PostgreSQL',
-                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                     dstSRS=f'EPSG:{projection}', where=where,
-                                     accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
-                                     layers=[fc_name])
-
-    gdb_path = os.path.join(os.getcwd(), gdb_name)
-
-    # Clear space in postgres for table
-    # todo: use postgres to drop this?
-    # currently the accessMode=overwrite handles this
-    # if (arcpy.Exists(postgres_table_location)):
-    #     arcpy.management.Delete(postgres_table_location)
-    #     logging.info(f'existing {postgres_table_name} postgres table has been deleted')
-
-    # Upload fc to postgres
-    logging.info(f'{postgres_table_name} now in geodatabase')
-    VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
-
-    # Remove gdb
-    if os.path.exists(gdb_path):
-        try:
-            os.remove(gdb_path)
-            logging.info(f'{gdb_path} gdb deleted')
-        except OSError as e:
-            logging.error(f'Error deleting {gdb_path}: {e}')
 
 
 def create_gdb(out_name, out_dir):

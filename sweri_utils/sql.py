@@ -13,12 +13,12 @@ def rename_postgres_table(cursor: psycopg.Cursor, schema: str, old_table_name: s
     :param new_table_name: The new name for the table.
     :return: None
     """
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'ALTER TABLE {schema}.{old_table_name} RENAME TO {new_table_name};')
     cursor.execute('COMMIT;')
 
 def postgres_create_index(cursor, schema, table_name, column_to_index):
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
     cursor.execute('COMMIT;')
 
@@ -72,7 +72,7 @@ def insert_from_db(
     """
     q = f'''INSERT INTO {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
     logging.info(q)
-    cursor.execute('BEGIN;')
+
     cursor.execute(q)
     cursor.execute('COMMIT;')
     logging.info(f'Completed {q}')
@@ -107,7 +107,7 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     :return: None
     """
     logging.info(f'Refreshing spatial index on {schema}.{table}')
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
     cursor.execute('COMMIT;')
     logging.info(f'Refreshed spatial index on {schema}.{table}')
@@ -160,7 +160,7 @@ def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str)
     :param backup_table_name: The name of the backup table to be dropped.
     :return: None
     """
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
     cursor.execute('COMMIT;')
     logging.info(f'{schema}.{backup_table_name}_temp deleted')
@@ -214,7 +214,7 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
             logging.info(f'Running {delete_q}')
             to_cursor.execute(delete_q)
         to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN (FORMAT BINARY)"
-        to_cursor.execute('BEGIN;')
+        to_
         with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
                 in_copy.write(data)
@@ -235,7 +235,7 @@ def delete_from_table(cursor: psycopg.Cursor, schema: str, table: str, where: st
     """
     delete_feat_q = f"DELETE FROM {schema}.{table} WHERE {where};"
     logging.info(f'Running {delete_feat_q}')
-    cursor.execute('BEGIN;')
+
     cursor.execute(delete_feat_q)
     cursor.execute('COMMIT;')
     logging.info(f'Deleted from {schema}.{table} where {where}')
@@ -266,7 +266,7 @@ def postgres_create_index(cursor: psycopg.Cursor, schema: str, table_name: str, 
     :param column_to_index: The name of the column to create the index on.
     :return: None
     """
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
     cursor.execute('COMMIT;')
 
@@ -298,6 +298,6 @@ def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str
     :param column_type: The data type of the new column.
     :return: None
     """
-    cursor.execute('BEGIN;')
+
     cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
     cursor.execute('COMMIT;')
