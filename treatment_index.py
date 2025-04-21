@@ -115,7 +115,6 @@ def insert_nfpors_additions(cursor, schema):
     cursor.execute('COMMIT;')
 
 def nfpors_insert(cursor, schema, treatment_index):
-    
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{treatment_index}(
@@ -144,7 +143,6 @@ def nfpors_insert(cursor, schema, treatment_index):
     logger.info(f'NFPORS entries inserted into {schema}.{treatment_index}')
 
 def hazardous_fuels_insert(cursor, schema, treatment_index):
-    
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{treatment_index}(
@@ -178,7 +176,6 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     #FACTS Insert Complete
 
 def hazardous_fuels_date_filtering(cursor, schema):
-    
     cursor.execute(f'''             
         DELETE FROM {schema}.facts_haz_3857_2 WHERE
         date_completed < '1984-1-1'::date
@@ -188,7 +185,6 @@ def hazardous_fuels_date_filtering(cursor, schema):
     logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
 
 def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
-    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} t
         SET treatment_date = f.date_planned,
@@ -202,7 +198,6 @@ def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}')
 
 def nfpors_date_filtering(cursor, schema):
-    
     cursor.execute(f'''             
         DELETE FROM {schema}.nfpors WHERE
         act_comp_dt < '1984-1-1'::date
@@ -215,8 +210,6 @@ def nfpors_date_filtering(cursor, schema):
     logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
 def nfpors_fund_code(cursor, schema, treatment_index):
-
-    
     cursor.execute(f'''   
         UPDATE {schema}.{treatment_index}
         SET fund_code = null
@@ -224,7 +217,6 @@ def nfpors_fund_code(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    
     cursor.execute(f'''   
         UPDATE {schema}.{treatment_index}
         SET fund_code = 'BIL'
@@ -236,7 +228,6 @@ def nfpors_fund_code(cursor, schema, treatment_index):
 
 
 def nfpors_treatment_date(cursor, schema,treatment_index):
-    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} t
         SET treatment_date = n.plan_int_dt,
@@ -247,7 +238,6 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
         AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id);
     ''')
     cursor.execute('COMMIT;')
-
     
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} t
@@ -263,14 +253,12 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
     logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}')
 
 def fund_source_updates(cursor, schema, treatment_index):
-    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} 
         SET fund_source = 'Multiple'
         WHERE fund_code LIKE '%,%';
     ''')
     cursor.execute('COMMIT;')
-
     
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} 
@@ -278,7 +266,6 @@ def fund_source_updates(cursor, schema, treatment_index):
         WHERE fund_code is null;
     ''')
     cursor.execute('COMMIT;')
-
     
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} ti
@@ -289,7 +276,6 @@ def fund_source_updates(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}
         SET fund_source = 'Other'
@@ -302,7 +288,6 @@ def fund_source_updates(cursor, schema, treatment_index):
     logger.info(f'updated fund_source in {schema}.{treatment_index}')
 
 def correct_biomass_removal_typo(cursor, schema, treatment_index):
-    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}
         SET type = 'Biomass Removal'
@@ -312,7 +297,6 @@ def correct_biomass_removal_typo(cursor, schema, treatment_index):
     cursor.execute('COMMIT;')
 
 def update_total_cost(cursor, schema, treatment_index):
-    
     cursor.execute(f'''      
         UPDATE {schema}.{treatment_index}
         SET total_cost = 
@@ -327,7 +311,6 @@ def update_total_cost(cursor, schema, treatment_index):
 
 
 def update_treatment_points(cursor, schema, treatment_index):
-    
     cursor.execute(f'truncate table {schema}.{treatment_index}_points;')
     cursor.execute(f'''
         insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
