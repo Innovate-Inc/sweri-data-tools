@@ -158,16 +158,83 @@ def insert_ifprs_additions(cursor, schema):
     cursor.execute(f'''
     INSERT INTO {schema}.ifprs_actual_treatment (
         objectid,
-        {common_fields},
-        globalid
+        {common_fields}
         )
     SELECT 
-        sde.next_rowid('{schema}', 'ifprs_actual_treatment'),
-        {common_fields},
-        sde.next_globalid()
-    FROM {schema}.ifprs_additions;
+        objectid,
+        {common_fields}
+    FROM {schema}.ifprs_actual_treatment_additions;
     ''')
     cursor.execute('COMMIT;')
+
+
+def ifprs_insert(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+    INSERT INTO {schema}.{treatment_index}_temp(
+
+        objectid, 
+        name,  date_current, actual_completion_date, 
+        acres, type, category, fund_code, fund_source,
+        identifier_database, unique_id,
+        state, treatment_date, date_source,
+        total_cost, twig_category,
+        agency, shape
+    )
+    SELECT
+
+        sde.next_rowid('{schema}', '{treatment_index}_temp'),
+        name AS name, lastmodifieddate AS date_current, completiondate AS actual_completion_date,
+        calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
+        fundingsource as fund_source, 'IFPRS Actual Treatment' AS identifier_database, actualtreatmentid AS unique_id,
+        state AS state, completiondate as treatment_date, 'completiondate' as date_source,
+        estimatedtotalcost as total_cost, category as twig_category, 
+        agency as agency, shape as shape
+
+    FROM {schema}.ifprs_actual_treatment
+    WHERE {schema}.ifprs_actual_treatment.shape IS NOT NULL;
+    ''')
+    cursor.execute('COMMIT;')
+
+    logger.info(f'IFPRS entries inserted into {schema}.{treatment_index}_temp')
+
+def ifprs_treatment_date(cursor, schema, treatment_index):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{treatment_index}_temp t
+        SET treatment_date = i.initiationdate,
+        date_source = 'initiationdate'
+        FROM {schema}.ifprs_actual_treatment i
+        WHERE t.identifier_database = 'IFPRS'
+        AND t.treatment_date is null
+        AND t.unique_id = i.actualtreatmentid;
+    ''')
+    cursor.execute('COMMIT;')
+
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''
+        UPDATE {schema}.{treatment_index}_temp t
+        SET treatment_date = i.createdondate,
+        date_source = 'createdondate'
+        FROM {schema}.ifprs_actual_treatment i
+        WHERE t.identifier_database = 'IFPRS'
+        AND t.treatment_date is null
+        AND t.unique_id = i.actualtreatmentid;
+    ''')
+    cursor.execute('COMMIT;')
+
+def ifprs_date_filtering(cursor, schema):
+    cursor.execute('BEGIN;')
+    cursor.execute(f'''             
+        DELETE FROM {schema}.ifprs_actual_treatment WHERE
+        completiondate < '1984-1-1'::date
+        OR
+        (completiondate is null AND initiationdate < '1984-1-1'::date)
+        OR
+        ((completiondate is null AND initiationdate is NULL) AND createdondate < '1984-1-1'::date);
+    ''')
+    cursor.execute('COMMIT;')
+    logger.info('Records from before Jan 1 1984 deleted from IFPRS')
 
 def nfpors_insert(cursor, schema, treatment_index):
     cursor.execute('BEGIN;')
@@ -269,7 +336,7 @@ def nfpors_date_filtering(cursor, schema):
     cursor.execute('COMMIT;')
     logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
-def nfpors_fund_code(cursor, schema, treatment_index):
+def nfpors_and_ifprs_fund_code(cursor, schema, treatment_index):
 
     cursor.execute('BEGIN;')
     cursor.execute(f'''   
@@ -895,23 +962,26 @@ if __name__ == "__main__":
     #This is the path of the final table, _backup of this table must also exist
     insert_table = f'treatment_index'
 
-    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-
-    create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)  
+    cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
+    create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
 
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
-
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
     update_ifprs(cur, target_schema, sde_connection_file, out_wkid, insert_ifprs_additions)
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
 
     common_attributes_type_filter(cur, target_schema, insert_table)
 
-    #MERGE
+    #IFPRS processing and insert
+    ifprs_date_filtering(cur, target_schema)
+    ifprs_insert(cur, target_schema, insert_table)
+    ifprs_treatment_date(cur, target_schema, insert_table)
+
+    #NFPORS processing and insert
     nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
-    nfpors_fund_code(cur, target_schema, insert_table)
+    nfpors_and_ifprs_fund_code(cur, target_schema, insert_table)
     nfpors_treatment_date(cur, target_schema, insert_table)
 
     # Insert FACTS entries and enter proper treatement dates
