@@ -66,22 +66,20 @@ def create_temp_table(sde_file, table_name, projection, cur, schema):
         postgres_create_index(cur, schema, f'{table_name}_temp', field)
 
 
-def update_nfpors(cursor, schema, sde_file, wkid, insert_nfpors_additions):
-    nfpors_url = os.getenv('NFPORS_URL')
+def update_nfpors(cursor, schema, sde_file, wkid, service_url, insert_nfpors_additions):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     database = 'sweri'
     
-    service_to_postgres(nfpors_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
+    service_to_postgres(service_url, where, wkid, database, schema, destination_table, cursor, sde_file, insert_nfpors_additions)
 
 
-def update_ifprs(cursor, schema, sde_file, wkid, insert_ifprs_additions):
-    ifprs_url = os.getenv('IFPRS_URL')
+def update_ifprs(cursor, schema, sde_file, wkid, service_url, insert_ifprs_additions):
     where = '1=1'
     destination_table = 'ifprs_actual_treatment'
     database = 'sweri'
 
-    service_to_postgres(ifprs_url, where, wkid, database, schema, destination_table, cursor, sde_file,
+    service_to_postgres(service_url, where, wkid, database, schema, destination_table, cursor, sde_file,
                         insert_ifprs_additions, chunk_size=250)
 
 def create_nfpors_where_clause():
@@ -108,7 +106,7 @@ def insert_nfpors_additions(cursor, schema):
         isbil, bilfunding, shape
     '''
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
     INSERT INTO {schema}.nfpors (
         objectid,
@@ -125,7 +123,7 @@ def insert_nfpors_additions(cursor, schema):
 
 def insert_ifprs_additions(cursor, schema):
     common_fields = '''
-        actualtreatmentid, ispoint, createdby, name, unit, region,
+        objectid, actualtreatmentid, ispoint, createdby, name, unit, region,
         agency, department, isdepartmentmanual, latitude, longitude,
         calculatedacres, iswui, initiationdate, initiationfiscalyear,
         initiationfiscalquarter, completiondate, completionfiscalyear,
@@ -154,14 +152,12 @@ def insert_ifprs_additions(cursor, schema):
         unapprovalreason, isfundingacresmanual, shape
         '''
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
-    INSERT INTO {schema}.ifprs_actual_treatment (
-        objectid,
+    INSERT INTO {schema}.ifprs_actual_treatment (    
         {common_fields}
         )
     SELECT 
-        objectid,
         {common_fields}
     FROM {schema}.ifprs_actual_treatment_additions;
     ''')
@@ -169,7 +165,7 @@ def insert_ifprs_additions(cursor, schema):
 
 
 def ifprs_insert(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
     INSERT INTO {schema}.{treatment_index}_temp(
 
@@ -199,7 +195,7 @@ def ifprs_insert(cursor, schema, treatment_index):
     logger.info(f'IFPRS entries inserted into {schema}.{treatment_index}_temp')
 
 def ifprs_treatment_date(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = i.initiationdate,
@@ -211,7 +207,7 @@ def ifprs_treatment_date(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = i.createdondate,
@@ -224,7 +220,7 @@ def ifprs_treatment_date(cursor, schema, treatment_index):
     cursor.execute('COMMIT;')
 
 def ifprs_date_filtering(cursor, schema):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''             
         DELETE FROM {schema}.ifprs_actual_treatment WHERE
         completiondate < '1984-1-1'::date
@@ -237,7 +233,7 @@ def ifprs_date_filtering(cursor, schema):
     logger.info('Records from before Jan 1 1984 deleted from IFPRS')
 
 def nfpors_insert(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{treatment_index}_temp(
@@ -266,7 +262,7 @@ def nfpors_insert(cursor, schema, treatment_index):
     logger.info(f'NFPORS entries inserted into {schema}.{treatment_index}_temp')
 
 def hazardous_fuels_insert(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{treatment_index}_temp(
@@ -300,7 +296,7 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     #FACTS Insert Complete 
 
 def hazardous_fuels_date_filtering(cursor, schema):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''             
         DELETE FROM {schema}.facts_haz_3857_2 WHERE
         date_completed < '1984-1-1'::date
@@ -310,7 +306,7 @@ def hazardous_fuels_date_filtering(cursor, schema):
     logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
 
 def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = f.date_planned,
@@ -324,7 +320,7 @@ def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
     logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}_temp')
 
 def nfpors_date_filtering(cursor, schema):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''             
         DELETE FROM {schema}.nfpors WHERE
         act_comp_dt < '1984-1-1'::date
@@ -338,7 +334,7 @@ def nfpors_date_filtering(cursor, schema):
 
 def nfpors_fund_code(cursor, schema, treatment_index):
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''   
         UPDATE {schema}.{treatment_index}_temp
         SET fund_code = null
@@ -346,7 +342,7 @@ def nfpors_fund_code(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''   
         UPDATE {schema}.{treatment_index}_temp
         SET fund_code = 'BIL'
@@ -358,7 +354,7 @@ def nfpors_fund_code(cursor, schema, treatment_index):
 
 
 def nfpors_treatment_date(cursor, schema,treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = n.plan_int_dt,
@@ -370,7 +366,7 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = n.col_date,
@@ -385,7 +381,7 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
     logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}_temp')
 
 def fund_source_updates(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp 
         SET fund_source = 'Multiple'
@@ -393,7 +389,7 @@ def fund_source_updates(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp 
         SET fund_source = 'No Funding Code'
@@ -401,7 +397,7 @@ def fund_source_updates(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp ti
         SET fund_source = lt.fund_source
@@ -411,7 +407,7 @@ def fund_source_updates(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp
         SET fund_source = 'Other'
@@ -424,7 +420,7 @@ def fund_source_updates(cursor, schema, treatment_index):
     logger.info(f'updated fund_source in {schema}.{treatment_index}_temp')
 
 def correct_biomass_removal_typo(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp
         SET type = 'Biomass Removal'
@@ -434,7 +430,7 @@ def correct_biomass_removal_typo(cursor, schema, treatment_index):
     cursor.execute('COMMIT;')
 
 def update_total_cost(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''      
         UPDATE {schema}.{treatment_index}_temp
         SET total_cost = 
@@ -540,7 +536,7 @@ def common_attributes_date_filtering(cursor, schema, table_name):
     # Excludes treatment entries before 1984
     # uses date_completed if available, and act_created_date if date_completed is null
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     DELETE from {schema}.{table_name} WHERE
@@ -558,7 +554,7 @@ def common_attributes_date_filtering(cursor, schema, table_name):
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     DELETE FROM {schema}.{table}
@@ -574,7 +570,7 @@ def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
 def exclude_by_acreage(cursor, schema, table):
     #removes all treatments with null acerage or <= 5 acres
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     DELETE FROM {schema}.{table}
@@ -589,7 +585,7 @@ def exclude_by_acreage(cursor, schema, table):
 def trim_whitespace(cursor, schema, table):
     #Some entries have spaces before or after that interfere with matching, this trims those spaces out
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -606,7 +602,7 @@ def include_logging_activities(cursor, schema, table):
     # Make sure the activity includes 'thin' or 'cut'
     # Checks the lookup table for method and equipment slated for inclusion
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -638,7 +634,7 @@ def include_fire_activites(cursor, schema, table):
     # Make sure the activity includes 'burn' or 'fire'
     # Checks the lookup table for method and equipment slated for inclusion
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -671,7 +667,7 @@ def include_fuel_activities(cursor, schema, table):
     # Make sure the activity includes 'fuel'
     # Checks the lookup table for method and equipment slated for inclusion
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -701,7 +697,7 @@ def include_fuel_activities(cursor, schema, table):
 def activity_filter(cursor, schema, table):
     # Filters based on activity to ensure only intended activities enter the database
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -728,7 +724,7 @@ def activity_filter(cursor, schema, table):
 def include_other_activites(cursor, schema, table):
     #lookup based inclusion not dependent on other rules
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -768,7 +764,7 @@ def include_other_activites(cursor, schema, table):
     logger.info(f"r5 set to 'PASS' for other activities with proper methods and equipment in {schema}.{table}")
 
 def common_attributes_type_filter(cursor, schema, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''           
         DELETE from {schema}.{treatment_index}_temp 
         WHERE
@@ -786,7 +782,7 @@ def set_included(cursor, schema, table):
     # set included to yes when r5 passes or
     # r2, r3, or, r4 passes and r6 passes
 
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -805,7 +801,7 @@ def set_included(cursor, schema, table):
 def common_attributes_insert(cursor, schema, table, treatment_index):
     # insert records where included = 'yes'
     
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{insert_table}_temp(
@@ -838,7 +834,7 @@ def common_attributes_insert(cursor, schema, table, treatment_index):
     logger.info(f"{schema}.{table} inserted into {schema}.{treatment_index}_temp where included = 'yes'")
 
 def common_attributes_treatment_date(cursor, schema, table, treatment_index):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}_temp t
         SET treatment_date = f.act_created_date,
@@ -905,7 +901,7 @@ def add_twig_category(cursor, schema):
     facts_nfpors_twig_category(cursor, schema)
 
 def common_attributes_twig_category(cursor, schema):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.treatment_index_temp ti
         SET twig_category = tc.twig_category
@@ -923,7 +919,7 @@ def common_attributes_twig_category(cursor, schema):
     cursor.execute('COMMIT;')
     
 def facts_nfpors_twig_category(cursor, schema):
-    cursor.execute('BEGIN;')
+    
     cursor.execute(f'''
         UPDATE {schema}.treatment_index_temp ti
         SET twig_category = tc.twig_category
@@ -952,6 +948,8 @@ if __name__ == "__main__":
     target_schema = os.getenv('SCHEMA')
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    nfpors_url = os.getenv('NFPORS_URL')
+    ifprs_url = os.getenv('IFPRS_URL')
     facts_haz_gdb = 'S_USA.Activity_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_haz_3857_2'
@@ -965,9 +963,8 @@ if __name__ == "__main__":
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
     common_attributes_download_and_insert(target_projection, sde_connection_file, target_schema, cur, insert_table, hazardous_fuels_table)
-    update_ifprs(cur, target_schema, sde_connection_file, out_wkid, insert_ifprs_additions)
-    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, insert_nfpors_additions)
-
+    update_ifprs(cur, target_schema, sde_connection_file, out_wkid, ifprs_url, insert_ifprs_additions)
+    update_nfpors(cur, target_schema, sde_connection_file, out_wkid, nfpors_url,  insert_nfpors_additions)
 
     #IFPRS processing and insert
     ifprs_date_filtering(cur, target_schema)
