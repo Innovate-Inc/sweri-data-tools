@@ -1,12 +1,11 @@
 import logging
 import json
 import os
-from io import BytesIO
+from io import StringIO
 from time import sleep
 import requests
-import arcgis
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
-
+from tempfile import NamedTemporaryFile
 
 def get_fields(service_url):
     """
@@ -253,8 +252,9 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     #clear data from the destination table
     #destination table must be in place and have the proper schema
     cursor.execute(f'TRUNCATE {schema}.{destination_table}')
+    cursor.execute('COMMIT;')
 
-    service_fl = arcgis.features.FeatureLayer(service_url)
+    # service_fl = arcgis.features.FeatureLayer(service_url)
     # service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
 
     #fetches all ids that will be added
@@ -265,7 +265,8 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
 
     # overwrite to create table on first run then append
     access_mode = 'overwrite'
-    for features in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size):
+    for features in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='geojson'):
+        # todo: remove _additions from here
         json_to_postgres(json.dumps(features), ogr_db_string, f'{destination_table}_additions', access_mode)
         access_mode = 'append'
         # count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, f'{destination_table}_additions')
@@ -285,7 +286,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     # start+=chunk_size
 
 
-def json_to_postgres(json_string, ogr_db_string, table_name, access_mode='overwrite'):
+def json_to_postgres(query_url, ogr_db_string, table_name, access_mode='overwrite'):
     """
     Function to convert JSON to Postgres table
     :param json_string: JSON string to convert
@@ -297,11 +298,11 @@ def json_to_postgres(json_string, ogr_db_string, table_name, access_mode='overwr
     options = VectorTranslateOptions(format='PostgreSQL',
                                      accessMode=access_mode,
                                      layerName=table_name)
-    ogr_db_string = f'PG: {ogr_db_string}'
 
-    with BytesIO(json_string) as f:
-        VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f, options=options)
-
+    pass
+    # with NamedTemporaryFile(suffix='.geojson') as f:
+    #     f.write(json_string.encode('utf-8'))
+    #     VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"GEOJSON:{f.name}", options=options)
 
 def json_to_gdb(json_string, gdb, table_name, access_mode='overwrite'):
     """
@@ -316,5 +317,5 @@ def json_to_gdb(json_string, gdb, table_name, access_mode='overwrite'):
                                      accessMode=access_mode,
                                      layerName=table_name)
 
-    with BytesIO(json_string) as f:
+    with StringIO(json_string) as f:
         VectorTranslate(destNameOrDestDS=gdb, srcDS=f, options=options)

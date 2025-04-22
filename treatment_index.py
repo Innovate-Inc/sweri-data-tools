@@ -782,18 +782,18 @@ if __name__ == "__main__":
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
-    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    # # Download and extract gdb file
-    logging.info(f'Downloading {facts_haz_gdb_url}')
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-
-    logging.info(f'Extracting {hazardous_fuels_zip_file}')
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
-
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string)
-
-    common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    # # # Download and extract gdb file
+    # logging.info(f'Downloading {facts_haz_gdb_url}')
+    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    #
+    # logging.info(f'Extracting {hazardous_fuels_zip_file}')
+    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    #
+    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    #                 target_schema, ogr_db_string)
+    #
+    # common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
     update_nfpors(cur, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
     common_attributes_type_filter(cur, target_schema, insert_table)
 

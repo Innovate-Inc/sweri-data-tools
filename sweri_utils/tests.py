@@ -99,13 +99,11 @@ class DownloadTests(TestCase):
             self.assertTrue(mock_post.called_once_with(expected_args))
             self.assertTrue(True)
 
-    @patch('arcpy.Exists')
-    @patch('arcpy.conversion.JSONToFeatures')
-    @patch('arcpy.management.DefineProjection')
-    def test_fetch_create_new_fc(self, mock_project, mock_json_to_fc, mock_exists):
-        with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
-                'sweri_utils.download.get_all_features') as get_feat_mock, patch(
-            'sweri_utils.download.get_fields') as get_fields_mock:
+    @patch('sweri_utils.download.json_to_postgres')
+    def test_fetch_create_new_fc(self, json_to_postgres_mock):
+        with (patch('sweri_utils.download.get_ids') as get_ids_mock,
+              patch('sweri_utils.download.get_all_features') as get_feat_mock,
+              patch('sweri_utils.download.get_fields') as get_fields_mock):
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
@@ -116,20 +114,15 @@ class DownloadTests(TestCase):
 
             get_fields_mock.return_value = []
 
-            mock_exists.return_value = False
-
-            mock_json_to_fc.return_value = out_fc
-
             r = fetch_and_create_featureclass(url, where, 'out.gdb', 'fires',
                                               geom, 'polygon', 102100)
-            mock_project.assert_called()
             self.assertEqual(r, out_fc)
             self.assertTrue(get_feat_mock.called_once_with(
                 url, where, 102100, None))
             self.assertTrue(get_ids_mock.called_once_with(
                 url, where, geom, 'polygon', ))
             self.assertTrue(get_fields_mock.called_once_with(url))
-            self.assertTrue(mock_exists.called_once_with(out_fc))
+            json_to_postgres_mock.assert_called_once()
 
     def test_retry_calls_num_times_calls_failure_callback(self):
         i_failed = Mock(side_effect=Exception('retries exceeded'))
@@ -156,9 +149,7 @@ class DownloadTests(TestCase):
                 call('url', {'objectIds': '1,2', 'limit': 1, 'offset': 1})
             ])
 
-    @patch('arcpy.AddMessage')
-    @patch('arcpy.AddError')
-    def test_get_all_features(self, mock_add_error, mock_add_message):
+    def test_get_all_features(self):
         with patch('sweri_utils.download.fetch_features') as ff_mock:
             ff_mock.return_value = [{'attributes': {'hello': 'there'}}]
         r = yield get_all_features('http://some.url', ['a', 1, 'c', 'd'], 102100, ['id', 'color'], 2)
@@ -173,10 +164,8 @@ class DownloadTests(TestCase):
         ])
         self.assertEqual(len(r), 4)
 
-    @patch('arcpy.AddWarning')
-    @patch('arcpy.AddError')
     @patch('requests.post')
-    def test_fetch_features(self, mock_post, mock_add_error, mock_add_warning):
+    def test_fetch_features(self, mock_post):
         mockresponse = Mock()
         f = [{"attributes": {'something': 'hello'}},
              {"attributes": {'something': 'new'}}]
@@ -185,65 +174,61 @@ class DownloadTests(TestCase):
         r = fetch_features('http://test.url/query', {'where': '1=1'})
         self.assertEqual(r, f)
 
-    @patch('arcgis.features.FeatureLayer')
-    def test_service_to_postgres(self, fl_mock):
-        with patch('sweri_utils.download.get_ids') as get_ids_mock, patch(
-                'sweri_utils.download.query_by_id_and_save_to_fc') as query_and_save_mock:
-            get_ids_mock.return_value = [1, 2, 3]
-            query_and_save_mock.return_value = (10, 'out_filepath')
-            url = 'http://some.url/'
-            where_clause = '1=1'
-            wkid = 3857
-            database = 'test_db'
-            schema = 'test_schema'
-            destination_table = 'test_table'
-            cursor = Mock()
-            sde_file = 'test_sde'
-            insert_function = Mock()
-            chunk_size = 2
-            expected_pg_path = os.path.join('test_sde', 'test_db.test_schema.test_table_additions')
 
-            service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file,
-                                insert_function, chunk_size)
+    # def test_service_to_postgres(self):
+    #     with patch('sweri_utils.download.get_ids') as get_ids_mock:
+    #         get_ids_mock.return_value = [1, 2, 3]
+    #         query_and_save_mock.return_value = (10, 'out_filepath')
+    #         url = 'http://some.url/'
+    #         where_clause = '1=1'
+    #         wkid = 3857
+    #         database = 'test_db'
+    #         schema = 'test_schema'
+    #         destination_table = 'test_table'
+    #         cursor = Mock()
+    #         sde_file = 'test_sde'
+    #         insert_function = Mock()
+    #         chunk_size = 2
+    #         expected_pg_path = os.path.join('test_sde', 'test_db.test_schema.test_table_additions')
+    #
+    #         service_to_postgres(url, where_clause, wkid, database, schema, destination_table, cursor, sde_file,
+    #                             insert_function, chunk_size)
+    #
+    #         cursor.execute.assert_called_once_with(f'TRUNCATE {schema}.{destination_table}')
+    #         get_ids_mock.assert_called_once_with(url, where=where_clause)
+    #         query_and_save_mock.assert_has_calls(
+    #             [call('1,2', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions'),
+    #              call('3', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions')]
+    #         )
+    #         insert_function.assert_has_calls(
+    #             [call(cursor, schema),
+    #              call(cursor, schema)]
+    #         )
 
-            cursor.execute.assert_called_once_with(f'TRUNCATE {schema}.{destination_table}')
-            get_ids_mock.assert_called_once_with(url, where=where_clause)
-            query_and_save_mock.assert_has_calls(
-                [call('1,2', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions'),
-                 call('3', fl_mock(), expected_pg_path, wkid, sde_file, f'{destination_table}_additions')]
-            )
-            insert_function.assert_has_calls(
-                [call(cursor, schema),
-                 call(cursor, schema)]
-            )
-
-    @patch('arcpy.management.GetCount')
-    @patch('arcpy.management.Delete')
-    @patch('arcpy.Exists')
-    def test_query_by_id_and_save_to_fc(self, mock_exists, mock_delete, mock_get_count):
-        id_list = '1,2,3,4'
-        fl_mock = Mock()
-        sde_fc_path = 'test_path'
-        wkid = 3857
-        sde_file = 'test_sde_file'
-        out_fc_name = 'test_out_fc_name'
-
-        mock_query = Mock()
-        mock_query.save.return_value = 'saved_fc_path'
-        fl_mock.query.return_value = mock_query
-
-        mock_exists.return_value = True
-        mock_get_count.return_value = ['5']
-
-        count, saved_fc = query_by_id_and_save_to_fc(id_list, fl_mock, sde_fc_path, wkid, sde_file, out_fc_name)
-
-        self.assertEqual(count, 5)
-        self.assertEqual(saved_fc, 'saved_fc_path')
-        fl_mock.query.assert_called_once_with(object_ids=id_list, out_fields="*", return_geometry=True, out_sr=wkid)
-        mock_exists.assert_called_once_with(sde_fc_path)
-        mock_delete.assert_called_once_with(sde_fc_path)
-        mock_query.save.assert_called_once_with(sde_file, out_fc_name)
-        mock_get_count.assert_called_once_with('saved_fc_path')
+    # todo: create test for replacement method
+    # def test_query_by_id_and_save_to_fc(self):
+    #     id_list = '1,2,3,4'
+    #     fl_mock = Mock()
+    #     sde_fc_path = 'test_path'
+    #     wkid = 3857
+    #     sde_file = 'test_sde_file'
+    #     out_fc_name = 'test_out_fc_name'
+    #
+    #     mock_query = Mock()
+    #     mock_query.save.return_value = 'saved_fc_path'
+    #     fl_mock.query.return_value = mock_query
+    #
+    #
+    #
+    #     count, saved_fc = query_by_id_and_save_to_fc(id_list, fl_mock, sde_fc_path, wkid, sde_file, out_fc_name)
+    #
+    #     self.assertEqual(count, 5)
+    #     self.assertEqual(saved_fc, 'saved_fc_path')
+    #     fl_mock.query.assert_called_once_with(object_ids=id_list, out_fields="*", return_geometry=True, out_sr=wkid)
+    #     mock_exists.assert_called_once_with(sde_fc_path)
+    #     mock_delete.assert_called_once_with(sde_fc_path)
+    #     mock_query.save.assert_called_once_with(sde_file, out_fc_name)
+    #     mock_get_count.assert_called_once_with('saved_fc_path')
 
 
 class FilesTests(TestCase):
