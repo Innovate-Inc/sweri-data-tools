@@ -270,7 +270,7 @@ if __name__ == '__main__':
 
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
-    treatment_index_table = 'treatment_index_backup'
+    treatment_index_table = 'treatment_index'
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
     common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
