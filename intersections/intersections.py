@@ -2,6 +2,9 @@ import json
 import logging
 import os
 from datetime import datetime
+from urllib.parse import urljoin
+
+from arcgis import GIS
 from celery import group
 
 import requests as r
@@ -24,7 +27,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='
 logger.setLevel(logging.INFO)
 
 
-def configure_intersection_sources(features, coded_vals, start):
+def configure_intersection_sources(features, start):
     intersection_sources = {}
     intersection_targets = {}
 
@@ -52,20 +55,11 @@ def configure_intersection_sources(features, coded_vals, start):
     return intersection_sources, intersection_targets
 
 
-def update_last_run(features, start_time, url, layer_id):
-    """
-    Updates the `last_run` attribute for a list of features in a specified layer.
+def update_last_run(features, start_time, url, layer_id, portal, user, password):
 
-    Args:
-        features (list): A list of feature dictionaries to update.
-        start_time (datetime): The start time to set as the new `last_run` timestamp.
-        url (str): The base URL of the feature service.
-        layer_id (int): The ID of the layer to update.
-
-    Raises:
-        ValueError: If the update request fails or the response is missing `updateResults`.
-    """
-
+    # authenticate here as the script takes a while to run
+    gis = GIS(url=portal, username=user, password=password)
+    token = gis.session.auth.token
     update_feat = json.dumps([
         {
             'attributes': {
@@ -75,7 +69,7 @@ def update_last_run(features, start_time, url, layer_id):
         } for f in features
     ])
 
-    update_r = r.post(url + f'/{layer_id}/updateFeatures', params={'f': 'json', 'features': update_feat})
+    update_r = r.post(urljoin(url, f'/{layer_id}/updateFeatures'), params={'f': 'json', 'features': update_feat, 'token': token})
     if 'updateResults' not in update_r.json():
         raise ValueError('update failed: missing update results')
     errors = [e for e in update_r.json()['updateResults'] if e['success'] is False]
@@ -105,7 +99,6 @@ def insert_feature_into_db(cursor, target_table, feature, fc_name, id_field, to_
     json_geom = json.dumps(feature['geometry'])
     q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
     try:
-        cursor.execute('BEGIN;')
         cursor.execute(q)
         cursor.execute('COMMIT;')
     except Exception as e:
@@ -169,7 +162,6 @@ def fetch_features_to_intersect(intersect_sources, docker_cursor, docker_schema,
         else:
             raise ValueError('invalid source type: {}'.format(value['source_type']))
     logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
-    docker_cursor.execute('BEGIN;')
     # remove null shapes and unique ids
     docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
     docker_cursor.execute('COMMIT;')
@@ -205,8 +197,13 @@ def update_intersections_rds_db(rds_cursor, rds_schema, s3_bucket):
 
 
 def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor, rds_schema):
-    # we do not use the object id column in docker, but it is required in the rds db
-    create_intersection_features_objectid(docker_cursor, docker_schema)
+
+    docker_cursor.execute(f'''
+                DROP SEQUENCE IF EXISTS intersection_features_objectid_seq;
+                CREATE SEQUENCE intersection_features_objectid_seq START 1;
+                UPDATE {docker_schema}.intersection_features set objectid = nextval('intersection_features_objectid_seq')
+            ''')
+    docker_cursor.execute('COMMIT;')
     copy_table_across_servers(docker_cursor, docker_schema, 'intersection_features', rds_cursor, rds_schema,
                               'intersection_features_dump', ['objectid', 'unique_id', 'feat_source', 'shape'],
                               ['objectid', 'unique_id', 'feat_source', 'shape'], True)
@@ -219,24 +216,13 @@ def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor
     calculate_index_for_fields(rds_cursor, rds_schema, 'intersection_features',
                                ['objectid', 'unique_id', 'unique_id', 'feat_source'], True)
 
-
-def create_intersection_features_objectid(docker_cursor, docker_schema):
-    docker_cursor.execute('BEGIN;')
-    docker_cursor.execute(f'''
-            DROP SEQUENCE IF EXISTS intersection_features_objectid_seq;
-            CREATE SEQUENCE intersection_features_objectid_seq START 1;
-            UPDATE {docker_schema}.intersection_features set objectid = nextval('intersection_features_objectid_seq')
-        ''')
-    docker_cursor.execute('COMMIT;')
-
-
 def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_cursor, rds_db_conn, rds_schema, s3_bucket,
-                      start, wkid, intersection_source_list_url):
+                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password):
     ############## setting intersection sources ################
-    intersections = fetch_features(f'{intersection_source_list_url}/0/query',
+    intersections = fetch_features(urljoin(intersection_source_view, '/0/query'),
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
 
-    intersect_sources, intersect_targets = configure_intersection_sources(intersections, script_start)
+    intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
     
     if len(intersect_sources.keys()) == 0:
         logging.info('no intersections to run')
@@ -268,7 +254,7 @@ def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_curso
     update_intersection_features_rds_db(docker_db_cursor, docker_schema, rds_db_cursor, rds_schema)
 
     ############# update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_source_list_url, 0)
+    update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
     # close connections
     docker_conn.close()
@@ -283,7 +269,14 @@ if __name__ == '__main__':
     # s3 bucket used for intersections
     s3_bucket_name = os.getenv('S3_BUCKET')
     # configure intersection sources
+    # URL for editing last run date
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
+    # public view for fetching intersection sources
+    intersection_src_view_url = os.getenv('INTERSECTION_SOURCES_VIEW_URL')
+    # GIS user credentials
+    portal_url = os.getenv('ESRI_PORTAL_URL')
+    portal_user = os.getenv('ESRI_USER')
+    portal_password = os.getenv('ESRI_PW')
     ############### database connections ################
     # local docker db environment variables
     docker_db_schema = os.getenv('DOCKER_DB_SCHEMA')
@@ -296,5 +289,6 @@ if __name__ == '__main__':
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
                       s3_bucket_name,
-                      script_start, sr_wkid, intersection_src_url)
+                      script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
+                      portal_password)
     logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
