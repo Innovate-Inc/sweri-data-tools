@@ -11,7 +11,7 @@ except ModuleNotFoundError:
 
 def get_disclaimer(out_dir):
     try:
-        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://gis.reshapewildfire.org/cms/api/v2/'
+        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://cms.reshapewildfire.org/api/v2/'
         file_name = os.path.join(out_dir, 'disclaimer.html')
 
         response = requests.get(urljoin(url, 'snippets/download_disclaimer/'))
@@ -116,7 +116,7 @@ def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde
     # Clear space in postgres for table
     if (arcpy.Exists(postgres_table_location)):
         arcpy.management.Delete(postgres_table_location)
-        logging.info(f'{postgres_table_name} postgres table has been deleted')
+        logging.info(f'existing {postgres_table_name} postgres table has been deleted')
 
     # Upload fc to postgres
     arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)

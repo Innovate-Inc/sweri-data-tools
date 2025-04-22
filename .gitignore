@@ -11,3 +11,6 @@ nfpors_testing.py
 __pycache__/*
 /docker/sessions/
 /docker/pgadmin4.db
+/docker/sessions
+/docker/storage
+/docker/*.db
