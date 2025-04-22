@@ -2,8 +2,7 @@ from dotenv import load_dotenv
 import os
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
-import requests
-import json
+import math
 import arcpy
 import logging
 import datetime
@@ -14,44 +13,47 @@ from sweri_utils.download import fetch_and_create_featureclass, fetch_features
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='./import_qa.log', encoding='utf-8',
                     level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+def get_feature_count(cursor, schema, treatment_index, source_database):
+    cursor.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
+    feature_count = cur.fetchone()[0]
+    return feature_count
 
-def field_equality(comparison_feature, sweri_feature, iterator_offset=0):
+def get_sample_size(population_size, proportion = .5, margin_of_error = .05):
+    # Uses Cochran's formula to calculate sample size
+    # z=1.96 sets confidence to 95%
+    z = 1.96
+    p = proportion
+    e = margin_of_error
+    n0 = ((z**2) * p * (1-p)) / (e**2)
+    n = n0 / (1 + ((n0-1) / population_size))
+
+    return math.ceil(n)
+
+def return_comparison(comparison_feature, sweri_feature, source_database, iterator_offset=0):
     field_equal = {}
-    iterator = 0 + iterator_offset
-
-    if iterator_offset > 0:
-        field_equal['id'] = sweri_feature[0]
-
-    for key in comparison_feature['attributes']:
-        field_equal[key] = comparison_feature['attributes'][key] == sweri_feature[iterator]
-        iterator += 1
-
-    if sweri_feature[-1] is not None and comparison_feature.get('geometry') is not None:
-        field_equal['geom'] = arcpy.AsShape(comparison_feature['geometry'], True).equals(sweri_feature[-1])
-
-    return field_equal
-
-
-def value_comparison(comparison_feature, sweri_feature, source_database, iterator_offset=0):
     value_compare = {}
     iterator = 0 + iterator_offset
 
     value_compare[source_database] = 'sweri'
 
     if iterator_offset > 0:
+        field_equal['id'] = sweri_feature[0]
         value_compare['id'] = sweri_feature[0]
 
     for key in comparison_feature['attributes']:
+        field_equal[key] = comparison_feature['attributes'][key] == sweri_feature[iterator]
         value_compare[comparison_feature['attributes'][key]] = sweri_feature[iterator]
+
         iterator += 1
 
     if sweri_feature[-1] is None or comparison_feature.get('geometry') is None:
         pass
     else:
-        value_compare['geom'] = arcpy.AsShape(comparison_feature['geometry'], True).equals(sweri_feature[-1])
+        geom_equal = arcpy.AsShape(comparison_feature['geometry'], True).equals(sweri_feature[-1])
+        field_equal['geom'] = geom_equal
+        value_compare['geom'] = geom_equal
 
-    return value_compare
-
+    return field_equal, value_compare
 
 def compare_features(comparison_feature, sweri_feature, iterator_offset=0):
     iterator = 0 + iterator_offset
@@ -59,14 +61,15 @@ def compare_features(comparison_feature, sweri_feature, iterator_offset=0):
 
     for key in comparison_feature['attributes']:
         try:
-            if type(sweri_feature[iterator]) == float:
-                total_compare = total_compare and abs(
-                    (comparison_feature['attributes'][key]) - sweri_feature[iterator]) < 1
-            elif type(sweri_feature[iterator]) == str:
-                total_compare = total_compare and comparison_feature['attributes'][key].strip() == sweri_feature[
-                    iterator].strip()
+            sweri_value = sweri_feature[iterator]
+            comp_value = comparison_feature['attributes'][key]
+
+            if isinstance(sweri_value, float):
+                total_compare = total_compare and round(comp_value, 2) == round(sweri_value, 2)
+            elif isinstance(sweri_value, str) and isinstance(comp_value, str):
+                total_compare = total_compare and comp_value.strip() == sweri_value.strip()
             else:
-                total_compare = total_compare and comparison_feature['attributes'][key] == sweri_feature[iterator]
+                total_compare = total_compare and comp_value == sweri_value
 
         except (TypeError, AttributeError) as e:
             print(f"Comparison error: {e}")
@@ -80,7 +83,7 @@ def compare_features(comparison_feature, sweri_feature, iterator_offset=0):
     return total_compare
 
 
-def get_comparison_ids(cur, identifier_database, treatment_index, schema):
+def get_comparison_ids(cur, identifier_database, treatment_index, schema, sample_size):
     cur.execute(f'''
         SELECT unique_id
         FROM {schema}.{treatment_index}
@@ -88,7 +91,7 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema):
 	    WHERE identifier_database = '{identifier_database}'
         AND
         shape IS NOT NULL
-        limit 575;
+        limit {sample_size};
     ''')
 
     id_rows = cur.fetchall()
@@ -169,12 +172,12 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
             if features_equal:
                 same += 1
             else:
-                logging.warning(field_equality(prepared_feature, row, iterator_offset))
-                logging.warning(value_comparison(prepared_feature, row, source_database, iterator_offset))
+                field_equality, value_comparison = return_comparison(prepared_feature, row, source_database, iterator_offset)
+                logging.warning(field_equality)
+                logging.warning(value_comparison)
                 different += 1
 
     log_comparison_results(source_database, same, different)
-
 
 def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     haz_fields = ['activity_cn', 'activity_sub_unit_name', 'date_completed', 'gis_acres', 'treatment_type', 'cat_nm',
@@ -184,15 +187,20 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, 
     source_database = 'FACTS Hazardous Fuels'
     date_field = 'DATE_COMPLETED'
 
-    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+    feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
+    sample_size = get_sample_size(feature_count)
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
 
     if ids:
         id_list = ', '.join(f"'{i}'" for i in ids)
         sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
     else:
-        sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ()"
+        logging.info('No ids returned for FACTS Hazardous Fuels comparison, moving to next process')
+        return
 
     logging.info('Running Hazardous Fuels sample comparison')
+    logging.info(f'size: {feature_count}, sample size: {sample_size}')
     compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause, haz_fields, service_url,
                              date_field, source_database)
 
@@ -203,12 +211,16 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
                            'SHAPE@']
     source_database = 'NFPORS'
 
-    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+    feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
+    sample_size = get_sample_size(feature_count)
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
     if ids:
         id_list = ', '.join(f"'{i}'" for i in ids)
         sweri_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({id_list})"
     else:
-        sweri_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ()"
+        logging.info('No ids returned for NFPORS comparison, moving to next process')
+        return
 
     date_field = 'act_comp_dt'
 
@@ -216,6 +228,7 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
     iterator_offset = 1
 
     logging.info('Running NFPORS sample comparison')
+    logging.info(f'size: {feature_count}, sample size: {sample_size}')
     compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, service_url,
                              date_field, source_database, iterator_offset)
 
@@ -227,17 +240,23 @@ def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema
                                       'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
 
-    ids = get_comparison_ids(cursor, source_database, treatment_index, schema)
+    feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
+    sample_size = get_sample_size(feature_count)
+
+    ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
 
     if ids:
         id_list = ', '.join(f"'{i}'" for i in ids)
         sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
     else:
-        sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ()"
+        logging.info('No ids returned for FACTS Common Attributes comparison, moving to next process')
+        return
 
     date_field = 'DATE_COMPLETED'
 
     logging.info('Running Common Attributes sample comparison')
+    logging.info(f'size: {feature_count}, sample size: {sample_size}')
+
     compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause,
                              common_attributes_fields, service_url, date_field, source_database)
 
@@ -245,22 +264,23 @@ def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema
 if __name__ == '__main__':
     load_dotenv()
 
-    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'),
-                                 os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'),
+                                 os.getenv('RDS_DB_PASSWORD'))
     arcpy.env.workspace = arcpy.env.scratchGDB
 
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
-    treatment_index_table = 'treatment_index_facts_nfpors'
+    treatment_index_table = 'treatment_index_backup'
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
-    common_attributes_url = os.getenv('COMMON_ATTRIBUTES_SERVICE')
-    treatment_index_sweri_fc = os.path.join(sde_connection_file, f"sweri.{target_schema}.{treatment_index_table}")
+    common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
+    treatment_index_sweri_fc = os.path.join(sde_connection_file, f"{target_schema}.{treatment_index_table}")
 
     logging.info('new run')
     logging.info('______________________________________')
 
     common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, common_attributes_url)
-    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
     hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, hazardous_fuels_url)
+    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
+
     conn.close()
