@@ -1,4 +1,7 @@
-from utils import create_db_conn_cursor_from_envs
+import sys
+from os import path
+
+from intersections.utils import create_db_conn_cursor_from_envs
 from sweri_utils.sql import delete_from_table
 from worker import app
 import logging
@@ -6,7 +9,10 @@ import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+cw = watchtower.CloudWatchLogHandler()
+cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
+logger.addHandler(cw)
+
 
 @app.task
 def calculate_intersections_and_insert(schema, insert_table, source_key, target_key):
@@ -37,7 +43,6 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
              where ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape)  
              and a.feat_source = '{source_key}'
              and b.feat_source = '{target_key}';"""
-        cursor.execute('BEGIN;')
         cursor.execute(query)
         cursor.execute('COMMIT;')
         logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')

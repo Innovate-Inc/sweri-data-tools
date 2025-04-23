@@ -1,17 +1,16 @@
+import sys
+from os import path
+# for importing from sibling directories
+sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
+
 import json
 import logging
 import os
 from datetime import datetime
-from urllib.parse import urljoin
-
 from arcgis import GIS
 from celery import group
-
 import requests as r
 from dotenv import load_dotenv
-
-from utils import create_db_conn_cursor_from_envs
-from tasks import calculate_intersections_and_insert
 from sweri_utils.conversion import create_csv_and_upload_to_s3, create_coded_val_dict
 from sweri_utils.download import fetch_features, fetch_geojson_features
 from sweri_utils.s3 import import_s3_csv_to_postgres_table
@@ -20,12 +19,17 @@ from sweri_utils.sql import  rename_postgres_table,  refresh_spatial_index, \
     calculate_index_for_fields
 import watchtower
 
+from intersections.utils import create_db_conn_cursor_from_envs
+from intersections.tasks import calculate_intersections_and_insert
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
-logger.setLevel(logging.INFO)
 
+cw_handler = watchtower.CloudWatchLogHandler()
+cw_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
+logger.addHandler(cw_handler)
+logger.setLevel(logging.INFO)
 
 def configure_intersection_sources(features, start):
     intersection_sources = {}
@@ -69,7 +73,7 @@ def update_last_run(features, start_time, url, layer_id, portal, user, password)
         } for f in features
     ])
 
-    update_r = r.post(urljoin(url, f'/{layer_id}/updateFeatures'), params={'f': 'json', 'features': update_feat, 'token': token})
+    update_r = r.post(f'{url}/{layer_id}/updateFeatures', params={'f': 'json', 'features': update_feat, 'token': token})
     if 'updateResults' not in update_r.json():
         raise ValueError('update failed: missing update results')
     errors = [e for e in update_r.json()['updateResults'] if e['success'] is False]
@@ -219,7 +223,7 @@ def update_intersection_features_rds_db(docker_cursor, docker_schema, rds_cursor
 def run_intersections(docker_db_cursor, docker_conn, docker_schema, rds_db_cursor, rds_db_conn, rds_schema, s3_bucket,
                       start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password):
     ############## setting intersection sources ################
-    intersections = fetch_features(urljoin(intersection_source_view, '/0/query'),
+    intersections = fetch_features( f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
 
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
@@ -287,8 +291,12 @@ if __name__ == '__main__':
     rds_pg_cursor, rds_pg_conn = create_db_conn_cursor_from_envs('RDS')
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
-    run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
-                      s3_bucket_name,
-                      script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
-                      portal_password)
-    logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+    try:
+        run_intersections(docker_pg_cursor, docker_pg_conn, docker_db_schema, rds_pg_cursor, rds_pg_conn, rds_db_schema,
+                          s3_bucket_name,
+                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
+                          portal_password)
+        logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+    except Exception as e:
+        logger.error(f'ERROR: error running intersections: {e}')
+        sys.exit(1)

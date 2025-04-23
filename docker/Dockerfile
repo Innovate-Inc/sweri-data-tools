@@ -15,4 +15,4 @@ RUN python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
 RUN export PYTHONPATH=/code
 # Set the default command to run python
-CMD ["python3", "intersections.py"]
+#CMD ["python3", "intersections/intersections.py"]
