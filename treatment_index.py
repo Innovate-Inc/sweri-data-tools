@@ -731,12 +731,6 @@ def common_attributes_treatment_date(cursor, schema, table, treatment_index):
     cursor.execute('COMMIT;')
     logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}_temp')
 
-def flag_errors(cursor, schema, target_table):
-    flag_high_cost(cursor, schema, target_table)
-    flag_duplicates(cursor, schema, target_table)  
-    flag_uom_outliers(cursor, schema, target_table) 
-
-
 def common_attributes_download_and_insert(projection, sde_file, schema, cursor, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
