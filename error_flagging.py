@@ -131,6 +131,8 @@ def flag_high_cost(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
+    logging.info(f'high cost flagged in error field for {schema}.{table_name}')
+
 
 def flag_uom_outliers(cursor, schema, table_name):
     cursor.execute('BEGIN;')
