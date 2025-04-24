@@ -1,17 +1,15 @@
-import sys
-from os import path
-
-from intersections.utils import create_db_conn_from_envs
-from sweri_utils.sql import delete_from_table
+from intersections.utils import create_db_conn_from_envs, insert_feature_into_db
+from sweri_utils.download import fetch_geojson_features
+from sweri_utils.sql import delete_from_table, copy_table_across_servers
 from worker import app
 import logging
-# import watchtower
+import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# cw = watchtower.CloudWatchLogHandler()
-# cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
-# logger.addHandler(cw)
+cw = watchtower.CloudWatchLogHandler()
+cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
+logger.addHandler(cw)
 
 
 @app.task
@@ -47,4 +45,30 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                  and b.feat_source = '{target_key}';"""
             cursor.execute(query)
             logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
+
+
+@app.task
+def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, rds_schema, insert_table):
+    docker_conn= create_db_conn_from_envs('DOCKER')
+    rds_conn= create_db_conn_from_envs('RDS')
+    delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
+    if value['source_type'] == 'url':
+        logger.info(f'fetching geojson features from {value["source"]}')
+        out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
+        for f in out_feat:
+            insert_feature_into_db(docker_conn, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
+    elif value['source_type'] == 'db_table':
+        logger.info(f'copying data from rds db for {value["source"]}')
+        # this will copy the current table from the production server and use that data for intersections, and remove the older source
+        copy_table_across_servers(
+            rds_conn,
+            rds_schema,
+            value['source'],
+            docker_conn,
+            docker_schema,
+            insert_table,
+            [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
+            ['unique_id', 'feat_source', 'shape'])
+    else:
+        raise ValueError('invalid source type: {}'.format(value['source_type']))
 

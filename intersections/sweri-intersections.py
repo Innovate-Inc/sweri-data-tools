@@ -20,7 +20,7 @@ from sweri_utils.sql import  rename_postgres_table,  refresh_spatial_index, \
 import watchtower
 
 from intersections.utils import create_db_conn_from_envs
-from intersections.tasks import calculate_intersections_and_insert
+from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
@@ -95,24 +95,6 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, n
     logger.info('completed all intersection tasks')
 
 
-
-def insert_feature_into_db(conn, target_table, feature, fc_name, id_field, to_srid=3857):
-    if ('geometry' not in feature) or ('properties' not in feature):
-        raise KeyError('missing geometry or properties')
-    if id_field not in feature['properties']:
-        raise KeyError(f'missing or incorrect id field: {id_field}')
-
-    json_geom = json.dumps(feature['geometry'])
-    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
-    cursor = conn.cursor()
-    try:
-        with conn.transaction():
-            cursor.execute(q)
-    except Exception as err:
-        logger.error(f'error inserting feature: {err}, {q}')
-
-
-
 def configure_intersection_features_table(conn, schema):
     logger.info('moving to postgres table updates')
     # drop temp backup table
@@ -150,35 +132,18 @@ def configure_new_intersections_table(conn, schema):
 
 def fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, insert_table, rds_conn, rds_schema,
                                 wkid):
-
+    tasks = []
     for key, value in intersect_sources.items():
+        logger.info(f'adding task for fetching {key}')
         # remove existing features
-        delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
-        if value['source_type'] == 'url':
-            logger.info(f'fetching geojson features from {value["source"]}')
-            out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
-            for f in out_feat:
-                insert_feature_into_db(docker_conn, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
-        elif value['source_type'] == 'db_table':
-            logger.info(f'copying data from rds db for {value["source"]}')
-            # this will copy the current table from the production server and use that data for intersections, and remove the older source
-            copy_table_across_servers(
-                rds_conn,
-                rds_schema,
-                value['source'],
-                docker_conn,
-                docker_schema,
-                insert_table,
-                [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
-                ['unique_id', 'feat_source', 'shape'])
-        else:
-            raise ValueError('invalid source type: {}'.format(value['source_type']))
+        tasks.append(fetch_and_insert_intersection_features.s(key, value, wkid, docker_schema, rds_schema, insert_table))
+    g = group(tasks)()
+    g.get()
     logger.info(f'Removing null shapes from {docker_schema}.{insert_table}')
     # remove null shapes and unique ids
     docker_cursor = docker_conn.cursor()
     with docker_conn.transaction():
         # remove null shapes and unique ids
-        docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
         docker_cursor.execute(f"DELETE FROM {docker_schema}.{insert_table} WHERE shape IS NULL OR unique_id is NULL;")
     logger.info(f'Finished populating {docker_schema}.{insert_table}')
 
