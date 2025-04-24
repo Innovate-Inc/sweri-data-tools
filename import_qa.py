@@ -97,15 +97,15 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema, sample
     return comparison_ids
 
 
-def return_service_where_clause(source_database, row):
+def return_service_where_clause(source_database, id_value):
     if source_database == 'FACTS Hazardous Fuels':
-        service_where_clause = f"activity_cn = '{row[0]}'"
+        service_where_clause = f"activity_cn = '{id_value}'"
 
     elif source_database == 'FACTS Common Attributes':
-        service_where_clause = f"event_cn = '{row[0]}'"
+        service_where_clause = f"event_cn = '{id_value}'"
 
     elif source_database == 'NFPORS':
-        nfporsfid, trt_id = row[0].split('-', 1)
+        nfporsfid, trt_id = id_value.split('-', 1)
         service_where_clause = f"nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}'"
 
     return service_where_clause
@@ -144,7 +144,7 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
         features_equal = False
 
         for row in service_cursor:
-            service_where_clause = return_service_where_clause(source_database, row)
+            service_where_clause = return_service_where_clause(source_database, row[-2])
 
             params = {'f': 'json', 'outSR': wkid, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
                       'where': service_where_clause}
@@ -152,20 +152,20 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
             service_feature = fetch_features(service_url + '/query', params)
 
             if service_feature is None or len(service_feature) == 0:
-                logging.warning(f'No feature returned for {row[0]} in {source_database}')
+                logging.warning(f'No feature returned for {row[-2]} in {source_database}')
                 different += 1
                 continue
 
             elif len(service_feature) > 1:
                 logging.warning(
-                    f'more than one feature returned for {row[0]} in {source_database}, skipping comparison')
+                    f'more than one feature returned for {row[-2]} in {source_database}, skipping comparison')
                 continue
 
             target_feature = service_feature[0]
 
             prepared_feature = prepare_feature_for_comparison(target_feature, date_field, wkid)
 
-            features_equal = compare_features(prepared_feature, row, sweri_fields)
+            features_equal = compare_features(prepared_feature, row, service_fields)
 
             if features_equal:
                 same += 1
@@ -180,8 +180,8 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
 def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     haz_fields = ['activity_cn', 'activity_sub_unit_name', 'date_completed', 'gis_acres', 'treatment_type', 'cat_nm',
                   'fund_code', 'cost_per_uom', 'uom', 'state_abbr', 'activity']
-    sweri_haz_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code',
-                        'cost_per_uom', 'uom', 'state', 'activity', 'SHAPE@']
+    sweri_haz_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code',
+                        'cost_per_uom', 'uom', 'state', 'activity', 'unique_id', 'SHAPE@']
     source_database = 'FACTS Hazardous Fuels'
     date_field = 'DATE_COMPLETED'
 
@@ -205,8 +205,7 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, 
 
 def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     nfpors_fields = ['trt_nm', 'act_comp_dt', 'gis_acres', 'type_name', 'cat_nm', 'st_abbr']
-    sweri_nfpors_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category', 'state',
-                           'SHAPE@']
+    sweri_nfpors_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'unique_id', 'SHAPE@']
     source_database = 'NFPORS'
 
     feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
@@ -234,8 +233,8 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
 def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     common_attributes_fields = ['event_cn', 'name', 'date_completed', 'gis_acres', 'nfpors_treatment',
                                 'nfpors_category', 'state_abbr', 'fund_codes', 'cost_per_unit', 'uom', 'activity']
-    sweri_common_attributes_fields = ['unique_id', 'name', 'actual_completion_date', 'acres', 'type', 'category',
-                                      'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'SHAPE@']
+    sweri_common_attributes_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category',
+                                      'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'unique_id', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
 
     feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
