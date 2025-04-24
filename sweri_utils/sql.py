@@ -301,3 +301,20 @@ def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str
 
     cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
     cursor.execute('COMMIT;')
+
+
+def json_to_postgres(cursor, target_table, feature, fc_name, id_field, to_srid=3857):
+    if ('geometry' not in feature) or ('properties' not in feature):
+        raise KeyError('missing geometry or properties')
+    if id_field not in feature['properties']:
+        raise KeyError(f'missing or incorrect id field: {id_field}')
+
+    json_geom = json.dumps(feature['geometry'])
+    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
+    try:
+        cursor.execute('BEGIN;')
+        cursor.execute(q)
+        cursor.execute('COMMIT;')
+    except Exception as e:
+        logger.error(f'error inserting feature: {e}, {q}')
+        cursor.execute('ROLLBACK;')
