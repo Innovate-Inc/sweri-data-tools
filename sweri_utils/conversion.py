@@ -24,11 +24,11 @@ def array_to_dict(keys, values):
     return x
 
 
-def create_csv_and_upload_to_s3(cursor, schema, table, columns, filename, bucket):
+def create_csv_and_upload_to_s3(conn, schema, table, columns, filename, bucket):
     """
     Creates a CSV file from a database table and uploads it to an S3 bucket.
 
-    :param cursor: Database cursor for executing queries.
+    :param conn: Database connection for executing queries.
     :param schema: Schema name of the database table.
     :param table: Name of the database table.
     :param columns: List of columns to include in the CSV file.
@@ -36,7 +36,7 @@ def create_csv_and_upload_to_s3(cursor, schema, table, columns, filename, bucket
     :param bucket: Name of the S3 bucket to upload the CSV file to.
     :return: The result of the upload operation.
     """
-    f = pg_copy_to_csv(cursor, schema, table, filename, columns)
+    f = pg_copy_to_csv(conn, schema, table, filename, columns)
     return upload_to_s3(bucket, f.name, filename)
 
 
