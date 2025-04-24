@@ -138,12 +138,12 @@ def prepare_feature_for_comparison(target_feature, date_field, wkid):
 def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url,
                              date_field, source_database, iterator_offset=0, wkid=3857):
     with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause,
-                               spatial_reference=arcpy.SpatialReference(wkid)) as service_cursor:
+                               spatial_reference=arcpy.SpatialReference(wkid)) as sweri_fc_cursor:
         same = 0
         different = 0
         features_equal = False
 
-        for row in service_cursor:
+        for row in sweri_fc_cursor:
             service_where_clause = return_service_where_clause(source_database, row[-2])
 
             params = {'f': 'json', 'outSR': wkid, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
@@ -178,8 +178,8 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
     log_comparison_results(source_database, same, different)
 
 def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
-    haz_fields = ['activity_cn', 'activity_sub_unit_name', 'date_completed', 'gis_acres', 'treatment_type', 'cat_nm',
-                  'fund_code', 'cost_per_uom', 'uom', 'state_abbr', 'activity']
+    haz_fields = [ 'ACTIVITY_SUB_UNIT_NAME', 'DATE_COMPLETED', 'GIS_ACRES', 'TREATMENT_TYPE', 'CAT_NM',
+                  'FUND_CODE', 'COST_PER_UOM', 'UOM', 'STATE_ABBR', 'ACTIVITY', 'ACTIVITY_CN']
     sweri_haz_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code',
                         'cost_per_uom', 'uom', 'state', 'activity', 'unique_id', 'SHAPE@']
     source_database = 'FACTS Hazardous Fuels'
@@ -231,8 +231,8 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
 
 
 def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
-    common_attributes_fields = ['event_cn', 'name', 'date_completed', 'gis_acres', 'nfpors_treatment',
-                                'nfpors_category', 'state_abbr', 'fund_codes', 'cost_per_unit', 'uom', 'activity']
+    common_attributes_fields = [ 'NAME', 'DATE_COMPLETED', 'GIS_ACRES', 'NFPORS_TREATMENT',
+                                'NFPORS_CATEGORY', 'STATE_ABBR', 'FUND_CODES', 'COST_PER_UNIT', 'UOM', 'ACTIVITY', 'EVENT_CN']
     sweri_common_attributes_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category',
                                       'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'unique_id', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
