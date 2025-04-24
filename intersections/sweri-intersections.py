@@ -19,7 +19,7 @@ from sweri_utils.sql import  rename_postgres_table,  refresh_spatial_index, \
     calculate_index_for_fields
 import watchtower
 
-from intersections.utils import create_db_conn_cursor_from_envs
+from intersections.utils import create_db_conn_from_envs
 from intersections.tasks import calculate_intersections_and_insert
 
 logger = logging.getLogger(__name__)
@@ -211,7 +211,7 @@ def run_intersections( docker_conn, docker_schema, rds_db_conn, rds_schema, s3_b
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
 
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
-    
+
     if len(intersect_sources.keys()) == 0:
         logging.info('no intersections to run')
         return
@@ -224,7 +224,7 @@ def run_intersections( docker_conn, docker_schema, rds_db_conn, rds_schema, s3_b
                                rds_db_conn, rds_schema, wkid)
     # refresh the spatial index
     refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
-    
+
     # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
@@ -289,11 +289,11 @@ if __name__ == '__main__':
     ############### database connections ################
     # local docker db environment variables
     docker_db_schema = os.getenv('DOCKER_DB_SCHEMA')
-    docker_pg_conn = create_db_conn_cursor_from_envs('DOCKER')
+    docker_pg_conn = create_db_conn_from_envs('DOCKER')
 
     # rds db params
     rds_db_schema = os.getenv('RDS_SCHEMA')
-    rds_pg_conn = create_db_conn_cursor_from_envs('RDS')
+    rds_pg_conn = create_db_conn_from_envs('RDS')
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     try:

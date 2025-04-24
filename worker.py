@@ -12,5 +12,4 @@ app = Celery(
 )
 # todo: will need to update region for sqs .... see https://docs.celeryq.dev/en/stable/getting-started/backends-and-brokers/sqs.html
 
-if __name__ == '__main__':
-    app.autodiscover_tasks(['intersections'])
+

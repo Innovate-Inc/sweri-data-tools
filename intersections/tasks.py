@@ -1,7 +1,7 @@
 import sys
 from os import path
 
-from intersections.utils import create_db_conn_cursor_from_envs
+from intersections.utils import create_db_conn_from_envs
 from sweri_utils.sql import delete_from_table
 from worker import app
 import logging
@@ -28,12 +28,10 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
     Returns:
         None
     """
-    cursor, conn = create_db_conn_cursor_from_envs('DOCKER', True)
-
+    conn = create_db_conn_from_envs('DOCKER')
     with conn:
-        # delete existing intersections and replace with new ones
-        # delete_from_table(cursor, schema, insert_table, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
         logger.info(f'beginning intersections on {source_key} and {target_key}')
+        cursor = conn.cursor()
         with conn.transaction():
             query = f""" 
                  delete from {schema}.{insert_table} where id_1_source = '{source_key}' and id_2_source = '{target_key}';
@@ -48,6 +46,5 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                  and a.feat_source = '{source_key}'
                  and b.feat_source = '{target_key}';"""
             cursor.execute(query)
-            cursor.execute('COMMIT;')
             logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
 

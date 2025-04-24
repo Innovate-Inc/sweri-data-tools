@@ -32,7 +32,7 @@ def postgres_create_index(conn, schema, table_name, column_to_index):
         cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
 
 
-def connect_to_pg_db(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str, autocommit=True) -> tuple:
+def connect_to_pg_db(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> psycopg.Connection:
     """
     Establishes a connection to a PostgreSQL database using the provided credentials.
 
@@ -42,7 +42,6 @@ def connect_to_pg_db(db_host: str, db_port: int, db_name: str, db_user: str, db_
     :param db_user: The username to use for authentication.
     :param db_password: The password to use for authentication.
     :param autocommit: If True, enables autocommit mode for the connection.
-    :return: A tuple containing the database cursor and connection objects.
     """
     conn = psycopg.connect(
         host=db_host,
@@ -50,7 +49,7 @@ def connect_to_pg_db(db_host: str, db_port: int, db_name: str, db_user: str, db_
         dbname=db_name,
         user=db_user,
         password=db_password,
-        autocommit=autocommit
+        autocommit=True
     )
 
     return conn
