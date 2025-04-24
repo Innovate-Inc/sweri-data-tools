@@ -875,10 +875,10 @@ if __name__ == "__main__":
     correct_biomass_removal_typo(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
-
-    flag_errors(cur, target_schema, f'{insert_table}_temp')
     flag_high_cost(cur, target_schema, f'{insert_table}_temp')
     flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    flag_uom_outliers(cur, target_schema, f'{insert_table}_temp')
+
     add_twig_category(cur, target_schema)
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
