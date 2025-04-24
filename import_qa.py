@@ -55,14 +55,13 @@ def return_comparison(comparison_feature, sweri_feature, source_database, iterat
 
     return field_equal, value_compare
 
-def compare_features(comparison_feature, sweri_feature, iterator_offset=0):
-    iterator = 0 + iterator_offset
+def compare_features(comparison_feature, sweri_feature, fields):
     total_compare = True
 
-    for key in comparison_feature['attributes']:
+    for i, f in enumerate(fields):
         try:
-            sweri_value = sweri_feature[iterator]
-            comp_value = comparison_feature['attributes'][key]
+            sweri_value = sweri_feature[i]
+            comp_value = comparison_feature['attributes'][f]
 
             if isinstance(sweri_value, float):
                 total_compare = total_compare and round(comp_value, 2) == round(sweri_value, 2)
@@ -75,7 +74,6 @@ def compare_features(comparison_feature, sweri_feature, iterator_offset=0):
             print(f"Comparison error: {e}")
             total_compare = False
 
-        iterator += 1
 
     if sweri_feature[-1] is not None:
         total_compare = total_compare and arcpy.AsShape(comparison_feature['geometry'], True).equals(sweri_feature[-1])
@@ -167,7 +165,7 @@ def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_claus
 
             prepared_feature = prepare_feature_for_comparison(target_feature, date_field, wkid)
 
-            features_equal = compare_features(prepared_feature, row, iterator_offset)
+            features_equal = compare_features(prepared_feature, row, sweri_fields)
 
             if features_equal:
                 same += 1
