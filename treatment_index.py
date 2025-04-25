@@ -839,7 +839,7 @@ if __name__ == "__main__":
     #This is the path of the final table, _backup of this table must also exist
     insert_table = f'treatment_index'
 
-    cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
 
     create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)  
 
