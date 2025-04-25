@@ -273,7 +273,6 @@ def run_vacuum_analyze(connection: psycopg.Connection, schema: str, table: str) 
 
     cursor = connection.cursor()
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
-    connection.commit()
 
 
 def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str, fields: list[str], spatial = False) -> None:
