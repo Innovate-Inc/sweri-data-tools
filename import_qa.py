@@ -233,7 +233,7 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
 def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
     common_attributes_fields = [ 'NAME', 'DATE_COMPLETED', 'GIS_ACRES', 'NFPORS_TREATMENT',
                                 'NFPORS_CATEGORY', 'STATE_ABBR', 'FUND_CODES', 'COST_PER_UNIT', 'UOM', 'ACTIVITY', 'EVENT_CN']
-    sweri_common_attributes_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category',
+    sweri_common_attributes_fields = ['name', 'actua_completion_date', 'acres', 'type', 'category',
                                       'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'unique_id', 'SHAPE@']
     source_database = 'FACTS Common Attributes'
 
