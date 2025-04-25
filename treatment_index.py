@@ -201,7 +201,7 @@ def ifprs_treatment_date(cursor, schema, treatment_index):
         SET treatment_date = i.initiationdate,
         date_source = 'initiationdate'
         FROM {schema}.ifprs_actual_treatment i
-        WHERE t.identifier_database = 'IFPRS'
+        WHERE t.identifier_database = 'IFPRS Actual Treatment'
         AND t.treatment_date is null
         AND t.unique_id = i.actualtreatmentid;
     ''')
@@ -213,7 +213,7 @@ def ifprs_treatment_date(cursor, schema, treatment_index):
         SET treatment_date = i.createdondate,
         date_source = 'createdondate'
         FROM {schema}.ifprs_actual_treatment i
-        WHERE t.identifier_database = 'IFPRS'
+        WHERE t.identifier_database = 'IFPRS Actual Treatment'
         AND t.treatment_date is null
         AND t.unique_id = i.actualtreatmentid;
     ''')
