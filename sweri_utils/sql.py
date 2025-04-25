@@ -13,9 +13,9 @@ def rename_postgres_table(cursor: psycopg.Cursor, schema: str, old_table_name: s
     :param new_table_name: The new name for the table.
     :return: None
     """
-    cursor.execute(f'BEGIN;')
+    cursor.execute('BEGIN;')
     cursor.execute(f'ALTER TABLE {schema}.{old_table_name} RENAME TO {new_table_name};')
-    cursor.execute(f'COMMIT;')
+    cursor.execute('COMMIT;')
 
 def postgres_create_index(cursor, schema, table_name, column_to_index):
     cursor.execute('BEGIN;')
@@ -25,15 +25,15 @@ def postgres_create_index(cursor, schema, table_name, column_to_index):
 
 def connect_to_pg_db(db_host: str, db_port: int, db_name: str, db_user: str, db_password: str) -> tuple:
     """
-     Establishes a connection to a PostgreSQL database using the provided credentials.
+    Establishes a connection to a PostgreSQL database using the provided credentials.
 
-     :param db_host: The hostname of the PostgreSQL server.
-     :param db_port: The port number on which the PostgreSQL server is listening.
-     :param db_name: The name of the database to connect to.
-     :param db_user: The username to use for authentication.
-     :param db_password: The password to use for authentication.
-     :return: A tuple containing the database cursor and connection objects.
-     """
+    :param db_host: The hostname of the PostgreSQL server.
+    :param db_port: The port number on which the PostgreSQL server is listening.
+    :param db_name: The name of the database to connect to.
+    :param db_user: The username to use for authentication.
+    :param db_password: The password to use for authentication.
+    :return: A tuple containing the database cursor and connection objects.
+    """
     conn = psycopg.connect(
         host=db_host,
         port=db_port,
@@ -53,26 +53,29 @@ def insert_from_db(
         from_table: str,
         from_fields: list[str],
         from_shape: str = 'shape',
-        to_shape: str = 'shape'
+        to_shape: str = 'shape',
+        wkid: int = 3857
 ) -> None:
     """
-    Inserts records from one database into another in an enterprise geodatabase
-    :param to_shape:
-    :param from_shape:
-    :param cursor: psycopg2 connection cursor object
-    :param schema: schema to use
-    :param insert_table: table to insert features into
-    :param insert_fields: list of insert fields for target table
-    :param from_table: table to insert features from
-    :param from_fields: list of field names mapping to insert fields
+    Inserts records from one table into another in a PostgreSQL database.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the tables are located.
+    :param insert_table: The name of the table to insert records into.
+    :param insert_fields: A list of field names to insert into the target table.
+    :param from_table: The name of the table to copy records from.
+    :param from_fields: A list of field names to copy from the source table.
+    :param from_shape: The geometry column in the source table.
+    :param to_shape: The geometry column in the target table.
+    :param wkid: The spatial reference ID to use for the geometry transformation.
     :return: None
     """
-    q = f'''insert into {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) select ST_TRANSFORM(ST_MakeValid({from_shape}), 4326), {','.join(from_fields)} from {schema}.{from_table};'''
+    q = f'''INSERT INTO {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
     logging.info(q)
     cursor.execute('BEGIN;')
     cursor.execute(q)
     cursor.execute('COMMIT;')
-    logging.info(f'completed {q}')
+    logging.info(f'Completed {q}')
 
 
 def pg_copy_to_csv(cursor: psycopg.Cursor, schema: str, table: str, filename: str, columns: list[str]) -> TextIO:
@@ -98,20 +101,16 @@ def refresh_spatial_index(cursor: psycopg.Cursor, schema: str, table: str) -> No
     """
     Refreshes the spatial index on a specified table in a PostgreSQL database.
 
-    This function drops the existing spatial index (if any) and recreates it.
-
     :param cursor: The database cursor to execute the SQL commands.
     :param schema: The schema where the table is located.
     :param table: The name of the table for which the spatial index will be refreshed.
     :return: None
     """
-    logging.info(f'refreshing spatial index on {schema}.{table}')
+    logging.info(f'Refreshing spatial index on {schema}.{table}')
     cursor.execute('BEGIN;')
-    cursor.execute(f'DROP INDEX IF EXISTS {table}_shape_idx;')
-    # recreate index
-    cursor.execute(f'CREATE INDEX {table}_shape_idx ON {schema}.{table} USING GIST (shape);')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
     cursor.execute('COMMIT;')
-    logging.info(f'refreshed spatial index on {schema}.{table}')
+    logging.info(f'Refreshed spatial index on {schema}.{table}')
 
 
 def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, backup_table_name: str,
@@ -133,35 +132,58 @@ def rotate_tables(cursor: psycopg.Cursor, schema: str, main_table_name: str, bac
     :param drop_temp: If True, the temporary table will be dropped. If False, it will be renamed to the new table.
     :return: None
     """
-    logging.info('moving to postgres table updates')
-    # rename backup  to temp table to make space for new backup
-    rename_postgres_table(cursor, schema, backup_table_name,
-                          f'{backup_table_name}_temp')
+    logging.info('Moving to PostgreSQL table updates')
+    drop_temp_table(cursor, schema, backup_table_name)
+
+    rename_postgres_table(cursor, schema, backup_table_name, f'{backup_table_name}_temp')
     logging.info(f'{schema}.{backup_table_name} renamed to {schema}.{backup_table_name}_temp')
 
-    # rename current table to backup table
     rename_postgres_table(cursor, schema, main_table_name, backup_table_name)
     logging.info(f'{schema}.{main_table_name} renamed to {schema}.{backup_table_name}')
 
-    # rename new intersections table to new data
     rename_postgres_table(cursor, schema, new_table_name, main_table_name)
     logging.info(f'{schema}.{new_table_name} renamed to {schema}.{main_table_name}')
 
-    # drop (default) or swap out temp table with new table
     if drop_temp:
-        # drop temp backup table
-        cursor.execute('BEGIN;')
-        cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
-        cursor.execute('COMMIT;')
-        logging.info(f'{schema}.{backup_table_name}_temp deleted')
+        drop_temp_table(cursor, schema, backup_table_name)
     else:
-        # cycle temp backup into new table
         rename_postgres_table(cursor, schema, f'{backup_table_name}_temp', new_table_name)
         logging.info(f'{schema}.{backup_table_name}_temp renamed to {schema}.{new_table_name}')
 
 
+def drop_temp_table(cursor: psycopg.Cursor, schema: str, backup_table_name: str) -> None:
+    """
+    Drops a temporary backup table in a PostgreSQL database.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param backup_table_name: The name of the backup table to be dropped.
+    :return: None
+    """
+    cursor.execute('BEGIN;')
+    cursor.execute(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;')
+    cursor.execute('COMMIT;')
+    logging.info(f'{schema}.{backup_table_name}_temp deleted')
+
+
+def fetch_and_order_columns(cursor: psycopg.Cursor, schema: str, table: str) -> list[str]:
+    """
+    Fetches and orders the columns of a specified table in a PostgreSQL database.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to fetch columns from.
+    :return: A list of column names ordered alphabetically.
+    """
+    columns_query = f"SELECT column_name FROM information_schema.columns WHERE table_schema = '{schema}' AND table_name = '{table}'"
+    cursor.execute(columns_query)
+    columns = [row[0] for row in cursor.fetchall()]
+    columns.sort()
+    return columns
+
+
 def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, from_table: str, to_cursor: psycopg.Cursor,
-                              to_schema: str, to_table: str) -> None:
+                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows: bool = False, where=None) -> None:
     """
     Copies a table from one PostgreSQL server to another.
 
@@ -171,36 +193,95 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
     :param to_cursor: The cursor for the destination database.
     :param to_schema: The schema of the destination table.
     :param to_table: The name of the destination table.
+    :param from_columns: A list of column names to copy from the source table.
+    :param to_columns: A list of column names to copy to the destination table.
+    :param delete_to_rows: If True, deletes all rows in the destination table before copying.
     :return: None
     """
-    logging.info(f'copying {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
-    with from_cursor.copy(f"COPY (SELECT * FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)") as out_copy:
-        to_cursor.execute(f"DELETE FROM {to_schema}.{to_table};")
-        with to_cursor.copy(f"COPY {to_schema}.{to_table} FROM STDIN (FORMAT BINARY)") as in_copy:
+
+    from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)"
+    if where is not None:
+        from_copy = f"COPY (SELECT {','.join(from_columns)} FROM {from_schema}.{from_table} WHERE {where}) TO STDOUT (FORMAT BINARY)"
+    logging.info(f'Running {from_copy}')
+
+    with from_cursor.copy(from_copy) as out_copy:
+        if delete_to_rows:
+            delete_q = f"DELETE FROM {to_schema}.{to_table}"
+            if where:
+                delete_q += f" WHERE {where}"
+            else:
+                logging.warning(f'Deleting all features from {to_schema}.{to_table}')
+            logging.info(f'Running {delete_q}')
+            to_cursor.execute(delete_q)
+        to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN (FORMAT BINARY)"
+        to_cursor.execute('BEGIN;')
+        with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
                 in_copy.write(data)
-    logging.info(f'copied {from_schema}.{from_table} from out cursor to {to_schema}.{to_table} via in-cursor')
+        to_cursor.execute('COMMIT;')
+
+    logging.info(f'Copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
 
 def delete_from_table(cursor: psycopg.Cursor, schema: str, table: str, where: str) -> None:
     """
-      Deletes records from a specified table in a PostgreSQL database based on a condition.
+    Deletes records from a specified table in a PostgreSQL database based on a condition.
 
-      :param cursor: The database cursor to execute the SQL commands.
-      :param schema: The schema where the table is located.
-      :param table: The name of the table from which records will be deleted.
-      :param where: The condition to specify which records to delete.
-      :return: None
-      """
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table from which records will be deleted.
+    :param where: The condition to specify which records to delete.
+    :return: None
+    """
     delete_feat_q = f"DELETE FROM {schema}.{table} WHERE {where};"
-    logging.info(f'running {delete_feat_q}')
+    logging.info(f'Running {delete_feat_q}')
     cursor.execute('BEGIN;')
     cursor.execute(delete_feat_q)
     cursor.execute('COMMIT;')
-    logging.info(f'deleted from {schema}.{table} where {where}')
+    logging.info(f'Deleted from {schema}.{table} where {where}')
 
 
-def run_vacuum_analyze(connection, cursor, schema, table):
+def run_vacuum_analyze(connection: psycopg.Connection, cursor: psycopg.Cursor, schema: str, table: str) -> None:
+    """
+    Runs VACUUM ANALYZE on a specified table in a PostgreSQL database to optimize performance.
+
+    :param connection: The database connection object.
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to be vacuumed and analyzed.
+    :return: None
+    """
     connection.autocommit = True
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
     connection.autocommit = False
+
+
+def postgres_create_index(cursor: psycopg.Cursor, schema: str, table_name: str, column_to_index: str) -> None:
+    """
+    Creates an index on a specified column in a PostgreSQL table.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table_name: The name of the table to create the index on.
+    :param column_to_index: The name of the column to create the index on.
+    :return: None
+    """
+    cursor.execute('BEGIN;')
+    cursor.execute(f'CREATE INDEX ON {schema}.{table_name} ({column_to_index});')
+    cursor.execute('COMMIT;')
+
+def calculate_index_for_fields(cursor: psycopg.Cursor, schema: str, table: str, fields: list[str], spatial = False) -> None:
+    """
+    Calculates the index for specified fields in a PostgreSQL table.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to calculate the index for.
+    :param fields: A list of field names to calculate the index for.
+    :param spatial: Boolean indicating whether to refresh spatial index.
+    :return: None
+    """
+    for field in fields:
+        postgres_create_index(cursor, schema, table, field)
+    if spatial:
+        refresh_spatial_index(cursor, schema, table)

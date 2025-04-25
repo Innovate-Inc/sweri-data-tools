@@ -152,7 +152,7 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
             if id_list == '':
                 break
             # query params
-            params = {'f': format, 'outSR': out_sr, 'outFields': ','.join(out_fields), 'returnGeometry': 'true',
+            params = {'f': format, 'outSR': 4326 if format == 'geojson' else out_sr, 'outFields': ','.join(out_fields), 'returnGeometry': 'true',
                       'objectIds': id_list}
 
             start += chunk_size
