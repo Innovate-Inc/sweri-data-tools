@@ -64,6 +64,8 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    volumes:
+      - ../rabbitmq.conf:/etc/rabbitmq/conf.d/rabbitmq.conf
   celery:
     extends:
       service: app # todo: change to image
