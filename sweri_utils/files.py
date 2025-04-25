@@ -9,12 +9,11 @@ except ModuleNotFoundError:
     logging.warning('Missing arcpy, some functions will not work')
 
 
-def get_disclaimer(out_dir):
+def get_disclaimer(out_dir, url, file_name='disclaimer.html'):
     try:
-        url = os.getenv('API_URL') if os.getenv('API_URL') else 'https://cms.reshapewildfire.org/api/v2/'
-        file_name = os.path.join(out_dir, 'disclaimer.html')
+        file_name = os.path.join(out_dir, file_name)
 
-        response = requests.get(urljoin(url, 'snippets/download_disclaimer/'))
+        response = requests.get(url)
         if response.status_code == 200:
             response_dict = response.json()
 
