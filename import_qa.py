@@ -1,11 +1,14 @@
+import geopandas
+from arcgis.apps.storymap.story_content import requests
 from dotenv import load_dotenv
 import os
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import math
-import arcpy
 import logging
 import datetime
+import geopandas as gpd
+import pandas as pd
 
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db
 from sweri_utils.download import fetch_and_create_featureclass, fetch_features
@@ -13,6 +16,7 @@ from sweri_utils.download import fetch_and_create_featureclass, fetch_features
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='./import_qa.log', encoding='utf-8',
                     level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
+
 def get_feature_count(cursor, schema, treatment_index, source_database):
     cursor.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
     feature_count = cur.fetchone()[0]
@@ -96,21 +100,6 @@ def get_comparison_ids(cur, identifier_database, treatment_index, schema, sample
     comparison_ids = [str(id_row[0]) for id_row in id_rows]
     return comparison_ids
 
-
-def return_service_where_clause(source_database, id_value):
-    if source_database == 'FACTS Hazardous Fuels':
-        service_where_clause = f"activity_cn = '{id_value}'"
-
-    elif source_database == 'FACTS Common Attributes':
-        service_where_clause = f"event_cn = '{id_value}'"
-
-    elif source_database == 'NFPORS':
-        nfporsfid, trt_id = id_value.split('-', 1)
-        service_where_clause = f"nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}'"
-
-    return service_where_clause
-
-
 def log_comparison_results(source_database, same, different):
     logging.info(f'{source_database} comparison complete')
     logging.info(f'same: {same}')
@@ -134,50 +123,95 @@ def prepare_feature_for_comparison(target_feature, date_field, wkid):
 
     return target_feature
 
+def postgis_query_to_gdf(pg_query, pg_con, geom_field = 'shape'):
+    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con, geom_col=geom_field)
 
-def compare_sweri_to_service(treatment_index_fc, sweri_fields, sweri_where_clause, service_fields, service_url,
-                             date_field, source_database, iterator_offset=0, wkid=3857):
-    with arcpy.da.SearchCursor(treatment_index_fc, sweri_fields, where_clause=sweri_where_clause,
-                               spatial_reference=arcpy.SpatialReference(wkid)) as sweri_fc_cursor:
-        same = 0
-        different = 0
-        features_equal = False
+    if gdf.empty:
+        return None
 
-        for row in sweri_fc_cursor:
-            service_where_clause = return_service_where_clause(source_database, row[-2])
+    # set max_objectid to the max or last record in the gdf for objectid column
+    return gdf
 
-            params = {'f': 'json', 'outSR': wkid, 'outFields': ','.join(service_fields), 'returnGeometry': 'true',
-                      'where': service_where_clause}
+def service_to_gdf(where_clause, service_fields, service_url, wkid):
+    fields_str = ",".join(service_fields)
 
-            service_feature = fetch_features(service_url + '/query', params)
+    params = {'f': 'geojson', 'outSR': 4326, 'outFields': fields_str, 'returnGeometry': 'true', 'where': where_clause}
 
-            if service_feature is None or len(service_feature) == 0:
-                logging.warning(f'No feature returned for {row[-2]} in {source_database}')
-                different += 1
-                continue
+    service_features = fetch_features(service_url + '/query', params)
 
-            elif len(service_feature) > 1:
-                logging.warning(
-                    f'more than one feature returned for {row[-2]} in {source_database}, skipping comparison')
-                continue
+    gdf = gpd.GeoDataFrame.from_features(service_features, crs="EPSG:4326")
 
-            target_feature = service_feature[0]
+    gdf = gdf.to_crs(epsg=wkid)
 
-            prepared_feature = prepare_feature_for_comparison(target_feature, date_field, wkid)
+    return gdf
 
-            features_equal = compare_features(prepared_feature, row, service_fields)
+def return_sweri_pg_query(sweri_fields, schema, treatment_index, source_database, ids):
+    sql_sweri_fields = ', '.join(f"{field}" for field in sweri_fields)
+    id_list = ', '.join(f"'{i}'" for i in ids)
 
-            if features_equal:
-                same += 1
-            else:
-                field_equality, value_comparison = return_comparison(prepared_feature, row, source_database, iterator_offset)
-                logging.warning(field_equality)
-                logging.warning(value_comparison)
-                different += 1
+    sweri_pg_query = f"SELECT {sql_sweri_fields}, shape FROM {schema}.{treatment_index} WHERE identifier_database = '{source_database}' AND unique_id IN ({id_list})"
 
-    log_comparison_results(source_database, same, different)
+    return sweri_pg_query
 
-def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
+def return_service_where_clause(source_database, ids):
+    if source_database == 'FACTS Hazardous Fuels':
+        id_list = ', '.join(f"'{i}'" for i in ids)
+        service_where_clause = f"activity_cn in ({id_list})"
+
+    elif source_database == 'FACTS Common Attributes':
+        id_list = ', '.join(f"'{i}'" for i in ids)
+        service_where_clause = f"event_cn in ({id_list})"
+
+    elif source_database == 'NFPORS':
+        service_where_clause = ' OR '.join(
+            f"(nfporsfid = '{nfporsfid}' AND trt_id = '{trt_id}')"
+            for id_value in ids
+            for nfporsfid, trt_id in [id_value.split('-', 1)]
+        )
+
+    return service_where_clause
+
+def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
+    same = 0
+    different = 0
+    service_id_field, sweri_id_field = id_map
+
+    service_gdf.set_index(service_id_field)
+    sweri_gdf.set_index(sweri_id_field)
+
+    for index, sweri_row in sweri_gdf.iterrows():
+
+        match = True
+        if index in service_gdf.index:
+
+            service_row = service_gdf.loc[index]
+            for field_pair in comparison_field_map:
+
+                service_field, sweri_field = field_pair
+                service_value = service_row[service_field]
+                sweri_value = sweri_row[sweri_field]
+
+                # Need to solve different format datetime values here
+
+                if service_value != sweri_value:
+                    print('No Match')
+                    match = False
+                    print(service_value, sweri_value)
+                else:
+                    print('Match')
+                    print(service_value, sweri_value)
+
+        if match:
+            same +=1
+        else:
+            different +=1
+
+    print(same)
+    print(different)
+
+
+
+def hazardous_fuels_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
     haz_fields = [ 'ACTIVITY_SUB_UNIT_NAME', 'DATE_COMPLETED', 'GIS_ACRES', 'TREATMENT_TYPE', 'CAT_NM',
                   'FUND_CODE', 'COST_PER_UOM', 'UOM', 'STATE_ABBR', 'ACTIVITY', 'ACTIVITY_CN']
     sweri_haz_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'fund_code',
@@ -192,18 +226,18 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, treatment_index, schema, 
 
     if ids:
         id_list = ', '.join(f"'{i}'" for i in ids)
-        sweri_haz_where_clause = f"identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
+        sweri_pg_query = f"SELECT * FROM {schema}.{treatment_index} WHERE identifier_database = 'FACTS Hazardous Fuels' AND unique_id IN ({id_list})"
     else:
         logging.info('No ids returned for FACTS Hazardous Fuels comparison, moving to next process')
         return
 
     logging.info('Running Hazardous Fuels sample comparison')
     logging.info(f'size: {feature_count}, sample size: {sample_size}')
-    compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, sweri_haz_where_clause, haz_fields, service_url,
+    compare_sweri_to_service(treatment_index_fc, sweri_haz_fields, pg_con, sweri_pg_query, haz_fields, service_url,
                              date_field, source_database)
 
 
-def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
+def nfpors_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
     nfpors_fields = ['trt_nm', 'act_comp_dt', 'gis_acres', 'type_name', 'cat_nm', 'st_abbr']
     sweri_nfpors_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'unique_id', 'SHAPE@']
     source_database = 'NFPORS'
@@ -214,7 +248,7 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
     ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
     if ids:
         id_list = ', '.join(f"'{i}'" for i in ids)
-        sweri_where_clause = f"identifier_database = 'NFPORS' AND unique_id IN ({id_list})"
+        sweri_pg_query = f"SELECT {sweri_nfpors_fields} FROM {schema}.{treatment_index} WHERE identifier_database = 'NFPORS' AND unique_id IN ({id_list})"
     else:
         logging.info('No ids returned for NFPORS comparison, moving to next process')
         return
@@ -226,44 +260,83 @@ def nfpors_sample(treatment_index_fc, cursor, treatment_index, schema, service_u
 
     logging.info('Running NFPORS sample comparison')
     logging.info(f'size: {feature_count}, sample size: {sample_size}')
-    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, sweri_where_clause, nfpors_fields, service_url,
+    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, pg_con, sweri_pg_query, nfpors_fields, service_url,
                              date_field, source_database, iterator_offset)
-
-
-def common_attributes_sample(treatment_index_fc, cursor, treatment_index, schema, service_url):
-    common_attributes_fields = [ 'NAME', 'DATE_COMPLETED', 'GIS_ACRES', 'NFPORS_TREATMENT',
-                                'NFPORS_CATEGORY', 'STATE_ABBR', 'FUND_CODES', 'COST_PER_UNIT', 'UOM', 'ACTIVITY', 'EVENT_CN']
-    sweri_common_attributes_fields = ['name', 'actua_completion_date', 'acres', 'type', 'category',
-                                      'state', 'fund_code', 'cost_per_uom', 'uom', 'activity', 'unique_id', 'SHAPE@']
-    source_database = 'FACTS Common Attributes'
+def compare_sweri_to_service(cursor, schema, treatment_index, comparison_field_map, pg_con, service_url, source_database, id_map, wkid=3857):
 
     feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
     sample_size = get_sample_size(feature_count)
 
     ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
 
+    service_fields, sweri_fields = zip(*comparison_field_map)
+
+    service_fields = list(service_fields)
+    sweri_fields = list(sweri_fields)
+
+
     if ids:
-        id_list = ', '.join(f"'{i}'" for i in ids)
-        sweri_where_clause = f"identifier_database = 'FACTS Common Attributes' AND unique_id IN ({id_list})"
+        sweri_pg_query = return_sweri_pg_query(sweri_fields, schema, treatment_index, source_database, ids)
+        service_where_clause = return_service_where_clause(source_database, ids)
+
+        logging.info(f'Running {source_database} sample comparison')
+        logging.info(f'size: {feature_count}, sample size: {sample_size}')
+
     else:
-        logging.info('No ids returned for FACTS Common Attributes comparison, moving to next process')
+        logging.info(f'No ids returned for {source_database} comparison, moving to next process')
         return
 
-    date_field = 'DATE_COMPLETED'
+    sweri_gdf = postgis_query_to_gdf(sweri_pg_query, pg_con, geom_field='shape')
+    service_gdf = service_to_gdf(service_where_clause, service_fields, service_url, wkid)
 
-    logging.info('Running Common Attributes sample comparison')
-    logging.info(f'size: {feature_count}, sample size: {sample_size}')
+    compare_gdfs(service_gdf, sweri_gdf, comparison_field_map , id_map)
+    same = 0
+    different = 0
+    features_equal = False
 
-    compare_sweri_to_service(treatment_index_fc, sweri_common_attributes_fields, sweri_where_clause,
-                             common_attributes_fields, service_url, date_field, source_database)
+    for row in sweri_fc_cursor:
 
+        if service_feature is None or len(service_feature) == 0:
+            logging.warning(f'No feature returned for {row[-2]} in {source_database}')
+            different += 1
+            continue
+
+        elif len(service_feature) > 1:
+            logging.warning(
+                f'more than one feature returned for {row[-2]} in {source_database}, skipping comparison')
+            continue
+
+        target_feature = service_feature[0]
+
+        prepared_feature = prepare_feature_for_comparison(target_feature, date_field, wkid)
+
+        features_equal = compare_features(prepared_feature, row, service_fields)
+
+        if features_equal:
+            same += 1
+        else:
+            field_equality, value_comparison = return_comparison(prepared_feature, row, source_database, iterator_offset)
+            logging.warning(field_equality)
+            logging.warning(value_comparison)
+            different += 1
+
+    log_comparison_results(source_database, same, different)
+
+def common_attributes_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
+    comparison_field_map = [('NAME', 'name'), ('DATE_COMPLETED', 'actual_completion_date'), ('GIS_ACRES', 'acres'), ('NFPORS_TREATMENT', 'type'),
+    ('NFPORS_CATEGORY', 'category'), ('STATE_ABBR', 'state'), ('FUND_CODES', 'fund_code'), ('COST_PER_UNIT', 'cost_per_uom'),
+    ('UOM', 'uom'), ('ACTIVITY', 'activity'), ('EVENT_CN', 'unique_id')]
+    id_map = ('EVENT_CN', 'unique_id')
+
+    source_database = 'FACTS Common Attributes'
+
+    compare_sweri_to_service(cursor, schema, treatment_index, comparison_field_map, pg_con, service_url, source_database, id_map)
 
 if __name__ == '__main__':
     load_dotenv()
 
-    cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'),
-                                 os.getenv('RDS_DB_PASSWORD'))
-    arcpy.env.workspace = arcpy.env.scratchGDB
+    cur, conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'), os.getenv('DOCKER_DB_USER'),
+                                 os.getenv('DOCKER_DB_PASSWORD'))
 
     sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
@@ -276,8 +349,8 @@ if __name__ == '__main__':
     logging.info('new run')
     logging.info('______________________________________')
 
-    common_attributes_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, common_attributes_url)
-    hazardous_fuels_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, hazardous_fuels_url)
-    nfpors_sample(treatment_index_sweri_fc, cur, treatment_index_table, target_schema, nfpors_url)
+    common_attributes_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema, common_attributes_url)
+    hazardous_fuels_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema, hazardous_fuels_url)
+    nfpors_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema, nfpors_url)
 
     conn.close()
