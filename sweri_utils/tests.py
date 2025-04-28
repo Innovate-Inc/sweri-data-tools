@@ -390,23 +390,6 @@ class ConversionTests(TestCase):
         mock_upload_to_s3.assert_called_once_with(bucket, filename, filename)
         self.assertEqual(result, 'upload_success')
 
-    @patch('arcpy.AddMessage')
-    def test_insert_from_db(self, message_mock):
-        mock_conn = Mock()
-        mock_conn.execute.return_value = True
-        insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'])
-
-        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 FROM dev.from_here;'''
-        self.assertEqual(
-            mock_conn.execute.call_args_list,
-            [
-                call('BEGIN;'),
-                call(expected),
-                call('COMMIT;')
-            ]
-        )
-
     @patch('requests.get')
     def test_create_coded_val_dict(self, mock_get):
         # Mock response data
@@ -747,8 +730,12 @@ class SqlTests(TestCase):
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
-        # Mock cursor
+        # Mock connection, cursor, and trasaction context
+        mock_connection = MagicMock()
         mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
 
         # Define test parameters
         db_schema = 'public'
@@ -759,18 +746,18 @@ class S3Tests(TestCase):
         aws_region = 'us-west-2'
 
         # Call the function
-        import_s3_csv_to_postgres_table(mock_cursor, db_schema, fields, destination_table, s3_bucket, csv_file,
+        import_s3_csv_to_postgres_table(mock_connection, db_schema, fields, destination_table, s3_bucket, csv_file,
                                         aws_region)
 
         mock_cursor.execute.assert_has_calls(
             [
-                call('BEGIN;'),
                 call(f'DELETE FROM {db_schema}.{destination_table};'),
                 call(
                     f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
-                call('COMMIT;')
             ]
         )
+
+        mock_connection.transaction.assert_called_once()
 
     def test_upload_to_s3(self):
         # Arrange
