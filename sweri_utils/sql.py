@@ -214,7 +214,6 @@ def copy_table_across_servers(from_cursor: psycopg.Cursor, from_schema: str, fro
             logging.info(f'Running {delete_q}')
             to_cursor.execute(delete_q)
         to_copy = f"COPY {to_schema}.{to_table} ({','.join(to_columns)}) FROM STDIN (FORMAT BINARY)"
-        to_
         with to_cursor.copy(to_copy) as in_copy:
             for data in out_copy:
                 in_copy.write(data)
@@ -303,18 +302,35 @@ def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str
     cursor.execute('COMMIT;')
 
 
-def json_to_postgres(cursor, target_table, feature, fc_name, id_field, to_srid=3857):
-    if ('geometry' not in feature) or ('properties' not in feature):
-        raise KeyError('missing geometry or properties')
-    if id_field not in feature['properties']:
-        raise KeyError(f'missing or incorrect id field: {id_field}')
+def limit_update(conn, schema, table, update_command, limit=150000):
+    """
+    Limits the number of rows in a PostgreSQL table to a specified limit.
 
-    json_geom = json.dumps(feature['geometry'])
-    q = f"INSERT INTO {target_table} (unique_id, feat_source, shape) VALUES ('{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
-    try:
-        cursor.execute('BEGIN;')
-        cursor.execute(q)
-        cursor.execute('COMMIT;')
-    except Exception as e:
-        logger.error(f'error inserting feature: {e}, {q}')
-        cursor.execute('ROLLBACK;')
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to limit rows in.
+    :param update_command: The main update command to be run.
+    :param limit: The maximum number of rows to keep in the table.
+    :return: None
+    """
+    cursor = conn.cursor()
+    current_id = 0
+    # pbar = tqdm.tqdm()
+    while True:
+        with conn.transaction():
+            max_id = cursor.execute(f"""
+                        select max(objectid) as max_id from (
+                          select objectid from {schema}.{table}
+                           where objectid > {current_id} group by objectid limit {limit}
+                          ) subquery
+                    """).fetchone()[0]
+            if max_id is None:
+                break
+            cursor.execute(f"""
+                {update_command}
+                {'AND' if 'where' in update_command.lower() else 'WHERE'} 
+                {current_id} < objectid and objectid <= {max_id}
+            """)
+            current_id = max_id
+            # pbar.update(limit)
+    cursor.execute('COMMIT;')

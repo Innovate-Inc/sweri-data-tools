@@ -1,71 +1,18 @@
 import os
 
+from scripts.sweri_utils.sql import limit_update
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
-import logging
 import re
-import watchtower
 
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column
 from sweri_utils.download import service_to_postgres
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost
+from sweri_utils.logging import logging, log_this
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8',
-                    level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S', force=True)
-# logger.addHandler(watchtower.CloudWatchLogHandler())
-
-# def create_temp_table(sde_file, table_name, projection, cur, schema):
-#
-#     table_location = os.path.join(sde_file,f'{table_name}')
-#     if arcpy.Exists(table_location):
-#         arcpy.management.Delete(table_location)
-#
-#     arcpy.management.CreateFeatureclass(
-#         out_path=sde_file,
-#         out_name=f'{table_name}',
-#         geometry_type='POLYGON',
-#         spatial_reference=projection
-#     )
-#     arcpy.management.AddFields(
-#         in_table=table_location,
-#         field_description=[
-#             ['unique_id','TEXT','Unique Treatment ID', 255, '', ''],
-#             ['name', 'TEXT', 'Name', 255, '', ''],
-#             ['state', 'TEXT', 'State', 255, '', ''],
-#             ['acres', 'DOUBLE', 'Acres', '', '', ''],
-#             ['treatment_date', 'DATE', 'Treatment Date', '', '', ''],
-#             ['date_source', 'TEXT', 'Date Source', 255, '', ''],
-#             ['identifier_database', 'TEXT', 'Identifier Database', 255, '', ''],
-#             ['date_current', 'DATE', 'Date Current', '', '', ''],
-#             ['actual_completion_date', 'DATE', 'Actual Completion Date', '', '', ''],
-#             ['activity_code', 'TEXT', 'Activity Code', 255, '', ''],
-#             ['activity', 'TEXT', 'Activity', 255, '', ''],
-#             ['method', 'TEXT', 'Method', 255, '', ''],
-#             ['equipment', 'TEXT', 'Equipment', 255, '', ''],
-#             ['category', 'TEXT', 'Category', 255, '', ''],
-#             ['type', 'TEXT', 'Type', 255, '', ''],
-#             ['twig_category', 'TEXT', 'TWIG Category', 255, '', ''],
-#             ['agency', 'TEXT', 'Agency', 255, '', ''],
-#             ['fund_source', 'TEXT', 'Fund Source', 255, '', ''],
-#             ['fund_code', 'TEXT', 'Fund Code', 255, '', 'fund_name'],
-#             ['total_cost', 'DOUBLE', 'Total Cost', '', '', ''],
-#             ['cost_per_uom', 'DOUBLE', 'Cost per Unit of Measure', '', '', ''],
-#             ['uom', 'TEXT', 'Unit of Measure', 255, '', ''],
-#             ['error', 'TEXT', 'Error Code', 255, '', '']
-#
-#         ]
-#     )
-#
-#     fields_to_index = ['unique_id','name','state','acres','treatment_date','date_source',
-#     'identifier_database','date_current','actual_completion_date','activity','activity_code','method','equipment',
-#     'category','type','agency','fund_source','fund_code', 'total_cost', 'cost_per_uom','uom','error', 'twig_category']
-#
-#     for field in fields_to_index:
-#         postgres_create_index(cur, schema, f'{table_name}', field)
-
 
 def update_nfpors(cursor, schema, wkid, insert_nfpors_additions, ogr_db_string):
     nfpors_url = os.getenv('NFPORS_URL')
@@ -117,7 +64,7 @@ def insert_nfpors_additions(cursor, schema):
 def nfpors_insert(cursor, schema, treatment_index):
     cursor.execute(f'''
                    
-    INSERT INTO {schema}.{treatment_index}(
+    INSERT INTO {schema}.{treatment_index} (
 
         objectid, 
         name,  date_current, actual_completion_date, 
@@ -142,7 +89,8 @@ def nfpors_insert(cursor, schema, treatment_index):
 
     logger.info(f'NFPORS entries inserted into {schema}.{treatment_index}')
 
-def hazardous_fuels_insert(cursor, schema, treatment_index):
+@log_this
+def hazardous_fuels_insert(cursor, schema, treatment_index, facts_haz_table):
     cursor.execute(f'''
                    
     INSERT INTO {schema}.{treatment_index}(
@@ -162,12 +110,14 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
         etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
         treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
         'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
-        uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, date_completed AS treatment_date,
-        'date_completed' AS date_source, method AS method, equipment AS equipment,
+        uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, 
+        CASE WHEN date_completed IS NULL THEN date_planned ELSE date_completed END AS treatment_date,
+        CASE WHEN date_completed IS NULL THEN 'date_planned' ELSE 'date_completed' END AS date_source, 
+        method AS method, equipment AS equipment,
         'USFS' AS agency, shape
         
-    FROM {schema}.facts_haz_3857_2
-    WHERE {schema}.facts_haz_3857_2.shape IS NOT NULL;
+    FROM {schema}.{facts_haz_table}
+    WHERE {schema}.{facts_haz_table}.shape IS NOT NULL;
     
     ''')
     cursor.execute('COMMIT;')
@@ -175,28 +125,17 @@ def hazardous_fuels_insert(cursor, schema, treatment_index):
     logger.info(f'FACTS entries inserted into {schema}.{treatment_index}')
     #FACTS Insert Complete
 
-def hazardous_fuels_date_filtering(cursor, schema):
+@log_this
+def hazardous_fuels_date_filtering(cursor, schema, facts_haz_table):
     cursor.execute(f'''             
-        DELETE FROM {schema}.facts_haz_3857_2 WHERE
+        DELETE FROM {schema}.{facts_haz_table} WHERE
         date_completed < '1984-1-1'::date
         OR
         (date_completed is null AND date_planned < '1984-1-1'::date);
     ''')
     logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
 
-def hazardous_fuels_treatment_date(cursor, schema, treatment_index):
-    cursor.execute(f'''
-        UPDATE {schema}.{treatment_index} t
-        SET treatment_date = f.date_planned,
-        date_source = 'date_planned'
-        FROM {schema}.facts_haz_3857_2 f
-        WHERE t.treatment_date is null
-        AND t.identifier_database = 'FACTS Hazardous Fuels'
-        AND t.unique_id = f.activity_cn;
-    ''')
-    cursor.execute('COMMIT;')
-    logger.info(f'updated treatment_date for FACTS Hazardous Fuels entries in {schema}.{treatment_index}')
-
+@log_this
 def nfpors_date_filtering(cursor, schema):
     cursor.execute(f'''             
         DELETE FROM {schema}.nfpors WHERE
@@ -209,6 +148,7 @@ def nfpors_date_filtering(cursor, schema):
     cursor.execute('COMMIT;')
     logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
+@log_this
 def nfpors_fund_code(cursor, schema, treatment_index):
     cursor.execute(f'''   
         UPDATE {schema}.{treatment_index}
@@ -226,7 +166,7 @@ def nfpors_fund_code(cursor, schema, treatment_index):
 
     logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}')
 
-
+@log_this
 def nfpors_treatment_date(cursor, schema,treatment_index):
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index} t
@@ -252,41 +192,37 @@ def nfpors_treatment_date(cursor, schema,treatment_index):
 
     logger.info(f'updated treatment_date for NFPORS entries in {schema}.{treatment_index}')
 
-def fund_source_updates(cursor, schema, treatment_index):
-    cursor.execute(f'''
-        UPDATE {schema}.{treatment_index} 
-        SET fund_source = 'Multiple'
-        WHERE fund_code LIKE '%,%';
-    ''')
-    cursor.execute('COMMIT;')
-    
-    cursor.execute(f'''
-        UPDATE {schema}.{treatment_index} 
-        SET fund_source = 'No Funding Code'
-        WHERE fund_code is null;
-    ''')
-    cursor.execute('COMMIT;')
-    
-    cursor.execute(f'''
-        UPDATE {schema}.{treatment_index} ti
-        SET fund_source = lt.fund_source
-        FROM {schema}.fund_source_lookup lt
-        WHERE ti.fund_code = lt.fund_code
-        AND ti.fund_source IS null;
-    ''')
-    cursor.execute('COMMIT;')
+@log_this
+def fund_source_updates(conn, schema, treatment_index):
+    cursor = conn.cursor()
+
+    cursor.execute(f'''UPDATE {schema}.{treatment_index}
+                SET fund_source = 'Multiple'
+                WHERE position(',' in fund_code) > 0''')
 
     cursor.execute(f'''
-        UPDATE {schema}.{treatment_index}
-        SET fund_source = 'Other'
-        WHERE fund_source IS null 
-        AND
-        fund_code IS NOT null;
-    ''')
+            UPDATE {schema}.{treatment_index}
+            SET fund_source = 'No Funding Code'
+            WHERE fund_code is null
+        ''')
+
+    cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
+            SET fund_source = lt.fund_source
+            FROM {schema}.fund_source_lookup lt
+            WHERE ti.fund_code = lt.fund_code
+            AND ti.fund_source IS null
+        ''')
+    cursor.execute(f'''
+            UPDATE {schema}.{treatment_index}
+            SET fund_source = 'Other'
+            WHERE fund_source IS null
+            AND
+            fund_code IS NOT null
+        ''')
+
     cursor.execute('COMMIT;')
 
-    logger.info(f'updated fund_source in {schema}.{treatment_index}')
-
+@log_this
 def correct_biomass_removal_typo(cursor, schema, treatment_index):
     cursor.execute(f'''
         UPDATE {schema}.{treatment_index}
@@ -296,8 +232,10 @@ def correct_biomass_removal_typo(cursor, schema, treatment_index):
     ''')
     cursor.execute('COMMIT;')
 
-def update_total_cost(cursor, schema, treatment_index):
-    cursor.execute(f'''      
+@log_this
+def update_total_cost(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    cursor.execute(f'''
         UPDATE {schema}.{treatment_index}
         SET total_cost = 
             CASE
@@ -305,14 +243,17 @@ def update_total_cost(cursor, schema, treatment_index):
                 WHEN uom = 'ACRES' THEN cost_per_uom * acres
                 WHEN uom = 'MILES' THEN cost_per_uom * (acres / 640)
                 ELSE total_cost
-            END;
+            END
     ''')
     cursor.execute('COMMIT;')
 
-
-def update_treatment_points(cursor, schema, treatment_index):
+@log_this
+def update_treatment_points(conn, schema, treatment_index):
+    cursor = conn.cursor()
     cursor.execute(f'truncate table {schema}.{treatment_index}_points;')
-    cursor.execute(f'''
+    cursor.execute('COMMIT;')
+    cursor.execute(
+     f'''
         insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
         date_source, identifier_database, date_current, 
         actual_completion_date, activity_code, activity, method, equipment, category, type, agency, 
@@ -324,10 +265,9 @@ def update_treatment_points(cursor, schema, treatment_index):
         fund_source, fund_code, total_cost, cost_per_uom, uom, error
         from {schema}.{treatment_index}
     ''')
-
     cursor.execute('COMMIT;')
 
-    logger.info(f'points layer created at {treatment_index}_points')
+
 
 
 # BEGIN Common Attributes Functions
@@ -355,6 +295,7 @@ def add_fields_and_indexes(cursor, schema, feature_class, region):
 
         # arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
 
+@log_this
 def common_attributes_date_filtering(cursor, schema, table_name):
     # Excludes treatment entries before 1984
     # uses date_completed if available, and act_created_date if date_completed is null
@@ -374,6 +315,7 @@ def common_attributes_date_filtering(cursor, schema, table_name):
     logger.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
 
 
+@log_this
 def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
 
@@ -390,6 +332,8 @@ def exclude_facts_hazardous_fuels(cursor, schema, table, facts_haz_table):
     cursor.execute('COMMIT;')
     logger.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
+
+@log_this
 def exclude_by_acreage(cursor, schema, table):
     #removes all treatments with null acerage or <= 5 acres
 
@@ -405,10 +349,10 @@ def exclude_by_acreage(cursor, schema, table):
     cursor.execute('COMMIT;')
     logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
+@log_this
 def trim_whitespace(cursor, schema, table):
     #Some entries have spaces before or after that interfere with matching, this trims those spaces out
 
-    
     cursor.execute(f'''
                    
     UPDATE {schema}.{table}
@@ -421,6 +365,7 @@ def trim_whitespace(cursor, schema, table):
     cursor.execute('COMMIT;')
     logger.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
+@log_this
 def include_logging_activities(cursor, schema, table):
     # Make sure the activity includes 'thin' or 'cut'
     # Checks the lookup table for method and equipment slated for inclusion
@@ -453,6 +398,7 @@ def include_logging_activities(cursor, schema, table):
     cursor.execute('COMMIT;')
     logger.info(f"r2 set to 'PASS' for logging activities with proper methods and equipment in {schema}.{table}")
 
+@log_this
 def include_fire_activites(cursor, schema, table):
     # Make sure the activity includes 'burn' or 'fire'
     # Checks the lookup table for method and equipment slated for inclusion
@@ -723,10 +669,12 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         common_attributes_treatment_date(cursor, schema, table_name, treatment_index)
 
 
+@log_this
 def add_twig_category(cursor, schema):
     common_attributes_twig_category(cursor, schema)
     facts_nfpors_twig_category(cursor, schema)
 
+@log_this
 def common_attributes_twig_category(cursor, schema):
     cursor.execute(f'''
         UPDATE {schema}.treatment_index ti
@@ -744,6 +692,7 @@ def common_attributes_twig_category(cursor, schema):
     ''')
     cursor.execute('COMMIT;')
 
+@log_this
 def facts_nfpors_twig_category(cursor, schema):
     cursor.execute(f'''
         UPDATE {schema}.treatment_index ti
@@ -763,63 +712,55 @@ def facts_nfpors_twig_category(cursor, schema):
 if __name__ == "__main__":
     load_dotenv()
 
-    out_wkid = 3857
+    out_wkid = 4326
 
     target_schema = os.getenv('SCHEMA')
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     facts_haz_gdb = 'S_USA.Activity_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
-    hazardous_fuels_table = 'facts_haz_3857_2'
+    hazardous_fuels_table = 'facts_hazardous_fuels'
 
-    #This is the path of the final table, _backup of this table must also exist
-    insert_table = f'treatment_index'
+    #This is the final table
+    insert_table = 'treatment_index'
 
     cur, conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
-    # create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
+    # Truncate the table before inserting new data
+    cur.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-    # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
-    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    # # # Download and extract gdb file
-    # logging.info(f'Downloading {facts_haz_gdb_url}')
-    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    #
-    # logging.info(f'Extracting {hazardous_fuels_zip_file}')
-    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
-    #
-    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-    #                 target_schema, ogr_db_string)
-    #
-    # common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    update_nfpors(cur, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+
+    # FACTS Hazardous Fuels
+    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+                    target_schema, ogr_db_string)
+    hazardous_fuels_date_filtering(cur, target_schema, hazardous_fuels_table)
+    hazardous_fuels_insert(cur, target_schema, insert_table, hazardous_fuels_table)
+
+    # FACTS Common Attributes
+    common_attributes_download_and_insert(out_wkid, cur, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
     common_attributes_type_filter(cur, target_schema, insert_table)
 
-    #MERGE
+    # NFPORS
+    update_nfpors(cur, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
     nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
     nfpors_fund_code(cur, target_schema, insert_table)
     nfpors_treatment_date(cur, target_schema, insert_table)
 
-    # Insert FACTS entries and enter proper treatement dates
-    hazardous_fuels_date_filtering(cur, target_schema)
-    hazardous_fuels_insert(cur, target_schema, insert_table)
-    hazardous_fuels_treatment_date(cur, target_schema, insert_table)
-
-    # Insert NFPORS, convert isbil Yes/No to fund_code 'BIL'/null
-    fund_source_updates(cur, target_schema, insert_table)
-
-    update_total_cost(cur, target_schema, insert_table)
-
+    # Modify treatment index in place
+    fund_source_updates(conn, target_schema, insert_table)
+    update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(cur, target_schema, insert_table)
-
     flag_high_cost(cur, target_schema, f'{insert_table}')
     flag_duplicates(cur, target_schema, f'{insert_table}')
     add_twig_category(cur, target_schema)
 
     # update treatment points
-    update_treatment_points(cur, target_schema, insert_table)
+    update_treatment_points(conn, target_schema, insert_table)
 
     conn.close()

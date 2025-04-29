@@ -1,12 +1,11 @@
 import logging
 import json
 import os
-from io import StringIO
 from time import sleep
 import requests
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
-from urllib.parse import urlencode
-
+from datetime import datetime
+from .logging import log_this
 
 def get_fields(service_url):
     """
@@ -152,7 +151,7 @@ def get_query_params_chunk(ids, out_sr=3857, out_fields=None, chunk_size=2000, f
         yield params
 
 
-def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json'):
+def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json', return_full_response=False):
     """
     Fetches all features from a feature service using object ids
     :param url: REST endpoint of feature service
@@ -160,6 +159,8 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     :param out_sr: output spatial reference
     :param out_fields: out fields for query
     :param chunk_size: check size for batch feature request
+    :param format: format of the response, either 'json' or 'geojson'
+    :param return_full_response: if True, returns the full response, else returns only the features
     :return: None
     """
     logging.info(f'getting all features for {url}')
@@ -167,8 +168,8 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     for params in get_query_params_chunk(ids, out_sr, out_fields, chunk_size, format):  # This loops through the service and compiles the output into all_features
         try:
             # fetch features and update total
-            r = fetch_features(url + '/query', params)
-            total += len(r)
+            r = fetch_features(url + '/query', params, return_full_response)
+            total += len(r) if not return_full_response else len(r['features'])
             yield r
             logging.info(f'{total} of {len(ids)} fetched')
         except Exception as e:
@@ -179,16 +180,21 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
 
 
 @retry(retries=2, on_failure=fetch_failure)
-def fetch_features(url, params):
+def fetch_features(url, params, return_full_response=False):
     """
     get features from a feature service
     :param url: REST endpoint of feature service
     :param params: query parameters
+    :param return_full_response: if True, returns the full response, else returns only the features
     :return: JSON features
     """
     try:
         r = requests.post(url, data=params)
         r_json = r.json()
+
+        if return_full_response:
+            return r_json
+
         if 'features' not in r_json:
             raise KeyError(f'Error: {r.content} With Params: {json.dumps(params)}')
         return r_json['features']
@@ -208,46 +214,8 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
     return out_features
 
 
-
-def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 2000):
-    """
-    fetches and converts ESRI JSON features to a FeatureClass in a geodatabase
-    :param service_url: REST endpoint of Esri service with feature access enabled
-    :param where: where clause for filtering features to fetch
-    :param gdb: output geodatabase for new FeatureClass
-    :param fc_name: name of new FeatureClass
-    :param geometry: geometry to use for query, if any
-    :param geom_type: type of geometry used for query, required only if geometry is provided
-    :param out_sr: out spatial reference WKID
-    :param out_fields: out fields for query
-    :return: new FeatureClass
-    """
-    # get count
-    ids = get_ids(service_url, where, geometry, geom_type)
-    out_features = []
-    # get all features
-    for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size):
-        out_features += f
-    if len(out_features) == 0:
-        raise Exception(f'No features fetched for ids: {ids}')
-    # save errors out if there is no geometry or attrbutes object
-    fields = get_fields(service_url)
-    fset = {'features': out_features, 'fields': fields, 'spatial_reference': {'wkid': out_sr}}
-    # create a json file from the features
-
-    with open(f'{fc_name}.json', 'w') as f:
-        json.dump(fset, f)
-    out_fc = os.path.join(gdb, fc_name)
-
-    json_to_gdb(f'{fc_name}.json', gdb, fc_name, 'overwrite')
-
-    # delete JSON
-    os.remove(f.name)
-    return out_fc
-
-
-def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, cursor, call_insert_function,chunk_size = 70):
+@log_this
+def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, cursor, overwrite_destination=False, chunk_size = 70):
     """
     service_to_postgres allows the capture of records from services that break other methods
     this method is much slower, and should be used when other methods are exhauseted
@@ -267,78 +235,28 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     # todo: we dont need this if we use overwrite below
     cursor.execute(f'TRUNCATE {schema}.{destination_table}')
     cursor.execute('COMMIT;')
-
-    # service_fl = arcgis.features.FeatureLayer(service_url)
-    # service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
-
     #fetches all ids that will be added
     ids = get_ids(service_url, where=where_clause)
-    # str_ids = [str(i) for i in ids]
-    # start = 0
-    # total_len = len(ids)
 
     # overwrite to create table on first run then append
-    # access_mode = 'overwrite'
-    for features in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='geojson'):
-        # todo: remove _additions from here
-        # encoded_params = urlencode(params)
-        # url = f'{service_url}/query?{encoded_params}'
+    access_mode = 'overwrite' if overwrite_destination else 'append'
+    for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
+        # todo: move this to its own method?
+        # convert epoch time to iso format for esriFieldTypeDate fields
+        date_fields = [x['name'] for x in r['fields'] if x['type'] == 'esriFieldTypeDate']
+        for f in r['features']:
+            for d in date_fields:
+                if d in f['attributes'] and f['attributes'][d] is not None:
+                    f['attributes'][d] = int(f['attributes'][d]) / 1000
+                    f['attributes'][d] = datetime.fromtimestamp(f['attributes'][d]).isoformat()
 
         options = VectorTranslateOptions(format='PostgreSQL',
-                                         accessMode='append',
+                                         accessMode=access_mode,
                                          geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
                                          layerName=destination_table)
 
-        VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRI:{url}", options=options)
+        VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
 
-        # access_mode = 'append'
-        # count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, f'{destination_table}_additions')
+        # access mode is always append after the first run
+        access_mode = 'append'
 
-    # todo: expand try to writing each chunk to the database?
-    # if (count > 0):
-    #     try:
-    #         #insert additions to destination table
-    #         call_insert_function(cursor, schema)
-    #
-    #     except Exception as e:
-    #         logging.error(e.args[0])
-    #         raise e
-
-    # todo: fix logging here
-    # logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
-    # start+=chunk_size
-
-
-def json_to_postgres(query_url, ogr_db_string, table_name, access_mode='overwrite'):
-    """
-    Function to convert JSON to Postgres table
-    :param json_string: JSON string to convert
-    :param ogr_db_string: OGR connection string for Postgres
-    :param table_name: name of the table to create in Postgres
-    :return: None
-    """
-
-    options = VectorTranslateOptions(format='PostgreSQL',
-                                     accessMode=access_mode,
-                                     layerName=table_name)
-
-    pass
-    # with NamedTemporaryFile(suffix='.geojson') as f:
-    #     f.write(json_string.encode('utf-8'))
-    #     VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"GEOJSON:{f.name}", options=options)
-
-def json_to_gdb(json_string, gdb, table_name, access_mode='overwrite'):
-    """
-    Function to convert JSON to Postgres table
-    :param json_string: JSON string to convert
-    :param ogr_db_string: OGR connection string for Postgres
-    :param table_name: name of the table to create in Postgres
-    :return: None
-    """
-
-    options = VectorTranslateOptions(format='FileGDB',
-                                     accessMode=access_mode,
-                                     layerName=table_name)
-
-    with StringIO(json_string) as f:
-        VectorTranslate(destNameOrDestDS='/tmp/test.gdb', srcDS=f"ESRIJSON:{f}", options=options)

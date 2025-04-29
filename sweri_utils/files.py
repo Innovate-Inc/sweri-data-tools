@@ -5,6 +5,7 @@ import requests
 import logging
 from osgeo.gdal import VectorTranslate, VectorTranslateOptions
 import shutil
+from .logging import log_this
 
 try:
     import arcpy
@@ -53,11 +54,13 @@ def create_zip(zip_dir, name, out_dir=None):
     zip_f.close()
     return out_path
 
+@log_this
 def download_file_from_url(url, destination_path):
     response = requests.get(url)
     with open(destination_path, 'wb') as file:
         file.write(response.content)
 
+@log_this
 def extract_and_remove_zip_file(zip_filepath):
     with zipfile.ZipFile(zip_filepath, 'r') as zip_file:
         zip_file.extractall()
@@ -65,7 +68,7 @@ def extract_and_remove_zip_file(zip_filepath):
 
 
 
-
+@log_this
 def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
     os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
 

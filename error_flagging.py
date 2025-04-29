@@ -1,13 +1,15 @@
+from sweri_utils.logging import log_this
 from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
 import os
 import logging
 from dotenv import load_dotenv
 import watchtower
 
+@log_this
 def create_duplicate_table(cursor, schema, table_name):
     
     # Makes space for duplicate table
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
 
        DROP TABLE IF EXISTS
@@ -17,7 +19,7 @@ def create_duplicate_table(cursor, schema, table_name):
     cursor.execute('COMMIT;')
 
     # Creates a table of duplicates 
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
 
         CREATE TABLE {schema}.treatment_index_duplicates AS 
@@ -35,8 +37,8 @@ def create_duplicate_table(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
-    cursor.execute('BEGIN;')
+    # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
 
         CREATE INDEX
@@ -49,11 +51,12 @@ def create_duplicate_table(cursor, schema, table_name):
     postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'activity')
     postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'actual_completion_date')
 
+@log_this
 def flag_duplicate_table(cursor, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
     # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
     # Ensures 1 record kept and all others dropped for each group of duplicates
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
 
         WITH ranking_treatment_duplicates AS (
@@ -83,11 +86,12 @@ def flag_duplicate_table(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
+    # logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
 
+@log_this
 def update_treatment_index_duplicates(cursor, schema, table_name):
     # Updates treatment index table to match duplicate flags in duplicate table
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
 
         UPDATE {schema}.{table_name} ti
@@ -97,9 +101,10 @@ def update_treatment_index_duplicates(cursor, schema, table_name):
 
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f'Duplicates updated in {schema}.{table_name}')
+    # logging.info(f'Duplicates updated in {schema}.{table_name}')
 
 
+@log_this
 def flag_duplicates(cursor, schema, table_name):
     # Create a table of all duplicates
     # Flag table with DUPLICATE-KEEP or DUPLICATE-DROP for each record
@@ -109,8 +114,9 @@ def flag_duplicates(cursor, schema, table_name):
     flag_duplicate_table(cursor, schema, table_name)
     update_treatment_index_duplicates(cursor, schema, table_name)
 
+@log_this
 def flag_high_cost_acres(cursor, schema, table_name):
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
         SET error = 
@@ -127,8 +133,9 @@ def flag_high_cost_acres(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
+@log_this
 def flag_high_cost_each(cursor, schema, table_name):
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
         SET error =            
@@ -145,8 +152,9 @@ def flag_high_cost_each(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
+@log_this
 def flag_high_cost_miles(cursor, schema, table_name):
-    cursor.execute('BEGIN;')
+    # cursor.execute('BEGIN;')
     cursor.execute(f'''
         UPDATE {schema}.{table_name}
         SET error = 
@@ -162,8 +170,8 @@ def flag_high_cost_miles(cursor, schema, table_name):
         cost_per_uom/(acres*640) > 10000;
     ''')
     cursor.execute('COMMIT;')
-    logging.info(f'High cost flagged in error field for {schema}.{table_name}')
 
+@log_this
 def flag_high_cost(cursor, schema, table_name):
     # Flags treatments with more than $10,000 spent per acre of treatment 
     # Different functions are needed based on the uom or Unit of Measure
