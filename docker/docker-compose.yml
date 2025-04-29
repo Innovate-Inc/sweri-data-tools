@@ -1,3 +1,4 @@
+name: SWERI Processing
 services:
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -32,9 +33,10 @@ services:
       retries: 5
     command: postgres -c max_wal_size=5GB -c wal_level=minimal -c synchronous_commit=off -c max_wal_senders=0
   app:
-    build:
-      context: ../
-      dockerfile: ./docker/Dockerfile
+    image: ${DOCKER_IMAGE_NAME}
+#    build:
+#      context: ../
+#      dockerfile: ./docker/Dockerfile
     env_file:
       - "../.env"
     environment:
@@ -42,8 +44,6 @@ services:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_HOST: db
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
     depends_on:
       db:
