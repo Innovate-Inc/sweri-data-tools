@@ -14,13 +14,13 @@ from sweri_utils.logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
-def update_nfpors(cursor, schema, wkid, insert_nfpors_additions, ogr_db_string):
+def update_nfpors(conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
     nfpors_url = os.getenv('NFPORS_URL')
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     # database = 'sweri'
 
-    service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, cursor, insert_nfpors_additions)
+    service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, insert_nfpors_additions)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -729,6 +729,7 @@ if __name__ == "__main__":
 
     # Truncate the table before inserting new data
     cur.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
+    cur.execute('COMMIT;')
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
@@ -746,7 +747,7 @@ if __name__ == "__main__":
     common_attributes_type_filter(cur, target_schema, insert_table)
 
     # NFPORS
-    update_nfpors(cur, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    update_nfpors(conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
     nfpors_date_filtering(cur, target_schema)
     nfpors_insert(cur, target_schema, insert_table)
     nfpors_fund_code(cur, target_schema, insert_table)
