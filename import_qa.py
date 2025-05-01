@@ -22,6 +22,15 @@ file_handler.setFormatter(formatter)
 if not logger.handlers:
     logger.addHandler(file_handler)
 
+def flatten_list(source_list):
+    flat_list = []
+
+    for item in source_list:
+        if isinstance(item, (list, tuple)):
+            flat_list.extend(item)
+        else:
+            flat_list.append(item)
+    return flat_list
 
 def get_feature_count(cursor, schema, treatment_index, source_database):
     cursor.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
@@ -96,13 +105,11 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
 
 def service_to_gdf(where_clause, service_fields, service_url, wkid):
     fields_str = ",".join(service_fields)
-
     params = {'f': 'geojson', 'outSR': 4326, 'outFields': fields_str, 'returnGeometry': 'true', 'where': where_clause}
 
     service_features = fetch_features(service_url + '/query', params)
 
     gdf = gpd.GeoDataFrame.from_features(service_features, crs="EPSG:4326")
-
     gdf = gdf.to_crs(epsg=wkid)
 
     return gdf
@@ -110,9 +117,8 @@ def service_to_gdf(where_clause, service_fields, service_url, wkid):
 
 def prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field):
     # convert date from ms to datetime if needed
-    non_null_dates = service_gdf[service_date_field].dropna()
-    if isinstance(non_null_dates.iloc[0], (int, float)):
-        service_gdf[service_date_field] = pd.to_datetime(service_gdf[service_date_field], unit='ms')
+    if isinstance(service_gdf[service_date_field].dropna().iloc[0], (int, float)):
+        service_gdf.loc[:, service_date_field] = pd.to_datetime(service_gdf[service_date_field], unit='ms')
 
     # strip strings
     service_gdf = service_gdf.map(lambda x: x.strip() if isinstance(x, str) else x)
@@ -162,8 +168,8 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
             same += 1
         else:
             different += 1
-            logger.info(f"No Match for ID {index}")
-            logger.info(diff)
+            logger.info(f"No Match for ID: {index}\n{diff.to_string(justify='left')}")
+            logger.info('-'*40)
 
     logger.info(f'same: {same}')
     logger.info(f'different: {different}')
@@ -178,8 +184,8 @@ def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, sou
 
     service_fields, sweri_fields = zip(*comparison_field_map)
 
-    service_fields = list(service_fields)
-    sweri_fields = list(sweri_fields)
+    service_fields = flatten_list(list(service_fields))
+    sweri_fields = flatten_list(list(sweri_fields))
 
     if ids:
         service_where_clause = return_service_where_clause(source_database, ids)
@@ -198,7 +204,7 @@ def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, sou
     return service_gdf, sweri_gdf
 
 
-def common_attributes_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
+def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_url):
     source_database = 'FACTS Common Attributes'
     comparison_field_map = [
         ('NAME', 'name'),
@@ -224,7 +230,7 @@ def common_attributes_sample(treatment_index_fc, cursor, pg_con, treatment_index
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
-def hazardous_fuels_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
+def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url):
     source_database = 'FACTS Hazardous Fuels'
     comparison_field_map = [
         ('ACTIVITY_SUB_UNIT_NAME', 'name'),
@@ -249,8 +255,7 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, pg_con, treatment_index, 
         service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
-
-def nfpors_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
+def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
     source_database = 'NFPORS'
     comparison_field_map = [
         ('trt_nm', 'name'),
@@ -259,18 +264,33 @@ def nfpors_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, s
         ('type_name', 'type'),
         ('cat_nm', 'category'),
         ('st_abbr', 'state'),
-        ('trt_id', 'unique_id'),
-        ('nfporsfid')
+        (('nfporsfid', 'trt_id'), 'unique_id')
     ]
-    id_map = ('trt_id', 'nfporsfid'), 'unique_id'
+    id_map = (('nfporsfid', 'trt_id'), 'unique_id')
     service_date_field = 'act_comp_dt'
 
     service_gdf, sweri_gdf = return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database,
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
+        # Merging NFPORS columns to match sweri id merge before compare
+        service_gdf['merged_id'] = service_gdf['nfporsfid'].astype(str) + '-' + service_gdf['trt_id'].astype(str)
+        service_gdf = service_gdf.drop(columns=['nfporsfid', 'trt_id'])
+
+        updated_comparison_field_map = [
+            ('trt_nm', 'name'),
+            ('act_comp_dt', 'actual_completion_date'),
+            ('gis_acres', 'acres'),
+            ('type_name', 'type'),
+            ('cat_nm', 'category'),
+            ('st_abbr', 'state'),
+            ('merged_id', 'unique_id')
+        ]
+        updated_id_map =  ('merged_id', 'unique_id')
+
         service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
-        compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
+        compare_gdfs(service_gdf, sweri_gdf, updated_comparison_field_map, updated_id_map)
+
 
 if __name__ == '__main__':
     load_dotenv()
@@ -285,15 +305,15 @@ if __name__ == '__main__':
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
     common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
-    treatment_index_sweri_fc = os.path.join(sde_connection_file, f"{target_schema}.{treatment_index_table}")
 
     logger.info('new run')
     logger.info('______________________________________')
 
-    common_attributes_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema,
+    nfpors_sample(cur, conn, treatment_index_table, target_schema, nfpors_url)
+
+    common_attributes_sample(cur, conn, treatment_index_table, target_schema,
                              common_attributes_url)
-    hazardous_fuels_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema,
+    hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
                            hazardous_fuels_url)
-    # nfpors_sample(treatment_index_sweri_fc, cur, conn, treatment_index_table, target_schema, nfpors_url)
 
     conn.close()
