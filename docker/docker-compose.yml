@@ -32,10 +32,11 @@ services:
       timeout: 5s
       retries: 5
   app:
+
     image: ${DOCKER_IMAGE_NAME}
-#    build:
-#      context: ../
-#      dockerfile: ./docker/Dockerfile
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
     env_file:
       - "../.env"
     environment:
