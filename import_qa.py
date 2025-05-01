@@ -251,33 +251,26 @@ def hazardous_fuels_sample(treatment_index_fc, cursor, pg_con, treatment_index, 
 
 
 def nfpors_sample(treatment_index_fc, cursor, pg_con, treatment_index, schema, service_url):
-    nfpors_fields = ['trt_nm', 'act_comp_dt', 'gis_acres', 'type_name', 'cat_nm', 'st_abbr']
-    sweri_nfpors_fields = ['name', 'actual_completion_date', 'acres', 'type', 'category', 'state', 'unique_id',
-                           'SHAPE@']
     source_database = 'NFPORS'
+    comparison_field_map = [
+        ('trt_nm', 'name'),
+        ('act_comp_dt', 'actual_completion_date'),
+        ('gis_acres', 'acres'),
+        ('type_name', 'type'),
+        ('cat_nm', 'category'),
+        ('st_abbr', 'state'),
+        ('trt_id', 'unique_id'),
+        ('nfporsfid')
+    ]
+    id_map = ('trt_id', 'nfporsfid'), 'unique_id'
+    service_date_field = 'act_comp_dt'
 
-    feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
-    sample_size = get_sample_size(feature_count)
+    service_gdf, sweri_gdf = return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database,
+                                                comparison_field_map)
 
-    ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
-    if ids:
-        id_list = ', '.join(f"'{i}'" for i in ids)
-        sweri_pg_query = f"SELECT {sweri_nfpors_fields} FROM {schema}.{treatment_index} WHERE identifier_database = 'NFPORS' AND unique_id IN ({id_list})"
-    else:
-        logger.info('No ids returned for NFPORS comparison, moving to next process')
-        return
-
-    date_field = 'act_comp_dt'
-
-    # need to offset NFPORS by 1 to ignore the id field since we are splitting it apart
-    iterator_offset = 1
-
-    logger.info('Running NFPORS sample comparison')
-    logger.info(f'size: {feature_count}, sample size: {sample_size}')
-    compare_sweri_to_service(treatment_index_fc, sweri_nfpors_fields, pg_con, sweri_pg_query, nfpors_fields,
-                             service_url,
-                             date_field, source_database, iterator_offset)
-
+    if service_gdf is not None and sweri_gdf is not None:
+        service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
+        compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 if __name__ == '__main__':
     load_dotenv()
