@@ -33,7 +33,6 @@ services:
       timeout: 5s
       retries: 5
   app:
-    command: ["sh", "-c", "python intersections/sweri-intersections.py"]
     image: ${DOCKER_IMAGE_NAME}
     env_file:
       - "../.env"
