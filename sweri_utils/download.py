@@ -215,7 +215,7 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
 
 
 @log_this
-def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, conn, overwrite_destination=False, chunk_size = 70):
+def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, conn, chunk_size = 70):
     """
     service_to_postgres allows the capture of records from services that break other methods
     this method is much slower, and should be used when other methods are exhauseted
@@ -225,23 +225,26 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     :param ogr_db_string: OGR connection string for Postgres
     :param schema: destination postgres schema
     :param destination_table: destination postgres table
-    :param cursor: psycopg2 cursor
-    :param sde_file: sde_file connected to target schema
-    :param call_insert_function: calls insert function passed in to insert from additions table to destination table
+    :param conn: psycopg2 connection object
     :param chunk_size: check size for batch feature request
     """
-    #clear data from the destination table
-    #destination table must be in place and have the proper schema
-    # todo: we dont need this if we use overwrite below
+
     cursor = conn.cursor()
+    # create a buffer table to hold the data without copying data
+    # this is a workaround for the fact that vector translate does not support overwriting
+    # the destination table if it is already in use
+    cursor.execute(f'''
+               DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
+               CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);;
+           ''')
+    # create table has to be commited to be used in another transaction
+    conn.commit()
+
     with conn.transaction():
-        cursor.execute(f'TRUNCATE {schema}.{destination_table}')
 
         #fetches all ids that will be added
         ids = get_ids(service_url, where=where_clause)
 
-        # overwrite to create table on first run then append
-        access_mode = 'overwrite' if overwrite_destination else 'append'
         for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
             # convert epoch time to iso format for esriFieldTypeDate fields
             date_fields = [x['name'] for x in r['fields'] if x['type'] == 'esriFieldTypeDate']
@@ -252,13 +255,16 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
                         f['attributes'][d] = datetime.fromtimestamp(f['attributes'][d]).isoformat()
 
             options = VectorTranslateOptions(format='PostgreSQL',
-                                             accessMode=access_mode,
+                                             accessMode='append',
                                              geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                             layerName=destination_table)
-
+                                             layerName=f'{destination_table}_buffer')
+            # commit chunks to database in
             VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
 
-            # access mode is always append after the first run
-            access_mode = 'append'
-
-        conn.commit()
+        # copy data from buffer table to destination table
+        cursor.execute(f'''
+            TRUNCATE {schema}.{destination_table};
+            INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);
+            DROP TABLE {schema}.{destination_table}_buffer;
+        ''')
+    conn.commit()

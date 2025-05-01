@@ -18,27 +18,24 @@ def create_duplicate_table(cursor, schema, table_name):
     ''')
     cursor.execute('COMMIT;')
 
-    # Creates a table of duplicates 
-    # cursor.execute('BEGIN;')
+    # Creates a table of duplicates
     cursor.execute(f'''
 
         CREATE TABLE {schema}.treatment_index_duplicates AS 
             SELECT * FROM {schema}.{table_name}
             WHERE shape IS NOT NULL
-            AND (actual_completion_date, activity, shape::text) IN (
-                SELECT 
-                    actual_completion_date, 
-                    activity, 
-                    shape::text AS shape_text
-                FROM {schema}.{table_name}
+            AND EXISTS (SELECT 1
+                FROM sweri.treatment_index as s2
                 WHERE shape IS NOT NULL
+				AND s.actual_completion_date = s2.actual_completion_date
+				AND s.activity = s2.activity
+				AND s.shape::text = s2.shape::text
                 GROUP BY actual_completion_date, activity, shape::text
                 HAVING COUNT(*) > 1);
-
     ''')
     cursor.execute('COMMIT;')
     # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
-    # cursor.execute('BEGIN;')
+
     cursor.execute(f'''
 
         CREATE INDEX
@@ -56,7 +53,7 @@ def flag_duplicate_table(cursor, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
     # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
     # Ensures 1 record kept and all others dropped for each group of duplicates
-    # cursor.execute('BEGIN;')
+
     cursor.execute(f'''
 
         WITH ranking_treatment_duplicates AS (

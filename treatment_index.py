@@ -282,22 +282,6 @@ def add_fields_and_indexes(cursor, schema, feature_class, region):
     new_fields = ('included', 'r2', 'r3', 'r4','r5', 'r6')
     for field in new_fields:
         add_column(cursor, schema, feature_class, field, 'TEXT')
-        postgres_create_index(cursor, schema, feature_class, field)
-
-    # postgres_create_index(cursor, schema, feature_class, 'event_cn')
-    # postgres_create_index(cursor, schema, feature_class, 'date_completed')
-    # postgres_create_index(cursor, schema, feature_class, 'act_created_date')
-    # todo: determine if this level of control over indexes is needed
-    # arcpy.management.AddIndex(feature_class, , f'event_cn_idx_{region}', unique="UNIQUE", ascending="ASCENDING")
-    # arcpy.management.AddIndex(feature_class, 'date_completed', f'date_completed_idx_{region}', ascending="ASCENDING")
-    # arcpy.management.AddIndex(feature_class, 'act_created_date', f'act_created_date_idx_{region}', ascending="ASCENDING")
-
-
-    new_indexes = ('event_cn', 'date_completed', 'act_created_date', 'gis_acres', 'activity', 'equipment', 'method')
-    for column in new_indexes:
-        postgres_create_index(cursor, schema, feature_class, column)
-
-        # arcpy.management.AddIndex(feature_class, index, f'{index}_idx_{region}', ascending="ASCENDING")
 
 @log_this
 def common_attributes_date_filtering(cursor, schema, table_name):
@@ -761,8 +745,8 @@ if __name__ == "__main__":
     fund_source_updates(conn, target_schema, insert_table)
     update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(cur, target_schema, insert_table)
-    flag_high_cost(cur, target_schema, f'{insert_table}')
-    flag_duplicates(cur, target_schema, f'{insert_table}')
+    flag_high_cost(cur, target_schema, insert_table)
+    flag_duplicates(cur, target_schema, insert_table)
     add_twig_category(cur, target_schema)
 
     # update treatment points
