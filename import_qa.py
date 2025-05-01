@@ -299,7 +299,6 @@ if __name__ == '__main__':
                                  os.getenv('DOCKER_DB_USER'),
                                  os.getenv('DOCKER_DB_PASSWORD'))
 
-    sde_connection_file = os.getenv('SDE_FILE')
     target_schema = os.getenv('SCHEMA')
     treatment_index_table = 'treatment_index'
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
