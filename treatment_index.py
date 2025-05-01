@@ -20,7 +20,11 @@ def update_nfpors(conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
     destination_table = 'nfpors'
     # database = 'sweri'
 
-    service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, insert_nfpors_additions)
+    try:
+        service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, insert_nfpors_additions)
+    except Exception as e:
+        logger.error(f'Error downloading NFPORS: {e}... continuing')
+        pass
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
