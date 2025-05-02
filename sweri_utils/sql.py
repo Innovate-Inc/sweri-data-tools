@@ -292,7 +292,7 @@ def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str
     if spatial:
         refresh_spatial_index(conn, schema, table)
 
-def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str, column_type: str) -> None:
+def add_column(conn: psycopg.Connection, schema: str, table: str, column_name: str, column_type: str) -> None:
     """
     Adds a new column to a specified table in a PostgreSQL database.
 
@@ -303,9 +303,9 @@ def add_column(cursor: psycopg.Cursor, schema: str, table: str, column_name: str
     :param column_type: The data type of the new column.
     :return: None
     """
-
-    cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
-    cursor.execute('COMMIT;')
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
 
 def limit_update(conn, schema, table, update_command, limit=150000):
     """

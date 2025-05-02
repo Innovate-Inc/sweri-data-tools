@@ -6,98 +6,95 @@ from dotenv import load_dotenv
 import watchtower
 
 @log_this
-def create_duplicate_table(cursor, schema, table_name):
+def create_duplicate_table(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        # Makes sp  ace for duplicate table
+        # cursor.execute('BEGIN;')
+        cursor.execute(f'''
     
-    # Makes space for duplicate table
-    # cursor.execute('BEGIN;')
-    cursor.execute(f'''
+           DROP TABLE IF EXISTS
+           {schema}.treatment_index_duplicates;
+    
+        ''')
 
-       DROP TABLE IF EXISTS
-       {schema}.treatment_index_duplicates;
-
-    ''')
-    cursor.execute('COMMIT;')
-
-    # Creates a table of duplicates
-    cursor.execute(f'''
-
-        CREATE TABLE {schema}.treatment_index_duplicates AS 
-            SELECT * FROM {schema}.{table_name}
-            WHERE shape IS NOT NULL
-            AND EXISTS (SELECT 1
-                FROM sweri.treatment_index as s2
+        # Creates a table of duplicates
+        cursor.execute(f'''
+    
+            CREATE TABLE {schema}.treatment_index_duplicates AS 
+                SELECT * FROM {schema}.{table_name} as s
                 WHERE shape IS NOT NULL
-				AND s.actual_completion_date = s2.actual_completion_date
-				AND s.activity = s2.activity
-				AND s.shape::text = s2.shape::text
-                GROUP BY actual_completion_date, activity, shape::text
-                HAVING COUNT(*) > 1);
-    ''')
-    cursor.execute('COMMIT;')
-    # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
+                AND EXISTS (SELECT 1
+                    FROM sweri.treatment_index as s2
+                    WHERE shape IS NOT NULL
+                    AND s.actual_completion_date = s2.actual_completion_date
+                    AND s.activity = s2.activity
+                    AND s.shape::text = s2.shape::text
+                    GROUP BY actual_completion_date, activity, shape::text
+                    HAVING COUNT(*) > 1);
+        ''')
+        # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
 
-    cursor.execute(f'''
+        cursor.execute(f'''
+    
+            CREATE INDEX
+            ON {schema}.treatment_index_duplicates
+            USING GIST (shape);
+    
+        ''')
 
-        CREATE INDEX
-        ON {schema}.treatment_index_duplicates
-        USING GIST (shape);
-
-    ''')
-    cursor.execute('COMMIT;')
-
-    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'activity')
-    postgres_create_index(cursor, schema, 'treatment_index_duplicates', 'actual_completion_date')
+    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'activity')
+    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'actual_completion_date')
 
 @log_this
-def flag_duplicate_table(cursor, schema, table_name):
+def flag_duplicate_table(conn, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
     # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
     # Ensures 1 record kept and all others dropped for each group of duplicates
-
-    cursor.execute(f'''
-
-        WITH ranking_treatment_duplicates AS (
-            SELECT *,
-                ROW_NUMBER() OVER (
-                    PARTITION BY actual_completion_date, activity, shape::text
-                ) AS row_num
-            FROM {schema}.treatment_index_duplicates
-        )
-            
-        UPDATE {schema}.treatment_index_duplicates tid
-            SET error =
-                CASE
-                    WHEN ranking_treatment_duplicates.row_num = 1 THEN 
-                        CASE
-                            WHEN tid.error IS NULL THEN 'DUPLICATE-KEEP'
-                            ELSE tid.error || ';DUPLICATE-KEEP'
-                        END
-                    ELSE 
-                        CASE
-                            WHEN tid.error IS NULL THEN 'DUPLICATE-DROP'
-                            ELSE tid.error || ';DUPLICATE-DROP'
-                        END
-                END	
-            FROM ranking_treatment_duplicates
-            WHERE tid.unique_id = ranking_treatment_duplicates.unique_id;
-
-    ''')
-    cursor.execute('COMMIT;')
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            WITH ranking_treatment_duplicates AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY actual_completion_date, activity, shape::text
+                    ) AS row_num
+                FROM {schema}.treatment_index_duplicates
+            )
+                
+            UPDATE {schema}.treatment_index_duplicates tid
+                SET error =
+                    CASE
+                        WHEN ranking_treatment_duplicates.row_num = 1 THEN 
+                            CASE
+                                WHEN tid.error IS NULL THEN 'DUPLICATE-KEEP'
+                                ELSE tid.error || ';DUPLICATE-KEEP'
+                            END
+                        ELSE 
+                            CASE
+                                WHEN tid.error IS NULL THEN 'DUPLICATE-DROP'
+                                ELSE tid.error || ';DUPLICATE-DROP'
+                            END
+                    END	
+                FROM ranking_treatment_duplicates
+                WHERE tid.unique_id = ranking_treatment_duplicates.unique_id;
+    
+        ''')
     # logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
 
 @log_this
-def update_treatment_index_duplicates(cursor, schema, table_name):
+def update_treatment_index_duplicates(conn, schema, table_name):
     # Updates treatment index table to match duplicate flags in duplicate table
-    # cursor.execute('BEGIN;')
-    cursor.execute(f'''
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
 
-        UPDATE {schema}.{table_name} ti
-        SET error = dup.error
-        FROM {schema}.treatment_index_duplicates dup
-        WHERE ti.unique_id = dup.unique_id;
-
-    ''')
-    cursor.execute('COMMIT;')
+            UPDATE {schema}.{table_name} ti
+            SET error = dup.error
+            FROM {schema}.treatment_index_duplicates dup
+            WHERE ti.unique_id = dup.unique_id;
+    
+        ''')
     # logging.info(f'Duplicates updated in {schema}.{table_name}')
 
 
@@ -112,71 +109,71 @@ def flag_duplicates(cursor, schema, table_name):
     update_treatment_index_duplicates(cursor, schema, table_name)
 
 @log_this
-def flag_high_cost_acres(cursor, schema, table_name):
-    # cursor.execute('BEGIN;')
-    cursor.execute(f'''
-        UPDATE {schema}.{table_name}
-        SET error = 
-            CASE
-                WHEN error IS NULL THEN 'HIGH_COST'
-                ELSE error || ';HIGH_COST'
-            END
-        WHERE
-        uom = 'ACRES' 
-        AND
-        acres is not null
-        AND 
-        cost_per_uom > 10000;
-    ''')
-    cursor.execute('COMMIT;')
+def flag_high_cost_acres(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name}
+            SET error = 
+                CASE
+                    WHEN error IS NULL THEN 'HIGH_COST'
+                    ELSE error || ';HIGH_COST'
+                END
+            WHERE
+            uom = 'ACRES' 
+            AND
+            acres is not null
+            AND 
+            cost_per_uom > 10000;
+        ''')
 
 @log_this
-def flag_high_cost_each(cursor, schema, table_name):
-    # cursor.execute('BEGIN;')
-    cursor.execute(f'''
-        UPDATE {schema}.{table_name}
-        SET error =            
-            CASE
-                WHEN error IS NULL THEN 'HIGH_COST'
-                ELSE error || ';HIGH_COST'
-            END
-        WHERE
-        uom = 'EACH' 
-        AND
-        acres is not null
-        AND
-        cost_per_uom/acres > 10000;
-    ''')
-    cursor.execute('COMMIT;')
+def flag_high_cost_each(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name}
+            SET error =            
+                CASE
+                    WHEN error IS NULL THEN 'HIGH_COST'
+                    ELSE error || ';HIGH_COST'
+                END
+            WHERE
+            uom = 'EACH' 
+            AND
+            acres is not null
+            AND
+            cost_per_uom/acres > 10000;
+        ''')
 
 @log_this
-def flag_high_cost_miles(cursor, schema, table_name):
-    # cursor.execute('BEGIN;')
-    cursor.execute(f'''
-        UPDATE {schema}.{table_name}
-        SET error = 
-            CASE
-                WHEN error IS NULL THEN 'HIGH_COST'
-                ELSE error || ';HIGH_COST'
-            END
-        WHERE
-        uom = 'MILES' 
-        AND
-        acres is not null
-        AND
-        cost_per_uom/(acres*640) > 10000;
-    ''')
-    cursor.execute('COMMIT;')
+def flag_high_cost_miles(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name}
+            SET error = 
+                CASE
+                    WHEN error IS NULL THEN 'HIGH_COST'
+                    ELSE error || ';HIGH_COST'
+                END
+            WHERE
+            uom = 'MILES' 
+            AND
+            acres is not null
+            AND
+            cost_per_uom/(acres*640) > 10000;
+        ''')
 
 @log_this
-def flag_high_cost(cursor, schema, table_name):
+def flag_high_cost(conn, schema, table_name):
     # Flags treatments with more than $10,000 spent per acre of treatment 
     # Different functions are needed based on the uom or Unit of Measure
     # Current uom possibilites are acres, each, and miles
 
-    flag_high_cost_acres(cursor, schema, table_name)
-    flag_high_cost_each(cursor, schema, table_name)
-    flag_high_cost_miles(cursor, schema, table_name)
+    flag_high_cost_acres(conn, schema, table_name)
+    flag_high_cost_each(conn, schema, table_name)
+    flag_high_cost_miles(conn, schema, table_name)
 
 if __name__ == "__main__":
     load_dotenv()
@@ -187,6 +184,6 @@ if __name__ == "__main__":
     logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
-    cur = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-    flag_high_cost(cur, target_schema, target_table)
-    flag_duplicates(cur, target_schema, target_table)
+    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    flag_high_cost(conn, target_schema, target_table)
+    flag_duplicates(conn, target_schema, target_table)

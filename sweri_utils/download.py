@@ -233,12 +233,12 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     # create a buffer table to hold the data without copying data
     # this is a workaround for the fact that vector translate does not support overwriting
     # the destination table if it is already in use
-    cursor.execute(f'''
-               DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
-               CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);;
-           ''')
-    # create table has to be commited to be used in another transaction
-    conn.commit()
+    with conn.transaction():
+        # create table has to be commited to be used in another transaction
+        cursor.execute(f'''
+                   DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
+                   CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);;
+               ''')
 
     with conn.transaction():
 
@@ -259,8 +259,8 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
                                              geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
                                              layerName=f'{destination_table}_buffer')
             # commit chunks to database in
-            VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
-
+            _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
+            del _
         # copy data from buffer table to destination table
         cursor.execute(f'''
             TRUNCATE {schema}.{destination_table};

@@ -83,7 +83,8 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
     gdb_path = os.path.join(os.getcwd(), gdb_name)
 
     # Upload fc to postgres
-    VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
+    _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
+    del _
     logging.info(f'{postgres_table_name} now in geodatabase')
 
     # Remove gdb
