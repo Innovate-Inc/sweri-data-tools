@@ -6,7 +6,7 @@ from .files import *
 from .conversion import *
 from .s3 import import_s3_csv_to_postgres_table
 from .sql import rename_postgres_table, insert_from_db, run_vacuum_analyze, delete_from_table, rotate_tables, \
-    refresh_spatial_index, connect_to_pg_db, copy_table_across_servers
+    refresh_spatial_index, connect_to_pg_db, copy_table_across_servers, calculate_index_for_fields
 
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
@@ -375,23 +375,6 @@ class ConversionTests(TestCase):
         mock_upload_to_s3.assert_called_once_with(bucket, filename, filename)
         self.assertEqual(result, 'upload_success')
 
-    @patch('arcpy.AddMessage')
-    def test_insert_from_db(self, message_mock):
-        mock_conn = Mock()
-        mock_conn.execute.return_value = True
-        insert_from_db(mock_conn, 'dev', 'insert_here', ['field1', 'field2'],
-                       'from_here', ['from1', 'from2'])
-
-        expected = f'''INSERT INTO dev.insert_here (shape, field1,field2) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), from1,from2 FROM dev.from_here;'''
-        self.assertEqual(
-            mock_conn.execute.call_args_list,
-            [
-                call('BEGIN;'),
-                call(expected),
-                call('COMMIT;')
-            ]
-        )
-
     @patch('requests.get')
     def test_create_coded_val_dict(self, mock_get):
         # Mock response data
@@ -441,116 +424,129 @@ class ConversionTests(TestCase):
 
 
 class SqlTests(TestCase):
-    def test_rename_postgres_table(self):
-        # Mock the connection object
-        mock_connection = Mock()
+    @patch('sweri_utils.sql.psycopg.Connection')
+    def test_rename_postgres_table(self, mock_connection):
+        # Mock the connection and cursor
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
 
         # Call the function with test data
         rename_postgres_table(
             mock_connection, "public", "old_table", "new_table")
 
         # Assert the execute method was called with the correct SQL
-        mock_connection.execute.assert_has_calls(
-            [call('BEGIN;'),
-             call('ALTER TABLE public.old_table RENAME TO new_table;'),
-             call('COMMIT;')]
+        mock_cursor.execute.assert_has_calls(
+            [
+                call('ALTER TABLE public.old_table RENAME TO new_table;'),
+            ]
         )
+        mock_connection.transaction.assert_called_once()
 
     def test_run_vacuum_analyze(self):
         # Arrange
         mock_connection = Mock()
-        mock_cursor = Mock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+
         schema = 'public'
         table = 'test_table'
 
         # Act
-        run_vacuum_analyze(mock_connection, mock_cursor, schema, table)
+        run_vacuum_analyze(mock_connection, schema, table)
 
         # Assert
-        self.assertFalse(mock_connection.autocommit)
         mock_cursor.execute.assert_has_calls([
             call(f'VACUUM ANALYZE {schema}.{table};')
         ])
 
     def test_delete_from_table(self):
         # Arrange
-        mock_cursor = Mock()
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
         schema = 'public'
         table = 'test_table'
         where = 'id = 1'
 
         # Act
-        delete_from_table(mock_cursor, schema, table, where)
+        delete_from_table(mock_connection, schema, table, where)
 
         # Assert
         expected_calls = [
-            call('BEGIN;'),
             call(f'DELETE FROM {schema}.{table} WHERE {where};'),
-            call('COMMIT;')
         ]
         mock_cursor.execute.assert_has_calls(expected_calls)
+        mock_connection.transaction.assert_called_once()
 
     def test_rotate_tables_drop(self):
-        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
-            cursor = MagicMock()
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename, patch(
+                'sweri_utils.sql.drop_temp_table') as mock_drop:
+            conn = MagicMock()
             schema = 'public'
             main_table_name = 'main_table'
             backup_table_name = 'backup_table'
             new_table_name = 'new_table'
 
-            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name)
+            rotate_tables(conn, schema, main_table_name, backup_table_name, new_table_name)
 
             mock_rename.assert_has_calls(
                 [
-                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
-                    call(cursor, schema, main_table_name, backup_table_name),
-                    call(cursor, schema, new_table_name, main_table_name)
+                    call(conn, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(conn, schema, main_table_name, backup_table_name),
+                    call(conn, schema, new_table_name, main_table_name)
                 ]
             )
-
-            cursor.execute.assert_has_calls(
+            mock_drop.assert_has_calls(
                 [
-                    call('BEGIN;'),
-                    call(f'DROP TABLE IF EXISTS {schema}.{backup_table_name}_temp CASCADE;'),
-                    call('COMMIT;')
+                    call(conn, schema, backup_table_name),
+                    call(conn, schema, backup_table_name)
                 ]
             )
 
     def test_rotate_tables_keep(self):
-        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename:
-            cursor = MagicMock()
+        with patch('sweri_utils.sql.rename_postgres_table') as mock_rename, patch(
+                'sweri_utils.sql.drop_temp_table') as mock_drop:
+            conn = MagicMock()
             schema = 'public'
             main_table_name = 'main_table'
             backup_table_name = 'backup_table'
             new_table_name = 'new_table'
-            rotate_tables(cursor, schema, main_table_name, backup_table_name, new_table_name, False)
+            rotate_tables(conn, schema, main_table_name, backup_table_name, new_table_name, False)
             mock_rename.assert_has_calls(
                 [
-                    call(cursor, schema, backup_table_name, f'{backup_table_name}_temp'),
-                    call(cursor, schema, main_table_name, backup_table_name),
-                    call(cursor, schema, new_table_name, main_table_name),
-                    call(cursor, schema, f'{backup_table_name}_temp', new_table_name)
+                    call(conn, schema, backup_table_name, f'{backup_table_name}_temp'),
+                    call(conn, schema, main_table_name, backup_table_name),
+                    call(conn, schema, new_table_name, main_table_name),
+                    call(conn, schema, f'{backup_table_name}_temp', new_table_name)
                 ]
             )
+            mock_drop.assert_called_once_with(conn, schema, backup_table_name)
 
     def test_refresh_spatial_index(self):
-        cursor = MagicMock()
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
         schema = 'public'
         table = 'test_table'
 
-        refresh_spatial_index(cursor, schema, table)
+        refresh_spatial_index(mock_connection, schema, table)
 
-        cursor.execute.assert_any_call('BEGIN;')
-        cursor.execute.assert_any_call(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
-        cursor.execute.assert_any_call('COMMIT;')
+        mock_cursor.execute.assert_called_once_with(f'CREATE INDEX ON {schema}.{table} USING GIST (shape);')
+        mock_connection.transaction.assert_called_once()
 
     @patch('psycopg.connect')
     def test_connect_to_pg_db(self, mock_connect):
         # Arrange
-        mock_cursor = MagicMock()
         mock_connection = MagicMock()
         mock_connect.return_value = mock_connection
-        mock_connection.cursor.return_value = mock_cursor
 
         db_host = 'localhost'
         db_port = 5432
@@ -559,7 +555,7 @@ class SqlTests(TestCase):
         db_password = 'test_password'
 
         # Act
-        cursor, connection = connect_to_pg_db(db_host, db_port, db_name, db_user, db_password)
+        connection = connect_to_pg_db(db_host, db_port, db_name, db_user, db_password)
 
         # Assert
         mock_connect.assert_called_once_with(
@@ -567,14 +563,19 @@ class SqlTests(TestCase):
             port=db_port,
             dbname=db_name,
             user=db_user,
-            password=db_password
+            password=db_password,
+            autocommit=True
         )
-        self.assertEqual(cursor, mock_cursor)
+
         self.assertEqual(connection, mock_connection)
 
     def test_insert_from_db(self):
-        # Mock the cursor
-        cursor = MagicMock()
+        # Mock the connection and transaction context
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
 
         # Define the parameters
         schema = 'public'
@@ -584,20 +585,25 @@ class SqlTests(TestCase):
         from_fields = ['field1', 'field2']
         expected_q = f'''INSERT INTO {schema}.{insert_table} (shape, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), {','.join(from_fields)} FROM {schema}.{from_table};'''
         # Call the function
-        insert_from_db(cursor, schema, insert_table, insert_fields, from_table, from_fields)
+        insert_from_db(mock_connection, schema, insert_table, insert_fields, from_table, from_fields)
 
         # Check if the correct SQL commands were executed
-        cursor.execute.assert_has_calls(
-            [
-                call('BEGIN;'),
-                call(expected_q),
-                call('COMMIT;')
-            ]
-        )
+        mock_cursor.execute.assert_called_once_with(expected_q)
+        mock_connection.transaction.assert_called_once()
 
     def test_copy_table_across_servers(self):
-        from_cursor = MagicMock()
-        to_cursor = MagicMock()
+        from_mock_connection = MagicMock()
+        from_mock_cursor = MagicMock()
+        from_mock_connection.cursor.return_value = from_mock_cursor
+        from_mock_transaction = MagicMock()
+        from_mock_connection.transaction.return_value.__enter__.return_value = from_mock_transaction
+
+        to_mock_connection = MagicMock()
+        to_mock_cursor = MagicMock()
+        to_mock_connection.cursor.return_value = to_mock_cursor
+        to_mock_transaction = MagicMock()
+        to_mock_connection.transaction.return_value.__enter__.return_value = to_mock_transaction
+
         from_schema = 'public'
         from_table = 'source_table'
         to_schema = 'public'
@@ -605,18 +611,30 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+        copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
                                   to_columns)
 
-        from_cursor.copy.assert_called_once_with(
+        from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
-        assert call(f"DELETE FROM {to_schema}.{to_table};") not in to_cursor.execute.call_args_list
-        to_cursor.copy.assert_called_once_with(
+        assert call(f"DELETE FROM {to_schema}.{to_table};") not in to_mock_cursor.execute.call_args_list
+        to_mock_cursor.copy.assert_called_once_with(
             f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
+        from_mock_connection.transaction.assert_called_once()
+        to_mock_connection.transaction.assert_called_once()
 
     def test_copy_table_across_servers_with_delete(self):
-        from_cursor = MagicMock()
-        to_cursor = MagicMock()
+        from_mock_connection = MagicMock()
+        from_mock_cursor = MagicMock()
+        from_mock_connection.cursor.return_value = from_mock_cursor
+        from_mock_transaction = MagicMock()
+        from_mock_connection.transaction.return_value.__enter__.return_value = from_mock_transaction
+
+        to_mock_connection = MagicMock()
+        to_mock_cursor = MagicMock()
+        to_mock_connection.cursor.return_value = to_mock_cursor
+        to_mock_transaction = MagicMock()
+        to_mock_connection.transaction.return_value.__enter__.return_value = to_mock_transaction
+
         from_schema = 'public'
         from_table = 'source_table'
         to_schema = 'public'
@@ -624,18 +642,30 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+        copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
                                   to_columns, True)
 
-        from_cursor.copy.assert_called_once_with(
+        from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
-        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table}")
-        to_cursor.copy.assert_called_once_with(
+        to_mock_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table}")
+        to_mock_cursor.copy.assert_called_once_with(
             f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
+        to_mock_connection.transaction.assert_called_once()
+        from_mock_connection.transaction.assert_called_once()
 
     def test_copy_table_across_servers_with_delete_with_where(self):
-        from_cursor = MagicMock()
-        to_cursor = MagicMock()
+        from_mock_connection = MagicMock()
+        from_mock_cursor = MagicMock()
+        from_mock_connection.cursor.return_value = from_mock_cursor
+        from_mock_transaction = MagicMock()
+        from_mock_connection.transaction.return_value.__enter__.return_value = from_mock_transaction
+
+        to_mock_connection = MagicMock()
+        to_mock_cursor = MagicMock()
+        to_mock_connection.cursor.return_value = to_mock_cursor
+        to_mock_transaction = MagicMock()
+        to_mock_connection.transaction.return_value.__enter__.return_value = to_mock_transaction
+
         from_schema = 'public'
         from_table = 'source_table'
         to_schema = 'public'
@@ -643,20 +673,54 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        copy_table_across_servers(from_cursor, from_schema, from_table, to_cursor, to_schema, to_table, from_columns,
+        copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
                                   to_columns, True, 'field1 = 1')
 
-        from_cursor.copy.assert_called_once_with(
+        from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table} WHERE field1 = 1) TO STDOUT (FORMAT BINARY)")
-        to_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table} WHERE field1 = 1")
-        to_cursor.copy.assert_called_once_with(
+        to_mock_cursor.execute.assert_any_call(f"DELETE FROM {to_schema}.{to_table} WHERE field1 = 1")
+        to_mock_cursor.copy.assert_called_once_with(
             f"COPY {to_schema}.{to_table} (field1,field2) FROM STDIN (FORMAT BINARY)")
 
+        to_mock_connection.transaction.assert_called_once()
+        from_mock_connection.transaction.assert_called_once()
+
+    def test_calculate_index_for_fields(self):
+        with patch('sweri_utils.sql.refresh_spatial_index') as mock_refresh, patch('sweri_utils.sql.postgres_create_index') as mock_index:
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_conn.cursor.return_value = mock_cursor
+            schema = 'public'
+            table = 'test_table'
+            fields = ['field1', 'field2']
+            spatial = True
+
+            calculate_index_for_fields(mock_conn, schema, table, fields, spatial)
+
+            mock_refresh.assert_called_once_with(mock_conn, schema, table)
+            mock_index.assert_has_calls(
+                [
+                    call(mock_conn, schema, table, 'field1'),
+                    call(mock_conn, schema, table, 'field2')
+                ]
+            )
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        schema = "public"
+        table = "test_table"
+        fields = ["field1", "field2"]
+        spatial = True
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
-        # Mock cursor
+        # Mock connection, cursor, and trasaction context
+        mock_connection = MagicMock()
         mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
 
         # Define test parameters
         db_schema = 'public'
@@ -667,18 +731,18 @@ class S3Tests(TestCase):
         aws_region = 'us-west-2'
 
         # Call the function
-        import_s3_csv_to_postgres_table(mock_cursor, db_schema, fields, destination_table, s3_bucket, csv_file,
+        import_s3_csv_to_postgres_table(mock_connection, db_schema, fields, destination_table, s3_bucket, csv_file,
                                         aws_region)
 
         mock_cursor.execute.assert_has_calls(
             [
-                call('BEGIN;'),
                 call(f'DELETE FROM {db_schema}.{destination_table};'),
                 call(
                     f"""SELECT aws_s3.table_import_from_s3('{db_schema}.{destination_table}', '{",".join(fields)}', '(format csv, HEADER)', aws_commons.create_s3_uri('{s3_bucket}', '{csv_file}', '{aws_region}'));"""),
-                call('COMMIT;')
             ]
         )
+
+        mock_connection.transaction.assert_called_once()
 
     def test_upload_to_s3(self):
         # Arrange
@@ -697,6 +761,7 @@ class S3Tests(TestCase):
             # Assert
             mock_boto_client.assert_called_once_with('s3')
             mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
+
 
 class SwizzleTests(TestCase):
     @patch('requests.get')
@@ -728,16 +793,14 @@ class SwizzleTests(TestCase):
         resp = add_to_definition("any_view_url", {"layers": [], "tables": []}, "any_token")
         assert mock_post.called
 
-
-
     @patch('requests.get')
     @patch('requests.post')
     def test_swizzle_service_success(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'layers': [{'id': 1}], 'tables': [{'id': 2}]},  # get_new_definition
-            {}, # get_layer_definition
-            {}, # get_layer_definition
-            {'layers': [{'id': 1}], 'tables': [{'id': 2}]}   # clear_current_definition
+            {},  # get_layer_definition
+            {},  # get_layer_definition
+            {'layers': [{'id': 1}], 'tables': [{'id': 2}]}  # clear_current_definition
         ]
         mock_post.return_value = MagicMock()
 
@@ -751,7 +814,7 @@ class SwizzleTests(TestCase):
     def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'layers': [], 'tables': []},  # get_new_definition
-            {'layers': [], 'tables': []}   # clear_current_definition
+            {'layers': [], 'tables': []}  # clear_current_definition
         ]
         mock_post.return_value = MagicMock()
 
@@ -765,7 +828,7 @@ class SwizzleTests(TestCase):
     def test_swizzle_service_invalid_token(self, mock_post, mock_get):
         mock_get.return_value.json.side_effect = [
             {'error': 'Invalid token'},  # get_new_definition
-            {'error': 'Invalid token'}   # clear_current_definition
+            {'error': 'Invalid token'}  # clear_current_definition
         ]
         mock_post.return_value = MagicMock()
 
