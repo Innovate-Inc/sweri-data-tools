@@ -26,13 +26,13 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
         - "5432:5432"
+    shm_size: 1gb
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
   app:
-
     image: ${DOCKER_IMAGE_NAME}
     build:
       context: ../
@@ -48,7 +48,33 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
     volumes:
       - ..:/code
+#  app_console:
+#    extends:
+#      service:
+#        app
+#    ports: !reset [ ]
+#    volumes:
+#      - ..:/code
+  rabbit:
+    image: rabbitmq:4.0.1-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ../rabbitmq.conf:/etc/rabbitmq/conf.d/rabbitmq.conf
+  celery:
+    extends:
+      service: app # todo: change to image
+    volumes:
+      - ..:/code
+    command: celery -A worker worker --loglevel=debug
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
 volumes:
   postgres_data:
