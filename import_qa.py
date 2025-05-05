@@ -7,9 +7,10 @@ import math
 import logging
 import geopandas as gpd
 import pandas as pd
+import numpy as np
 
 from sweri_utils.sql import connect_to_pg_db
-from sweri_utils.download import fetch_features
+from sweri_utils.download import fetch_geojson_features, get_ids, get_all_features
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -70,10 +71,9 @@ def return_sweri_pg_query(sweri_fields, schema, treatment_index, source_database
     sql_sweri_fields = ', '.join(f"{field}" for field in sweri_fields)
     id_list = ', '.join(f"'{i}'" for i in ids)
 
-    sweri_pg_query = f"SELECT {sql_sweri_fields}, shape FROM {schema}.{treatment_index} WHERE identifier_database = '{source_database}' AND unique_id IN ({id_list})"
+    sweri_pg_query = f"SELECT shape, {sql_sweri_fields} FROM {schema}.{treatment_index} WHERE identifier_database = '{source_database}' AND unique_id IN ({id_list})"
 
     return sweri_pg_query
-
 
 def return_service_where_clause(source_database, ids):
     if source_database == 'FACTS Hazardous Fuels':
@@ -99,25 +99,30 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
 
     if gdf.empty:
         return None
+    gdf = gdf.rename(columns={'shape': 'geometry'})
+    gdf.set_geometry('geometry', inplace=True)
+    gdf.set_crs(epsg=3857, inplace=True)
+    gdf_reprojected = gdf.to_crs(epsg=4326)
 
-    return gdf
+    return gdf_reprojected
 
 
 def service_to_gdf(where_clause, service_fields, service_url, wkid):
-    fields_str = ",".join(service_fields)
-    params = {'f': 'geojson', 'outSR': 4326, 'outFields': fields_str, 'returnGeometry': 'true', 'where': where_clause}
 
-    service_features = fetch_features(service_url + '/query', params)
+    service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=4326, chunk_size=70)
 
-    gdf = gpd.GeoDataFrame.from_features(service_features, crs="EPSG:4326")
-    gdf = gdf.to_crs(epsg=wkid)
+
+    gdf = gpd.GeoDataFrame.from_features(service_features)
+
+
+    gdf = gdf.set_crs(epsg=4326, inplace=True)
 
     return gdf
 
 
 def prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field):
     # convert date from ms to datetime if needed
-    if isinstance(service_gdf[service_date_field].dropna().iloc[0], (int, float)):
+    if isinstance(service_gdf[service_date_field].dropna().iloc[0], (int, float, np.integer, np.floating)):
         service_gdf.loc[:, service_date_field] = pd.to_datetime(service_gdf[service_date_field], unit='ms')
 
     # strip strings
@@ -135,44 +140,34 @@ def prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field):
 
 
 def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
-    same = 0
-    different = 0
     service_id_field, sweri_id_field = id_map
 
-    # Set index to id fields
-    service_gdf = service_gdf.set_index(service_id_field)
+    rename_map = {service_field: sweri_field for service_field, sweri_field in comparison_field_map}
+    service_gdf = service_gdf.rename(columns=rename_map)
+
+    # Set index to id fields after rename
+    service_gdf = service_gdf.set_index(sweri_id_field)
     sweri_gdf = sweri_gdf.set_index(sweri_id_field)
 
-    # Remove ids from comparison map since they are indexes now
-    fields_to_compare = [pair for pair in comparison_field_map if pair != id_map]
+    service_gdf = service_gdf.sort_index()
+    sweri_gdf = sweri_gdf.sort_index()
 
-    for index, sweri_row in sweri_gdf.iterrows():
+    service_gdf_no_geom = service_gdf.drop(columns='geometry', errors='ignore')
+    sweri_gdf_no_geom = sweri_gdf.drop(columns='geometry', errors='ignore')
 
-        if index not in service_gdf.index:
-            logger.info(f'No feature returned for {index}')
-            different += 1
-            continue
+    # Compare all but the geoms
+    diff = service_gdf_no_geom.compare(sweri_gdf_no_geom, result_names=('service', 'sweri'))
+    logger.info('Attribute Difference: ')
+    logger.info(diff)
 
-        service_row = service_gdf.loc[index]
+    # Compare the geoms
+    geom_matches = service_gdf.geometry.geom_equals_exact(sweri_gdf.geometry, tolerance=10)
+    geom_mismatch_indices = geom_matches[~geom_matches].index
 
-        # Create 2 series that have the same column names for direct .compare for each row
-        service_vals = pd.Series(
-            {sweri_field: service_row[service_field] for service_field, sweri_field in fields_to_compare})
-        sweri_vals = sweri_row[[sweri_field for service_field, sweri_field in fields_to_compare]]
+    logger.info('Geom Mismatches:')
+    logger.info(geom_mismatch_indices)
 
-        diff = service_vals.compare(sweri_vals, result_names=('service', 'sweri'))
 
-        # Add geom compare
-
-        if diff.empty:
-            same += 1
-        else:
-            different += 1
-            logger.info(f"No Match for ID: {index}\n{diff.to_string(justify='left')}")
-            logger.info('-'*40)
-
-    logger.info(f'same: {same}')
-    logger.info(f'different: {different}')
 
 
 def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
@@ -306,12 +301,11 @@ if __name__ == '__main__':
     common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
 
     logger.info('new run')
-    logger.info('______________________________________')
-
-    nfpors_sample(cur, conn, treatment_index_table, target_schema, nfpors_url)
+    logger.info('-' * 40)
 
     common_attributes_sample(cur, conn, treatment_index_table, target_schema,
                              common_attributes_url)
+    nfpors_sample(cur, conn, treatment_index_table, target_schema, nfpors_url)
     hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
                            hazardous_fuels_url)
 
