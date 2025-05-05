@@ -99,30 +99,29 @@ class DownloadTests(TestCase):
             self.assertTrue(mock_post.called_once_with(expected_args))
             self.assertTrue(True)
 
-    @patch('sweri_utils.download.json_to_postgres')
-    def test_fetch_create_new_fc(self, json_to_postgres_mock):
+    def test_service_to_postgres(self):
         with (patch('sweri_utils.download.get_ids') as get_ids_mock,
               patch('sweri_utils.download.get_all_features') as get_feat_mock,
-              patch('sweri_utils.download.get_fields') as get_fields_mock):
+              patch('sweri_utils.download.get_fields') as get_fields_mock,
+              patch('osgeo.gdal.VectorTranslate') as mock_VectorTranslate):
             url = 'http://test.url'
             where = '1=1'
             geom = {'rings': []}
-            out_fc = 'some_path_to_fc'
             get_ids_mock.return_value = [1, 2, 3]
             get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {
                 'attributes': {'another': 'feature'}}]
-
             get_fields_mock.return_value = []
+            mock_VectorTranslate.return_value = None
 
-            r = fetch_and_create_featureclass(url, where, 'out.gdb', 'fires',
-                                              geom, 'polygon', 102100)
-            self.assertEqual(r, out_fc)
+            conn = MagicMock()
+            service_to_postgres(url, where, 4326, 'PG:', 'test', 'dest_tabl',
+                                    conn, 1)
+
             self.assertTrue(get_feat_mock.called_once_with(
                 url, where, 102100, None))
             self.assertTrue(get_ids_mock.called_once_with(
                 url, where, geom, 'polygon', ))
             self.assertTrue(get_fields_mock.called_once_with(url))
-            json_to_postgres_mock.assert_called_once()
 
     def test_retry_calls_num_times_calls_failure_callback(self):
         i_failed = Mock(side_effect=Exception('retries exceeded'))
