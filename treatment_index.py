@@ -18,19 +18,18 @@ def update_nfpors(conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
     # database = 'sweri'
 
     try:
-        service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, insert_nfpors_additions)
+        service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, 70)
     except Exception as e:
         logger.error(f'Error downloading NFPORS: {e}... continuing')
         pass
 
 @log_this
-def update_ifprs(conn, schema, sde_file, wkid, service_url, insert_ifprs_additions):
+def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
     where = '1=1'
     destination_table = 'ifprs_actual_treatment'
-    database = 'sweri'
+    # database = 'sweri'
 
-    service_to_postgres(service_url, where, wkid, database, schema, destination_table, conn, sde_file,
-                        insert_ifprs_additions, chunk_size=250)
+    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -40,7 +39,7 @@ def create_nfpors_where_clause():
     where_clause = f"1=1"
     if len(exlusion_ids_tuple) > 0:
         where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
-    
+
     return where_clause
 
 @log_this
@@ -120,7 +119,7 @@ def ifprs_insert(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
-        INSERT INTO {schema}.{treatment_index}_temp(
+        INSERT INTO {schema}.{treatment_index} (
     
             objectid, 
             name,  date_current, actual_completion_date, 
@@ -132,7 +131,7 @@ def ifprs_insert(conn, schema, treatment_index):
         )
         SELECT
     
-            sde.next_rowid('{schema}', '{treatment_index}_temp'),
+            sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current, completiondate AS actual_completion_date,
             calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
             fundingsource as fund_source, 'IFPRS Actual Treatment' AS identifier_database, actualtreatmentid AS unique_id,
@@ -148,7 +147,7 @@ def ifprs_treatment_date(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
-            UPDATE {schema}.{treatment_index}_temp t
+            UPDATE {schema}.{treatment_index} t
             SET treatment_date = i.initiationdate,
             date_source = 'initiationdate'
             FROM {schema}.ifprs_actual_treatment i
@@ -158,7 +157,7 @@ def ifprs_treatment_date(conn, schema, treatment_index):
         ''')
 
         cursor.execute(f'''
-            UPDATE {schema}.{treatment_index}_temp t
+            UPDATE {schema}.{treatment_index} t
             SET treatment_date = i.createdondate,
             date_source = 'createdondate'
             FROM {schema}.ifprs_actual_treatment i
@@ -397,17 +396,12 @@ def common_attributes_date_filtering(conn, schema, table_name):
     # Excludes treatment entries before 1984
     # uses date_completed if available, and act_created_date if date_completed is null
 
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-                       
-        DELETE from {schema}.{table_name} WHERE
-        date_completed < '1984-1-1'::date
-        OR
-        (date_completed is null AND act_created_date < '1984-1-1'::date);
-    
-              
-        ''')
+    with conn.cursor() as cursor:
+        with conn.transaction():
+            cursor.execute(f'''DELETE from {schema}.{table_name} WHERE
+            date_completed < '1984-1-1'::date
+            OR
+            (date_completed is null AND act_created_date < '1984-1-1'::date);''')
 
     logger.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
 
@@ -415,47 +409,38 @@ def common_attributes_date_filtering(conn, schema, table_name):
 @log_this
 def exclude_facts_hazardous_fuels(conn, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-                       
-        DELETE FROM {schema}.{table}
-        WHERE EXISTS (
-            SELECT 1 FROM {schema}.{facts_haz_table}
-            WHERE activity_cn = event_cn 
-        )
-              
-        ''')
+    with conn.cursor() as cursor:
+        with conn.transaction():
+            cursor.execute(f'''            
+                DELETE FROM {schema}.{table} USING {schema}.{facts_haz_table}
+                WHERE event_cn = activity_cn
+            ''')
     logger.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 @log_this
 def exclude_by_acreage(conn, schema, table):
     #removes all treatments with null acerage or <= 5 acres
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-                       
-        DELETE FROM {schema}.{table}
-        WHERE
-        gis_acres <= 5 OR
-        gis_acres IS NULL; 
-        
-        ''')
-    logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
+    with conn.cursor() as cursor:
+        with conn.transaction():
+            cursor.execute(f'''
+            DELETE FROM {schema}.{table}
+            WHERE
+            gis_acres <= 5 OR
+            gis_acres IS NULL;
+            ''')
+            logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
 @log_this
 def trim_whitespace(conn, schema, table):
     #Some entries have spaces before or after that interfere with matching, this trims those spaces out
     cursor = conn.cursor()
     with conn.transaction():
-        cursor.execute(f'''
-                       
-        UPDATE {schema}.{table}
-        SET
-        activity = TRIM(activity),
-        method = TRIM(method),
-        equipment = TRIM(equipment);
-        
+        cursor.execute(f'''              
+            UPDATE {schema}.{table}
+            SET
+            activity = TRIM(activity),
+            method = TRIM(method),
+            equipment = TRIM(equipment);
         ''')
     logger.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
@@ -851,7 +836,8 @@ if __name__ == "__main__":
     nfpors_fund_code(conn, target_schema, insert_table)
     nfpors_treatment_date(conn, target_schema, insert_table)
 
-    #IFPRS processing and insert
+    # IFPRS processing and insert
+    update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     ifprs_date_filtering(conn, target_schema)
     ifprs_insert(conn, target_schema, insert_table)
     ifprs_treatment_date(conn, target_schema, insert_table)
