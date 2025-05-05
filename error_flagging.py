@@ -109,26 +109,10 @@ def flag_duplicates(cursor, schema, table_name):
     update_treatment_index_duplicates(cursor, schema, table_name)
 
 @log_this
-def flag_high_cost_acres(conn, schema, table_name):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-            UPDATE {schema}.{table_name}
-            SET error = 
-                CASE
-                    WHEN error IS NULL THEN 'HIGH_COST'
-                    ELSE error || ';HIGH_COST'
-                END
-            WHERE
-            uom = 'ACRES' 
-            AND
-            acres is not null
-            AND 
-            cost_per_uom > 10000;
-        ''')
-
-@log_this
-def flag_high_cost_each(conn, schema, table_name):
+def flag_high_cost(conn, schema, table_name):
+    # Flags treatments with more than $10,000 spent per acre of treatment
+    # Different functions are needed based on the uom or Unit of Measure
+    # Current uom possibilites are acres, each, and miles
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
@@ -138,42 +122,30 @@ def flag_high_cost_each(conn, schema, table_name):
                     WHEN error IS NULL THEN 'HIGH_COST'
                     ELSE error || ';HIGH_COST'
                 END
-            WHERE
-            uom = 'EACH' 
-            AND
-            acres is not null
-            AND
-            cost_per_uom/acres > 10000;
+             WHERE (
+                (uom = 'EACH' AND acres IS NOT NULL AND cost_per_uom / acres > 10000)
+                OR
+                (uom = 'ACRES' AND acres IS NOT NULL AND cost_per_uom > 10000)
+                );
+    
         ''')
 
 @log_this
-def flag_high_cost_miles(conn, schema, table_name):
+def flag_uom_outliers(conn, schema, table_name):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{table_name}
             SET error = 
                 CASE
-                    WHEN error IS NULL THEN 'HIGH_COST'
-                    ELSE error || ';HIGH_COST'
+                    WHEN error IS NULL THEN 'CHECK_UOM'
+                    ELSE error || ';CHECK_UOM'
                 END
             WHERE
             uom = 'MILES' 
-            AND
-            acres is not null
-            AND
-            cost_per_uom/(acres*640) > 10000;
+            OR
+            uom = 'EACH';
         ''')
-
-@log_this
-def flag_high_cost(conn, schema, table_name):
-    # Flags treatments with more than $10,000 spent per acre of treatment 
-    # Different functions are needed based on the uom or Unit of Measure
-    # Current uom possibilites are acres, each, and miles
-
-    flag_high_cost_acres(conn, schema, table_name)
-    flag_high_cost_each(conn, schema, table_name)
-    flag_high_cost_miles(conn, schema, table_name)
 
 if __name__ == "__main__":
     load_dotenv()
@@ -184,6 +156,8 @@ if __name__ == "__main__":
     logger.addHandler(watchtower.CloudWatchLogHandler())
 
 
-    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
     flag_high_cost(conn, target_schema, target_table)
     flag_duplicates(conn, target_schema, target_table)
+    flag_uom_outliers(conn, target_schema, target_table)
+    conn.close()
