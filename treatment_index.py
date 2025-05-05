@@ -10,7 +10,7 @@ import watchtower
 from sweri_utils.sql import rename_postgres_table, connect_to_pg_db, postgres_create_index
 from sweri_utils.download import get_ids, service_to_postgres
 from sweri_utils.files import gdb_to_postgres
-from error_flagging import flag_duplicates, flag_high_cost
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
@@ -958,7 +958,9 @@ if __name__ == "__main__":
     insert_table = f'treatment_index'
 
     cur, conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
+
     create_temp_table(sde_connection_file, insert_table, target_projection, cur, target_schema)
+
 
     # gdb_to_postgres here updates FACTS Hazardous Fuels in our Database
     gdb_to_postgres(facts_haz_gdb_url, facts_haz_gdb, target_projection, facts_haz_fc_name, hazardous_fuels_table, sde_connection_file, target_schema)
@@ -990,9 +992,10 @@ if __name__ == "__main__":
     correct_biomass_removal_typo(cur, target_schema, insert_table)
 
     arcpy.management.RebuildIndexes(sde_connection_file, 'NO_SYSTEM', f'sweri.{target_schema}.{insert_table}_temp', 'ALL')
-
     flag_high_cost(cur, target_schema, f'{insert_table}_temp')
     flag_duplicates(cur, target_schema, f'{insert_table}_temp')
+    flag_uom_outliers(cur, target_schema, f'{insert_table}_temp')
+
     add_twig_category(cur, target_schema)
 
     create_treatment_points(target_schema, sde_connection_file, insert_table)
