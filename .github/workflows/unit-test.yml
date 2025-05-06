@@ -51,7 +51,7 @@ jobs:
         id: build-image-backend
         uses: docker/build-push-action@v6
         with:
-          file: Dockerfile
+          file: ./docker/Dockerfile
           context: .
           load: true
           cache-from: type=registry,ref=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
