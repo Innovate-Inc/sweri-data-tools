@@ -50,7 +50,7 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - ..:/code
+      - ..:/src
 #  app_console:
 #    extends:
 #      service:
@@ -69,7 +69,7 @@ services:
     extends:
       service: app # todo: change to image
     volumes:
-      - ..:/code
+      - ..:/src
     command: celery -A worker worker --loglevel=debug
   redis:
     image: redis:latest

@@ -10,3 +10,4 @@ psycopg2==2.9.10
 celery[redis,sqs]==5.5.1
 pytest
 pytest-cov
+git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
