@@ -178,7 +178,9 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     diff = service_gdf_no_geom.compare(sweri_gdf_no_geom, result_names=('service', 'sweri'))
 
     # Compare geoms
-    geom_matches = service_gdf.geometry.geom_equals_exact(sweri_gdf.geometry, tolerance=1)
+    geom_matches = service_gdf.geometry.normalize().geom_equals_exact(
+        sweri_gdf.geometry.normalize(), tolerance=1e-5
+    )
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
     if only_in_sweri:
