@@ -75,3 +75,5 @@ jobs:
     with:
       tag: staging
       environment: production
+    secrets:
+      AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
