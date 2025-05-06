@@ -55,7 +55,7 @@ jobs:
           context: .
           load: true
           cache-from: type=registry,ref=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-          outputs: type=docker,dest=${{ runner.temp }}/app.tar
+#          outputs: type=docker,dest=${{ runner.temp }}/app.tar
       - name: Run backend unit tests
         run: |
           docker run ${{ steps.build-image-backend.outputs.imageid }} \
@@ -65,11 +65,11 @@ jobs:
         with:
           name: coverage-report
           path: coverage
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: myimage
-          path: ${{ runner.temp }}/myimage.tar
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: myimage
+#          path: ${{ runner.temp }}/myimage.tar
   push_image:
     needs: unit_test
     permissions:
@@ -79,6 +79,6 @@ jobs:
     with:
       tag: staging
       environment: production
-      image_temp: ${{ runner.temp }}
+    #  image_temp: ${{ runner.temp }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
