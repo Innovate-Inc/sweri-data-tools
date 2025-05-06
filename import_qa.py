@@ -10,7 +10,7 @@ import pandas as pd
 import numpy as np
 
 from sweri_utils.sql import connect_to_pg_db
-from sweri_utils.download import fetch_geojson_features, get_ids, get_all_features
+from sweri_utils.download import fetch_geojson_features
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -23,6 +23,7 @@ file_handler.setFormatter(formatter)
 if not logger.handlers:
     logger.addHandler(file_handler)
 
+
 def flatten_list(source_list):
     flat_list = []
 
@@ -32,6 +33,7 @@ def flatten_list(source_list):
         else:
             flat_list.append(item)
     return flat_list
+
 
 def get_feature_count(cursor, schema, treatment_index, source_database):
     cursor.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
@@ -75,6 +77,7 @@ def return_sweri_pg_query(sweri_fields, schema, treatment_index, source_database
 
     return sweri_pg_query
 
+
 def return_service_where_clause(source_database, ids):
     if source_database == 'FACTS Hazardous Fuels':
         id_list = ', '.join(f"'{i}'" for i in ids)
@@ -108,8 +111,8 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
 
 
 def service_to_gdf(where_clause, service_fields, service_url, wkid):
-
-    service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=4326, chunk_size=70)
+    service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=4326,
+                                              chunk_size=70)
 
     gdf = gpd.GeoDataFrame.from_features(service_features)
 
@@ -190,7 +193,8 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
         logger.info("Geometry mismatches found for unique_id(s):")
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
 
-    logger.info('-'*40)
+    logger.info('-' * 40)
+
 
 def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
                        wkid=3857):
@@ -272,6 +276,7 @@ def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url)
         service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
+
 def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
     source_database = 'NFPORS'
     comparison_field_map = [
@@ -303,7 +308,7 @@ def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
             ('st_abbr', 'state'),
             ('merged_id', 'unique_id')
         ]
-        updated_id_map =  ('merged_id', 'unique_id')
+        updated_id_map = ('merged_id', 'unique_id')
 
         service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, updated_comparison_field_map, updated_id_map)
