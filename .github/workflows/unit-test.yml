@@ -1,5 +1,13 @@
 name: Unit test python library
 
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: sweri-data-tools
+
+permissions:
+  id-token: write
+  contents: read
+
 on:
   push:
     branches:
