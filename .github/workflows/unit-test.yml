@@ -67,7 +67,6 @@ jobs:
   push_image:
 #    needs: unit_test
 #    environment: production
-    environment: production
 
     permissions:
       id-token: write
