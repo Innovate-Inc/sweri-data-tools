@@ -11,8 +11,7 @@ from sweri_utils.logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
-def update_nfpors(conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
-    nfpors_url = os.getenv('NFPORS_URL')
+def update_nfpors(nfpors_url, conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     # database = 'sweri'
@@ -249,7 +248,6 @@ def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
             OR
             (date_completed is null AND date_planned < '1984-1-1'::date);
         ''')
-    logger.info('Records from before Jan 1 1984 deleted from FACTS Hazardous Fuels')
 
 @log_this
 def nfpors_date_filtering(conn, schema):
@@ -263,7 +261,6 @@ def nfpors_date_filtering(conn, schema):
             OR
             ((act_comp_dt is null AND plan_int_dt is NULL) AND col_date < '1984-1-1'::date);
         ''')
-    logger.info('Records from before Jan 1 1984 deleted from NFPORS')
 
 @log_this
 def nfpors_fund_code(conn, schema, treatment_index):
@@ -403,8 +400,6 @@ def common_attributes_date_filtering(conn, schema, table_name):
             OR
             (date_completed is null AND act_created_date < '1984-1-1'::date);''')
 
-    logger.info(f"Records from before Jan 1 1984 deleted from {schema}.{table_name}")
-
 
 @log_this
 def exclude_facts_hazardous_fuels(conn, schema, table, facts_haz_table):
@@ -415,7 +410,6 @@ def exclude_facts_hazardous_fuels(conn, schema, table, facts_haz_table):
                 DELETE FROM {schema}.{table} USING {schema}.{facts_haz_table}
                 WHERE event_cn = activity_cn
             ''')
-    logger.info(f"deleted {schema}.{table} entries that are also in FACTS Hazardous Fuels")
 
 @log_this
 def exclude_by_acreage(conn, schema, table):
@@ -428,7 +422,6 @@ def exclude_by_acreage(conn, schema, table):
             gis_acres <= 5 OR
             gis_acres IS NULL;
             ''')
-            logger.info(f"deleted Entries <= 5 acres {schema}.{table}")
 
 @log_this
 def trim_whitespace(conn, schema, table):
@@ -442,7 +435,6 @@ def trim_whitespace(conn, schema, table):
             method = TRIM(method),
             equipment = TRIM(equipment);
         ''')
-    logger.info(f"removed white space from activity, method, and equipment in {schema}.{table}")
 
 @log_this
 def include_logging_activities(conn, schema, table):
@@ -475,7 +467,6 @@ def include_logging_activities(conn, schema, table):
         OR equipment IS NULL);
         
         ''')
-    logger.info(f"r2 set to 'PASS' for logging activities with proper methods and equipment in {schema}.{table}")
 
 @log_this
 def include_fire_activites(conn, schema, table):
@@ -509,7 +500,6 @@ def include_fire_activites(conn, schema, table):
     
         
         ''')
-    logger.info(f"r3 set to 'PASS' for fire activities with proper methods and equipment in {schema}.{table}")
 
 def include_fuel_activities(conn, schema, table):
     # Make sure the activity includes 'fuel'
@@ -540,7 +530,6 @@ def include_fuel_activities(conn, schema, table):
     
         
         ''')
-    logger.info(f"r4 set to 'PASS' for fuel activities with proper methods and equipment in {schema}.{table}")
 
 def activity_filter(conn, schema, table):
     # Filters based on activity to ensure only intended activities enter the database
@@ -565,7 +554,6 @@ def activity_filter(conn, schema, table):
         );
         
         ''')
-    logger.info(f"r6 set to 'PASS' passing activities with acceptable activity values {schema}.{table}")
 
 
 def include_other_activites(conn, schema, table):
@@ -608,7 +596,6 @@ def include_other_activites(conn, schema, table):
     
         
         ''')
-    logger.info(f"r5 set to 'PASS' for other activities with proper methods and equipment in {schema}.{table}")
 
 def common_attributes_type_filter(conn, schema, treatment_index):
     cursor = conn.cursor()
@@ -623,7 +610,6 @@ def common_attributes_type_filter(conn, schema, treatment_index):
             AND
             identifier_database = 'FACTS Common Attributes';
         ''')
-    logger.info(f"deleted Common Attributes problem types from {schema}.{treatment_index}")
 
 def set_included(conn, schema, table):
     # set included to yes when r5 passes or
@@ -643,7 +629,6 @@ def set_included(conn, schema, table):
         ((r2 = 'PASS' OR r3 = 'PASS' OR r4 = 'PASS') AND r6 = 'PASS');
         
         ''')
-    logger.info(f"included set to 'yes' for {schema}.{table} records with proper rules passing")
 
 def common_attributes_insert(conn, schema, table, treatment_index):
     # insert records where included = 'yes'
@@ -677,7 +662,6 @@ def common_attributes_insert(conn, schema, table, treatment_index):
         {schema}.{table}.shape IS NOT NULL;
     
         ''')
-    logger.info(f"{schema}.{table} inserted into {schema}.{treatment_index} where included = 'yes'")
 
 def common_attributes_treatment_date(conn, schema, table, treatment_index):
     cursor = conn.cursor()
@@ -691,7 +675,6 @@ def common_attributes_treatment_date(conn, schema, table, treatment_index):
             AND t.identifier_database = 'FACTS Common Attributes'
             AND t.unique_id = f.event_cn;
         ''')
-    logger.info(f'updated treatment_date for FACTS Common Attributes entries in {schema}.{treatment_index}')
 
 def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
@@ -801,6 +784,7 @@ if __name__ == "__main__":
     facts_haz_gdb = 'S_USA.Activity_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
+    nfpors_url = os.getenv('NFPORS_URL')
 
     #This is the final table
     insert_table = 'treatment_index'
@@ -830,7 +814,7 @@ if __name__ == "__main__":
     common_attributes_type_filter(conn, target_schema, insert_table)
 
     # NFPORS
-    update_nfpors(conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
     nfpors_date_filtering(conn, target_schema)
     nfpors_insert(conn, target_schema, insert_table)
     nfpors_fund_code(conn, target_schema, insert_table)
@@ -848,7 +832,7 @@ if __name__ == "__main__":
     correct_biomass_removal_typo(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
-    flag_uom_outliers(cur, target_schema, f'{insert_table}_temp')
+    flag_uom_outliers(conn, target_schema, f'{insert_table}_temp')
     add_twig_category(conn, target_schema)
 
     # update treatment points

@@ -238,7 +238,6 @@ def copy_table_across_servers(from_conn: psycopg.Connection, from_schema: str, f
                 with to_cursor.copy(to_copy) as in_copy:
                     for data in out_copy:
                         in_copy.write(data)
-                to_cursor.execute('COMMIT;')
 
     logging.info(f'Copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
@@ -338,4 +337,3 @@ def limit_update(conn, schema, table, update_command, limit=150000):
             """)
             current_id = max_id
             # pbar.update(limit)
-    cursor.execute('COMMIT;')
