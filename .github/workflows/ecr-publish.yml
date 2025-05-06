@@ -6,10 +6,6 @@ on:
       tag:
         required: true
         type: string
-    secrets:
-      AWS_ECR_IAM_ARN:
-        required: true
-
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: sweri-data-tools
