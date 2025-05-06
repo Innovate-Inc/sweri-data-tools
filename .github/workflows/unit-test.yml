@@ -12,6 +12,7 @@ jobs:
   unit_test:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
     runs-on: ubuntu-latest
+    environment: production
     name: unit test python lib
     steps:
 #      - name: Install libkrb5 for Kerberos on Linux
