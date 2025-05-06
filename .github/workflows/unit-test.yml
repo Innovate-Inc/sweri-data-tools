@@ -64,3 +64,8 @@ jobs:
         with:
           name: coverage-report
           path: coverage
+  push_image:
+    needs: unit_test
+    uses: ./.github/workflows/ecr-publish.yml
+    with:
+      tag: staging
