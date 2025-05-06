@@ -66,9 +66,14 @@ jobs:
 #          path: coverage
   push_image:
 #    needs: unit_test
+#    environment: production
+    environment: production
+
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/ecr-publish.yml
     with:
       tag: staging
+    secrets:
+        AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}

@@ -6,6 +6,10 @@ on:
       tag:
         required: true
         type: string
+    secrets:
+      AWS_ECR_IAM_ARN:
+        required: true
+
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: sweri-data-tools
@@ -19,7 +23,6 @@ jobs:
   deploy:
     name: Update latest ECR image
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - name: Checkout
         uses: actions/checkout@v4
