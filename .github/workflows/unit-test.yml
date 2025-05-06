@@ -66,8 +66,6 @@ jobs:
 #          path: coverage
   push_image:
 #    needs: unit_test
-#    environment: production
-
     permissions:
       id-token: write
       contents: read
