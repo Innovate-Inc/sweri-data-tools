@@ -71,12 +71,9 @@ def extract_and_remove_zip_file(zip_filepath):
 def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
     os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
 
-    # todo: move this to parameter or env
-    where = "GIS_ACRES > 5 Or GIS_ACRES IS NOT NULL"
-
     options = VectorTranslateOptions(format='PostgreSQL',
                                      geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                     dstSRS=f'EPSG:{projection}', where=where,
+                                     dstSRS=f'EPSG:{projection}',
                                      accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
                                      layers=[fc_name])
 
