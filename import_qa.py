@@ -111,16 +111,22 @@ def service_to_gdf(where_clause, service_fields, service_url, wkid):
 
     service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=4326, chunk_size=70)
 
-
     gdf = gpd.GeoDataFrame.from_features(service_features)
 
-
     gdf = gdf.set_crs(epsg=4326, inplace=True)
+
+    if gdf.geometry.name != 'geometry':
+        gdf = gdf.rename(columns={gdf.geometry.name: 'geometry'})
+        gdf = gdf.set_geometry('geometry')
+
+    # Drop SHAPE if it's a leftover non-geometry column
+    if 'SHAPE' in gdf.columns and gdf.geometry.name != 'SHAPE':
+        gdf = gdf.drop(columns='SHAPE')
 
     return gdf
 
 
-def prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field):
+def gdf_data_preparation(service_gdf, sweri_gdf, service_date_field):
     # convert date from ms to datetime if needed
     if isinstance(service_gdf[service_date_field].dropna().iloc[0], (int, float, np.integer, np.floating)):
         service_gdf.loc[:, service_date_field] = pd.to_datetime(service_gdf[service_date_field], unit='ms')
@@ -142,6 +148,7 @@ def prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field):
 def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     service_id_field, sweri_id_field = id_map
 
+    # Rename columns so both gdfs match
     rename_map = {service_field: sweri_field for service_field, sweri_field in comparison_field_map}
     service_gdf = service_gdf.rename(columns=rename_map)
 
@@ -149,26 +156,41 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     service_gdf = service_gdf.set_index(sweri_id_field)
     sweri_gdf = sweri_gdf.set_index(sweri_id_field)
 
+    # Drops entries not returned from service (important for Hazardous Fuels)
+    service_idx = set(service_gdf.index)
+    sweri_idx = set(sweri_gdf.index)
+    only_in_sweri = sweri_idx - service_idx
+    if only_in_sweri:
+        sweri_gdf = sweri_gdf.drop(index=only_in_sweri)
+
+    # Sort index for compare
     service_gdf = service_gdf.sort_index()
     sweri_gdf = sweri_gdf.sort_index()
 
+    # Remove geom to compare separately
     service_gdf_no_geom = service_gdf.drop(columns='geometry', errors='ignore')
     sweri_gdf_no_geom = sweri_gdf.drop(columns='geometry', errors='ignore')
 
-    # Compare all but the geoms
+    # Compare attributes
     diff = service_gdf_no_geom.compare(sweri_gdf_no_geom, result_names=('service', 'sweri'))
-    logger.info('Attribute Difference: ')
-    logger.info(diff)
 
-    # Compare the geoms
-    geom_matches = service_gdf.geometry.geom_equals_exact(sweri_gdf.geometry, tolerance=10)
+    # Compare geoms
+    geom_matches = service_gdf.geometry.geom_equals_exact(sweri_gdf.geometry, tolerance=1)
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
-    logger.info('Geom Mismatches:')
-    logger.info(geom_mismatch_indices)
+    if only_in_sweri:
+        logger.info("No feature returned for unique_id(s):")
+        logger.info(", ".join([str(item) for item in only_in_sweri]))
 
+    if not diff.empty:
+        logger.info('Attribute Difference: ')
+        logger.info("\n%s", diff.to_string())
 
+    if not geom_mismatch_indices.empty:
+        logger.info("Geometry mismatches found for unique_id(s):")
+        logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
 
+    logger.info('-'*40)
 
 def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
                        wkid=3857):
@@ -187,7 +209,7 @@ def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, sou
         sweri_pg_query = return_sweri_pg_query(sweri_fields, schema, treatment_index, source_database, ids)
 
         logger.info(f'Running {source_database} sample comparison')
-        logger.info(f'size: {feature_count}, sample size: {sample_size}')
+        logger.info(f'Total size: {feature_count}, sample size: {sample_size}')
 
     else:
         logger.info(f'No ids returned for {source_database} comparison, moving to next process')
@@ -221,7 +243,7 @@ def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_ur
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
-        service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
+        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
@@ -247,7 +269,7 @@ def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url)
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
-        service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
+        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
@@ -283,7 +305,7 @@ def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
         ]
         updated_id_map =  ('merged_id', 'unique_id')
 
-        service_gdf, sweri_gdf = prepare_gdfs_for_compare(service_gdf, sweri_gdf, service_date_field)
+        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
         compare_gdfs(service_gdf, sweri_gdf, updated_comparison_field_map, updated_id_map)
 
 
@@ -303,10 +325,10 @@ if __name__ == '__main__':
     logger.info('new run')
     logger.info('-' * 40)
 
+    hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
+                           hazardous_fuels_url)
     common_attributes_sample(cur, conn, treatment_index_table, target_schema,
                              common_attributes_url)
     nfpors_sample(cur, conn, treatment_index_table, target_schema, nfpors_url)
-    hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
-                           hazardous_fuels_url)
 
     conn.close()
