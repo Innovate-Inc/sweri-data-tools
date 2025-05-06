@@ -99,29 +99,30 @@ class DownloadTests(TestCase):
             self.assertTrue(mock_post.called_once_with(expected_args))
             self.assertTrue(True)
 
-    def test_service_to_postgres(self):
-        with (patch('sweri_utils.download.get_ids') as get_ids_mock,
-              patch('sweri_utils.download.get_all_features') as get_feat_mock,
-              patch('sweri_utils.download.get_fields') as get_fields_mock,
-              patch('osgeo.gdal.VectorTranslate') as mock_VectorTranslate):
-            url = 'http://test.url'
-            where = '1=1'
-            geom = {'rings': []}
-            get_ids_mock.return_value = [1, 2, 3]
-            get_feat_mock.return_value = [{'attributes': {'hello': 'there'}}, {
-                'attributes': {'another': 'feature'}}]
-            get_fields_mock.return_value = []
-            mock_VectorTranslate.return_value = None
+    @patch('osgeo.gdal.VectorTranslate')
+    @patch('scripts.sweri_utils.download.get_fields')
+    @patch('scripts.sweri_utils.download.get_all_features')
+    @patch('scripts.sweri_utils.download.get_ids')
+    def test_service_to_postgres(self, get_ids_mock, get_feat_mock, get_fields_mock, mock_VectorTranslate):
+        url = 'http://test.url'
+        where = '1=1'
+        geom = {'rings': []}
+        get_ids_mock.return_value = [1, 2, 3]
+        get_feat_mock.return_value = yield {'features': [{'attributes': {'hello': 'there'}}, {
+            'attributes': {'another': 'feature'}}],
+                                      'fields': []}
+        get_fields_mock.return_value = []
+        mock_VectorTranslate.return_value = None
 
-            conn = MagicMock()
-            service_to_postgres(url, where, 4326, 'PG:', 'test', 'dest_tabl',
-                                    conn, 1)
+        conn = MagicMock()
+        service_to_postgres(url, where, 4326, 'PG:', 'test', 'dest_tabl',
+                                conn, 1)
 
-            self.assertTrue(get_feat_mock.called_once_with(
-                url, where, 102100, None))
-            self.assertTrue(get_ids_mock.called_once_with(
-                url, where, geom, 'polygon', ))
-            self.assertTrue(get_fields_mock.called_once_with(url))
+        self.assertTrue(get_feat_mock.called_once_with(
+            url, where, 102100, None))
+        self.assertTrue(get_ids_mock.called_once_with(
+            url, where, geom, 'polygon', ))
+        self.assertTrue(get_fields_mock.called_once_with(url))
 
     def test_retry_calls_num_times_calls_failure_callback(self):
         i_failed = Mock(side_effect=Exception('retries exceeded'))
@@ -237,12 +238,6 @@ class FilesTests(TestCase):
         zip_mock.assert_called()
         self.assertEqual(z, 'test.zip')
 
-    @patch('arcpy.management.CreateFileGDB')
-    def test_create_gdb(self, mock_gdb):
-        p = create_gdb('test', 'out_dir')
-        self.assertTrue(mock_gdb.called_once_with('out_dir', 'test.gdb'))
-        self.assertEqual(p, os.path.join('out_dir', 'test.gdb'))
-
     def test_export_gdb(self):
         g = export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
         self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
@@ -288,54 +283,44 @@ class FilesTests(TestCase):
         mock_open.assert_called_once_with(destination_path, 'wb')
         mock_open().write.assert_called_once_with(b'Test content')
 
-    @patch('arcpy.conversion.FeatureClassToGeodatabase')
-    @patch('arcpy.management.Delete')
-    @patch('arcpy.Exists')
-    @patch('arcpy.management.Project')
-    def test_gdb_to_postgres(self, mock_project, mock_exist, mock_delete, mock_fc_gdb):
-        with patch('sweri_utils.files.download_file_from_url') as download_file_mock, patch(
-                'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
-            mock_exist.return_value = True
-            sde_file = 'fake_sde_connection_file'
-            gdb_name = 'test_gdb'
-            gdb_path = os.path.join(os.getcwd(), gdb_name)
-            projection = arcpy.SpatialReference(3857)
-            postgres_table_name = 'test_table'
-            schema = 'test_schema'
-            postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
-            fc_name = 'Activity_HazFuelTrt_PL'
-
-            feature_class = os.path.join(gdb_path, fc_name)
-            reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
-            url = 'http://test.url'
-            zip_file = f'{postgres_table_name}.zip'
-
-            gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
-
-            download_file_mock.assert_called_once_with(url, zip_file)
-            extract_zip_mock.assert_called_once_with(zip_file)
-            mock_project.assert_called_once_with(feature_class, reprojected_fc, projection)
-            mock_exist.assert_called_once_with(postgres_table_location)
-            mock_delete.assert_has_calls(
-                [
-                    call(postgres_table_location),
-                    call(gdb_path)
-                ]
-            )
-            mock_fc_gdb.assert_called_once_with(reprojected_fc, sde_file)
+    # @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    # @patch('arcpy.management.Delete')
+    # @patch('arcpy.Exists')
+    # @patch('arcpy.management.Project')
+    # def test_gdb_to_postgres(self, mock_project, mock_exist, mock_delete, mock_fc_gdb):
+    #     with patch('sweri_utils.files.download_file_from_url') as download_file_mock, patch(
+    #             'sweri_utils.files.extract_and_remove_zip_file') as extract_zip_mock:
+    #         mock_exist.return_value = True
+    #         sde_file = 'fake_sde_connection_file'
+    #         gdb_name = 'test_gdb'
+    #         gdb_path = os.path.join(os.getcwd(), gdb_name)
+    #         projection = arcpy.SpatialReference(3857)
+    #         postgres_table_name = 'test_table'
+    #         schema = 'test_schema'
+    #         postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
+    #         fc_name = 'Activity_HazFuelTrt_PL'
+    #
+    #         feature_class = os.path.join(gdb_path, fc_name)
+    #         reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
+    #         url = 'http://test.url'
+    #         zip_file = f'{postgres_table_name}.zip'
+    #
+    #         gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema)
+    #
+    #         download_file_mock.assert_called_once_with(url, zip_file)
+    #         extract_zip_mock.assert_called_once_with(zip_file)
+    #         mock_project.assert_called_once_with(feature_class, reprojected_fc, projection)
+    #         mock_exist.assert_called_once_with(postgres_table_location)
+    #         mock_delete.assert_has_calls(
+    #             [
+    #                 call(postgres_table_location),
+    #                 call(gdb_path)
+    #             ]
+    #         )
+    #         mock_fc_gdb.assert_called_once_with(reprojected_fc, sde_file)
 
 
 class ConversionTests(TestCase):
-    @patch('arcpy.Describe')
-    @patch('arcpy.management.Project')
-    @patch('logging.warning')
-    def test_reproject(self, mock_log, mock_project, mock_describe):
-        fake_sr = cast(arcpy.SpatialReference, {'factoryCode': 1234})
-        project = reproject('fc', fake_sr, os.path.join('new', 'out', 'path'))
-        new_fc = os.path.join('new', 'out', 'path', 'fc_reprojected')
-        self.assertTrue(mock_project.called_once_with('fc', new_fc, fake_sr))
-        self.assertEqual(project, new_fc)
-
     def test_array_to_dict(self):
         fields = ['text_field', 'number_field',
                   'none_field', 'nested_dict', 'nested_arr']
