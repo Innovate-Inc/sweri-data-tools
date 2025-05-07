@@ -90,6 +90,7 @@ jobs:
           file: ./docker/Dockerfile
           context: .
           load: true
+          tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
       - name: Push backend image to Amazon ECR
@@ -99,4 +100,4 @@ jobs:
           file: ./docker/Dockerfile
           context: .
           push: true
-          tags: ${{ steps.metadata.outputs.tag }}
+          tags: ${{ steps.metadata.outputs.tags }}
