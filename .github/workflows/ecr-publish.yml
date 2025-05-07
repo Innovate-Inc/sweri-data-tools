@@ -80,6 +80,7 @@ jobs:
           images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
           tags: |
             type=raw,value=${{ inputs.tag }}
+            type=sha
 
       - name: Build and tag image
 #        if: inputs.image_temp == ''
@@ -89,15 +90,13 @@ jobs:
           file: ./docker/Dockerfile
           context: .
           load: true
-          tags: ${{ inputs.tag }}
-          push: true
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
-#      - name: Push backend image to Amazon ECR
-#        id: push-image
-#        uses: docker/build-push-action@v6
-#        with:
-#          file: ./docker/Dockerfile
-#          context: .
-#          push: true
-#          tags: ${{ steps.metadata.outputs.tag }}
+      - name: Push backend image to Amazon ECR
+        id: push-image
+        uses: docker/build-push-action@v6
+        with:
+          file: ./docker/Dockerfile
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tag }}
