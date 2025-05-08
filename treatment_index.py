@@ -500,6 +500,7 @@ def include_fire_activites(conn, schema, table):
         
         ''')
 
+@log_this
 def include_fuel_activities(conn, schema, table):
     # Make sure the activity includes 'fuel'
     # Checks the lookup table for method and equipment slated for inclusion
@@ -530,6 +531,7 @@ def include_fuel_activities(conn, schema, table):
         
         ''')
 
+@log_this
 def activity_filter(conn, schema, table):
     # Filters based on activity to ensure only intended activities enter the database
     cursor = conn.cursor()
@@ -596,6 +598,7 @@ def include_other_activites(conn, schema, table):
         
         ''')
 
+@log_this
 def common_attributes_type_filter(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -610,6 +613,7 @@ def common_attributes_type_filter(conn, schema, treatment_index):
             identifier_database = 'FACTS Common Attributes';
         ''')
 
+@log_this
 def set_included(conn, schema, table):
     # set included to yes when r5 passes or
     # r2, r3, or, r4 passes and r6 passes
@@ -629,7 +633,8 @@ def set_included(conn, schema, table):
         
         ''')
 
-def common_attributes_insert(conn, schema, table, treatment_index):
+@log_this
+def common_attributes_insert(conn, schema, table, insert_table):
     # insert records where included = 'yes'
     cursor = conn.cursor()
     with conn.transaction():
@@ -662,6 +667,7 @@ def common_attributes_insert(conn, schema, table, treatment_index):
     
         ''')
 
+@log_this
 def common_attributes_treatment_date(conn, schema, table, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
