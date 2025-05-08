@@ -392,36 +392,35 @@ def add_fields_and_indexes(conn, schema, feature_class, region):
 def common_attributes_date_filtering(conn, schema, table_name):
     # Excludes treatment entries before 1984
     # uses date_completed if available, and act_created_date if date_completed is null
-
-    with conn.cursor() as cursor:
-        with conn.transaction():
-            cursor.execute(f'''DELETE from {schema}.{table_name} WHERE
-            date_completed < '1984-1-1'::date
-            OR
-            (date_completed is null AND act_created_date < '1984-1-1'::date);''')
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''DELETE from {schema}.{table_name} WHERE
+        date_completed < '1984-1-1'::date
+        OR
+        (date_completed is null AND act_created_date < '1984-1-1'::date);''')
 
 
 @log_this
 def exclude_facts_hazardous_fuels(conn, schema, table, facts_haz_table):
     # Excludes FACTS Common Attributes records already being included via FACTS Hazardous Fuels
-    with conn.cursor() as cursor:
-        with conn.transaction():
-            cursor.execute(f'''            
-                DELETE FROM {schema}.{table} USING {schema}.{facts_haz_table}
-                WHERE event_cn = activity_cn
-            ''')
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''            
+            DELETE FROM {schema}.{table} USING {schema}.{facts_haz_table}
+            WHERE event_cn = activity_cn
+        ''')
 
 @log_this
 def exclude_by_acreage(conn, schema, table):
     #removes all treatments with null acerage or <= 5 acres
-    with conn.cursor() as cursor:
-        with conn.transaction():
-            cursor.execute(f'''
-            DELETE FROM {schema}.{table}
-            WHERE
-            gis_acres <= 5 OR
-            gis_acres IS NULL;
-            ''')
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        DELETE FROM {schema}.{table}
+        WHERE
+        gis_acres <= 5 OR
+        gis_acres IS NULL;
+        ''')
 
 @log_this
 def trim_whitespace(conn, schema, table):
