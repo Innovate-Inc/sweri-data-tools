@@ -1,6 +1,7 @@
 from intersections.utils import create_db_conn_from_envs, insert_feature_into_db
 from sweri_utils.download import fetch_geojson_features
-from sweri_utils.sql import delete_from_table, copy_table_across_servers
+from sweri_utils.logging import log_this
+from sweri_utils.sql import delete_from_table, copy_table_across_servers, insert_from_db
 from worker import app
 import logging
 import watchtower
@@ -11,7 +12,7 @@ cw = watchtower.CloudWatchLogHandler()
 cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
 logger.addHandler(cw)
 
-
+@log_this
 @app.task(time_limit=14400)
 def calculate_intersections_and_insert(schema, insert_table, source_key, target_key):
     """
@@ -46,9 +47,9 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
             cursor.execute(query)
             logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
 
-
+@log_this
 @app.task(time_limit=14400)
-def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, rds_schema, insert_table):
+def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, insert_table):
     docker_conn= create_db_conn_from_envs('DOCKER')
     rds_conn= create_db_conn_from_envs('RDS')
     delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
@@ -60,15 +61,25 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, rds_
     elif value['source_type'] == 'db_table':
         logger.info(f'copying data from rds db for {value["source"]}')
         # this will copy the current table from the production server and use that data for intersections, and remove the older source
-        copy_table_across_servers(
-            rds_conn,
-            rds_schema,
-            value['source'],
+        insert_from_db(
             docker_conn,
             docker_schema,
             insert_table,
-            [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
-            ['unique_id', 'feat_source', 'shape'])
+            ['unique_id', 'feat_source', 'shape'],
+            value['source'],
+            [value['id'], f"'{key}' as feat_source"],
+            'shape',
+            'shape',
+            wkid )
+        # copy_table_across_servers(
+        #     rds_conn,
+        #     rds_schema,
+        #     value['source'],
+        #     docker_conn,
+        #     docker_schema,
+        #     insert_table,
+        #     [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
+        #     ['unique_id', 'feat_source', 'shape'])
     else:
         raise ValueError('invalid source type: {}'.format(value['source_type']))
 
