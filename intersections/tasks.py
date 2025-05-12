@@ -55,7 +55,8 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
     delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
     if value['source_type'] == 'url':
         logger.info(f'fetching geojson features from {value["source"]}')
-        out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid)
+        out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid,
+                                    out_fields=None, chunk_size=value['chunk_size'])
         for f in out_feat:
             insert_feature_into_db(docker_conn, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
     elif value['source_type'] == 'db_table':
