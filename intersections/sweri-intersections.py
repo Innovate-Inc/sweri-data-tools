@@ -172,7 +172,7 @@ if __name__ == '__main__':
     db_schema = os.getenv('DB_SCHEMA')
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')),os.getenv('DB_NAME'), os.getenv('DB_USER'),os.getenv('DB_PASSWORD'))
     ############## intersections processing in docker ################
-    # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
+    # function that runs everything for creating new intersections in docker
     try:
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
