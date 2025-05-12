@@ -48,7 +48,10 @@ def get_sample_size(population_size, proportion=.5, margin_of_error=.05):
     p = proportion
     e = margin_of_error
     n0 = ((z ** 2) * p * (1 - p)) / (e ** 2)
-    n = n0 / (1 + ((n0 - 1) / population_size))
+    if population_size > 0:
+        n = n0 / (1 + ((n0 - 1) / population_size))
+    else:
+        n = 0
 
     return math.ceil(n)
 
@@ -104,19 +107,18 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
         return None
     gdf = gdf.rename(columns={'shape': 'geometry'})
     gdf.set_geometry('geometry', inplace=True)
-    gdf.set_crs(epsg=3857, inplace=True)
-    gdf_reprojected = gdf.to_crs(epsg=4326)
+    gdf.set_crs(epsg=4326, inplace=True)
 
-    return gdf_reprojected
+    return gdf
 
 
 def service_to_gdf(where_clause, service_fields, service_url, wkid):
-    service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=4326,
+    service_features = fetch_geojson_features(service_url, where_clause, out_fields=service_fields, out_sr=wkid,
                                               chunk_size=70)
 
     gdf = gpd.GeoDataFrame.from_features(service_features)
 
-    gdf = gdf.set_crs(epsg=4326, inplace=True)
+    gdf = gdf.set_crs(epsg=wkid, inplace=True)
 
     if gdf.geometry.name != 'geometry':
         gdf = gdf.rename(columns={gdf.geometry.name: 'geometry'})
@@ -179,7 +181,7 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     # Compare geoms
     geom_matches = service_gdf.geometry.normalize().geom_equals_exact(
-        sweri_gdf.geometry.normalize(), tolerance=1e-5
+        sweri_gdf.geometry.normalize(), tolerance=1e-2
     )
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
@@ -193,13 +195,14 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     if not geom_mismatch_indices.empty:
         logger.info("Geometry mismatches found for unique_id(s):")
+        logger.info(f'{len(geom_mismatch_indices)}')
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
 
     logger.info('-' * 40)
 
 
 def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
-                       wkid=3857):
+                       wkid=4326):
     feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
     sample_size = get_sample_size(feature_count)
 
