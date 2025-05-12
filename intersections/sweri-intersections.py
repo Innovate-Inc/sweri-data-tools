@@ -91,12 +91,12 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
     g = group(t)()
     g.get()
 
-@log_this
-def truncate_table(conn, schema, table):
-    cursor = conn.cursor()
-    with conn.transaction():
-        # drop existing intersections table
-        cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
+# @log_this
+# def truncate_table(conn, schema, table):
+#     cursor = conn.cursor()
+#     with conn.transaction():
+#         # drop existing intersections table
+#         cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
 
 
 @log_this
@@ -139,8 +139,8 @@ def run_intersections( docker_conn, docker_schema,
     ############## calculate intersections ################
 
 
-    # truncate table
-    truncate_table(docker_conn, docker_schema, 'intersections')
+    # # truncate table
+    # truncate_table(docker_conn, docker_schema, 'intersections')
     # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
                                          docker_schema)
