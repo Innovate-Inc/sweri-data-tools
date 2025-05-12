@@ -15,7 +15,7 @@ from celery import group
 import requests as r
 from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
-from sweri_utils.sql import  refresh_spatial_index, run_vacuum_analyze
+from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
 import watchtower
 
 from intersections.utils import create_db_conn_from_envs
@@ -91,11 +91,12 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
     g.get()
 
 @log_this
-def truncate_intersections_table(conn, schema):
+def truncate_table(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
         # drop existing intersections table
-        cursor.execute(f'TRUNCATE TABLE {schema}.intersections;')
+        cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
+
 
 @log_this
 def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, wkid):
@@ -135,8 +136,10 @@ def run_intersections( docker_conn, docker_schema,
     # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
+
+
     # truncate table
-    truncate_intersections_table(docker_conn, docker_schema)
+    truncate_table(docker_conn, docker_schema, 'intersections')
     # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
                                          docker_schema)
@@ -166,12 +169,12 @@ if __name__ == '__main__':
     portal_password = os.getenv('ESRI_PW')
     ############### database connections ################
     # local docker db environment variables
-    docker_db_schema = os.getenv('DOCKER_DB_SCHEMA')
-    docker_pg_conn = create_db_conn_from_envs('DOCKER')
+    db_schema = os.getenv('DB_SCHEMA')
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')),os.getenv('DB_NAME'), os.getenv('DB_USER'),os.getenv('DB_PASSWORD'))
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker, uploading the results to s3, and swapping the tables on the rds instance
     try:
-        run_intersections(docker_pg_conn, docker_db_schema,
+        run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
                           portal_password)
         logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
