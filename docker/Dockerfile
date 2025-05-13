@@ -13,5 +13,6 @@ RUN export CPLUS_INCLUDE_PATH=/usr/include/gdal
 RUN export C_INCLUDE_PATH=/usr/include/gdal
 RUN python3 -m pip install -r docker/requirements.txt --no-cache-dir
 
+RUN export PYTHONPATH=/code
 # Set the default command to run python
-CMD ["python3", "intersections.py"]
+#CMD ["python3", "intersections/sweri-intersections.py"]
