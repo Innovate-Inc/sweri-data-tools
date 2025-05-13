@@ -837,7 +837,7 @@ if __name__ == "__main__":
     correct_biomass_removal_typo(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
-    flag_uom_outliers(conn, target_schema, f'{insert_table}_temp')
+    flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
 
     # update treatment points
