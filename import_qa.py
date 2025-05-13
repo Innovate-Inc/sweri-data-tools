@@ -131,23 +131,20 @@ def service_to_gdf(where_clause, service_fields, service_url, wkid):
     return gdf
 
 
-def gdf_data_preparation(service_gdf, sweri_gdf, service_date_field):
+def gdf_data_preparation(gdf, gdf_date_field = None):
     # convert date from ms to datetime if needed
-    if isinstance(service_gdf[service_date_field].dropna().iloc[0], (int, float, np.integer, np.floating)):
-        service_gdf.loc[:, service_date_field] = pd.to_datetime(service_gdf[service_date_field], unit='ms')
+    if gdf_date_field:
+        if isinstance(gdf[gdf_date_field].dropna().iloc[0], (int, float, np.integer, np.floating)):
+            gdf.loc[:, gdf_date_field] = pd.to_datetime(gdf[gdf_date_field], unit='ms')
 
     # strip strings
-    service_gdf = service_gdf.map(lambda x: x.strip() if isinstance(x, str) else x)
-    sweri_gdf = sweri_gdf.map(lambda x: x.strip() if isinstance(x, str) else x)
+    gdf = gdf.map(lambda x: x.strip() if isinstance(x, str) else x)
 
     # Standardize float typing and rounding
-    for col in service_gdf.select_dtypes(include=['float', 'float64']).columns:
-        service_gdf[col] = service_gdf[col].round(3).astype('float64')
+    for col in gdf.select_dtypes(include=['float', 'float64']).columns:
+        gdf[col] = gdf[col].round(3).astype('float64')
 
-    for col in sweri_gdf.select_dtypes(include=['float', 'float64']).columns:
-        sweri_gdf[col] = sweri_gdf[col].round(3).astype('float64')
-
-    return service_gdf, sweri_gdf
+    return gdf
 
 
 def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
@@ -181,7 +178,7 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     # Compare geoms
     geom_matches = service_gdf.geometry.normalize().geom_equals_exact(
-        sweri_gdf.geometry.normalize(), tolerance=1e-2
+        sweri_gdf.geometry.normalize(), tolerance=1e-3
     )
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
@@ -195,8 +192,8 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     if not geom_mismatch_indices.empty:
         logger.info("Geometry mismatches found for unique_id(s):")
-        logger.info(f'{len(geom_mismatch_indices)}')
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
+        logger.info(f'{len(geom_mismatch_indices)} Total geom mismatches.')
 
     logger.info('-' * 40)
 
@@ -252,7 +249,8 @@ def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_ur
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
-        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
+        service_gdf = gdf_data_preparation(service_gdf, service_date_field)
+        sweri_gdf = gdf_data_preparation(sweri_gdf)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
@@ -278,7 +276,8 @@ def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url)
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
-        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
+        service_gdf = gdf_data_preparation(service_gdf, service_date_field)
+        sweri_gdf = gdf_data_preparation(sweri_gdf)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
@@ -315,7 +314,8 @@ def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
         ]
         updated_id_map = ('merged_id', 'unique_id')
 
-        service_gdf, sweri_gdf = gdf_data_preparation(service_gdf, sweri_gdf, service_date_field)
+        service_gdf = gdf_data_preparation(service_gdf, service_date_field)
+        sweri_gdf = gdf_data_preparation(sweri_gdf)
         compare_gdfs(service_gdf, sweri_gdf, updated_comparison_field_map, updated_id_map)
 
 
