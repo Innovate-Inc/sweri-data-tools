@@ -322,9 +322,10 @@ def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
 if __name__ == '__main__':
     load_dotenv()
 
-    cur, conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
+    conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
                                  os.getenv('DOCKER_DB_USER'),
                                  os.getenv('DOCKER_DB_PASSWORD'))
+    cur = conn.cursor()
 
     target_schema = os.getenv('SCHEMA')
     treatment_index_table = 'treatment_index'
