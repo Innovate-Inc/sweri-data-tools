@@ -700,7 +700,7 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
     for url in urls:
 
         #expression pulls just the number out of the url, 01-10
-        region_number = re.sub("\D", "", url)
+        region_number = re.sub(r"\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
 
