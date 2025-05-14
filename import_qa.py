@@ -8,6 +8,8 @@ import logging
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+from shapely.validation import make_valid
+
 
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import fetch_geojson_features
@@ -176,10 +178,18 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     # Compare attributes
     diff = service_gdf_no_geom.compare(sweri_gdf_no_geom, result_names=('service', 'sweri'))
 
+    dropped_count = service_gdf.geometry.isna().sum()
+
     # Compare geoms
-    geom_matches = service_gdf.geometry.normalize().geom_equals_exact(
-        sweri_gdf.geometry.normalize(), tolerance=1e-3
+    service_geom = service_gdf.geometry.dropna().apply(make_valid).normalize()
+    sweri_geom = sweri_gdf.geometry.dropna().apply(make_valid).normalize()
+
+    common_index = service_geom.index.intersection(sweri_geom.index)
+
+    geom_matches = service_geom.loc[common_index].geom_equals_exact(
+        sweri_geom.loc[common_index], tolerance=1e-3
     )
+
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
     if only_in_sweri:
@@ -191,9 +201,10 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
         logger.info("\n%s", diff.to_string())
 
     if not geom_mismatch_indices.empty:
+        logger.info(f"Null service geometries: {dropped_count}")
         logger.info("Geometry mismatches found for unique_id(s):")
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
-        logger.info(f'{len(geom_mismatch_indices)} Total geom mismatches.')
+        logger.info(f'{len(geom_mismatch_indices)+dropped_count} Total geom mismatches.')
 
     logger.info('-' * 40)
 
