@@ -3,6 +3,10 @@ from urllib.parse import urljoin
 import zipfile
 import requests
 import logging
+from osgeo.gdal import VectorTranslate, VectorTranslateOptions
+import shutil
+from .logging import log_this
+
 try:
     import arcpy
 except ModuleNotFoundError:
@@ -49,15 +53,53 @@ def create_zip(zip_dir, name, out_dir=None):
     zip_f.close()
     return out_path
 
+@log_this
 def download_file_from_url(url, destination_path):
     response = requests.get(url)
     with open(destination_path, 'wb') as file:
         file.write(response.content)
 
+@log_this
 def extract_and_remove_zip_file(zip_filepath):
     with zipfile.ZipFile(zip_filepath, 'r') as zip_file:
         zip_file.extractall()
     os.remove(zip_filepath)
+
+
+
+@log_this
+def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string, input_srs=None):
+    os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
+
+    options_inputs = {
+        "format": 'PostgreSQL',
+        "makeValid": True,
+        "dstSRS": f'EPSG:{projection}',
+        "accessMode": 'overwrite',
+        "layerName": f"{schema}.{postgres_table_name}",
+        "layers": [fc_name]
+    }
+
+    if input_srs:
+        options_inputs['srcSRS'] = input_srs
+
+    options = VectorTranslateOptions(**options_inputs)
+
+    gdb_path = os.path.join(os.getcwd(), gdb_name)
+
+    # Upload fc to postgres
+    _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
+    del _
+    logging.info(f'{postgres_table_name} now in geodatabase')
+
+    # Remove gdb
+    if os.path.exists(gdb_path):
+        try:
+            shutil.rmtree(gdb_path)
+            logging.info(f'{gdb_path} gdb deleted')
+        except OSError as e:
+            logging.error(f'Error deleting {gdb_path}: {e}')
+
 
 ########################### arcpy required for below functions ###########################
 def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
@@ -87,43 +129,6 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     except Exception as e:
         raise e
     return outfile
-
-
-def gdb_to_postgres(url, gdb_name, projection, fc_name, postgres_table_name, sde_file, schema):
-    # Downloads a gdb with a single feature class
-    # And uploads that featureclass to postgres
-    zip_file = f'{postgres_table_name}.zip'
-
-    # Download and extract gdb file
-    logging.info(f'Downloading {url}')
-    download_file_from_url(url, zip_file)
-
-    logging.info(f'Extracting {zip_file}')
-    extract_and_remove_zip_file(zip_file)
-
-    # Set Workspace to Downloaded GDB and set paths for feature class and reprojection
-    gdb_path = os.path.join(os.getcwd(), gdb_name)
-    feature_class = os.path.join(gdb_path, fc_name)
-    reprojected_fc = os.path.join(gdb_path, f'{postgres_table_name}')
-    postgres_table_location = os.path.join(sde_file, f'sweri.{schema}.{postgres_table_name}')
-
-    # Reproject layer
-    logging.info(f'reprojecting {feature_class}')
-    arcpy.management.Project(feature_class, reprojected_fc, projection)
-    logging.info('layer reprojected')
-
-    # Clear space in postgres for table
-    if (arcpy.Exists(postgres_table_location)):
-        arcpy.management.Delete(postgres_table_location)
-        logging.info(f'existing {postgres_table_name} postgres table has been deleted')
-
-    # Upload fc to postgres
-    arcpy.conversion.FeatureClassToGeodatabase(reprojected_fc, sde_file)
-    logging.info(f'{postgres_table_location} now in geodatabase')
-
-    # Remove gdb
-    arcpy.management.Delete(gdb_path)
-    logging.info(f'{gdb_path} gdb deleted')
 
 
 def create_gdb(out_name, out_dir):
