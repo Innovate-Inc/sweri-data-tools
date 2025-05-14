@@ -237,7 +237,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
         # create table has to be commited to be used in another transaction
         cursor.execute(f'''
                    DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
-                   CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);;
+                   CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);
                ''')
 
     with conn.transaction():
