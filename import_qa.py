@@ -178,7 +178,6 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     # Compare attributes
     diff = service_gdf_no_geom.compare(sweri_gdf_no_geom, result_names=('service', 'sweri'))
 
-    dropped_count = service_gdf.geometry.isna().sum()
 
     # Compare geoms
     service_geom = service_gdf.geometry.dropna().apply(make_valid).normalize()
@@ -192,22 +191,34 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     geom_mismatch_indices = geom_matches[~geom_matches].index
 
+    #count the number of geoms dropped
+    dropped_count = service_gdf.geometry.isna().sum()
+    null_ids = service_gdf[service_gdf.geometry.isna()].index
+
     if only_in_sweri:
+        logger.info('-' * 40)
         logger.info("No feature returned for unique_id(s):")
         logger.info(", ".join([str(item) for item in only_in_sweri]))
 
+
     if not diff.empty:
+        logger.info('-' * 40)
         logger.info('Attribute Difference: ')
         logger.info("\n%s", diff.to_string())
 
-    if not geom_mismatch_indices.empty:
+
+    if not null_ids.empty:
+        logger.info('-' * 40)
         logger.info(f"Null service geometries: {dropped_count}")
-        logger.info("Geometry mismatches found for unique_id(s):")
+        logger.info(", ".join([str(i) for i in null_ids]))
+
+    if not geom_mismatch_indices.empty:
+        logger.info('-' * 40)
+        logger.info(f"{len(geom_mismatch_indices)} geometry mismatches found, unique_id(s):")
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
-        logger.info(f'{len(geom_mismatch_indices)+dropped_count} Total geom mismatches.')
+        logger.info(f'{len(geom_mismatch_indices)+dropped_count} Total geom problems.')
 
-    logger.info('-' * 40)
-
+    logger.info('-' * 80)
 
 def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
                        wkid=4326):
@@ -345,7 +356,7 @@ if __name__ == '__main__':
     common_attributes_url = os.getenv('COMMON_ATTRIBUTES_URL')
 
     logger.info('new run')
-    logger.info('-' * 40)
+    logger.info('-' * 80)
 
     hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
                            hazardous_fuels_url)
