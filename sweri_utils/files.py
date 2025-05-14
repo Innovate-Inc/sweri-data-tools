@@ -68,14 +68,22 @@ def extract_and_remove_zip_file(zip_filepath):
 
 
 @log_this
-def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string):
+def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string, input_srs=None):
     os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
 
-    options = VectorTranslateOptions(format='PostgreSQL',
-                                     geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                     dstSRS=f'EPSG:{projection}',
-                                     accessMode='overwrite', layerName=f"{schema}.{postgres_table_name}",
-                                     layers=[fc_name])
+    options_inputs = {
+        "format": 'PostgreSQL',
+        "makeValid": True,
+        "dstSRS": f'EPSG:{projection}',
+        "accessMode": 'overwrite',
+        "layerName": f"{schema}.{postgres_table_name}",
+        "layers": [fc_name]
+    }
+
+    if input_srs:
+        options_inputs['srcSRS'] = input_srs
+
+    options = VectorTranslateOptions(**options_inputs)
 
     gdb_path = os.path.join(os.getcwd(), gdb_name)
 
