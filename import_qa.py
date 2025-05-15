@@ -37,9 +37,11 @@ def flatten_list(source_list):
     return flat_list
 
 
-def get_feature_count(cursor, schema, treatment_index, source_database):
-    cursor.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
-    feature_count = cur.fetchone()[0]
+def get_feature_count(pg_conn, schema, treatment_index, source_database):
+    cur = pg_conn.cursor()
+    with pg_conn.transaction():
+        cur.execute(f"SELECT count(*) FROM {schema}.{treatment_index} where identifier_database = '{source_database}';")
+        feature_count = cur.fetchone()[0]
     return feature_count
 
 
@@ -58,18 +60,19 @@ def get_sample_size(population_size, proportion=.5, margin_of_error=.05):
     return math.ceil(n)
 
 
-def get_comparison_ids(cur, identifier_database, treatment_index, schema, sample_size):
-    cur.execute(f'''
-        SELECT unique_id
-        FROM {schema}.{treatment_index}
-        tablesample system (1)
-	    WHERE identifier_database = '{identifier_database}'
-        AND
-        shape IS NOT NULL
-        limit {sample_size};
-    ''')
-
-    id_rows = cur.fetchall()
+def get_comparison_ids(pg_conn, identifier_database, treatment_index, schema, sample_size):
+    cur = pg_conn.cursor()
+    with pg_conn.transaction():
+        cur.execute(f'''
+            SELECT unique_id
+            FROM {schema}.{treatment_index}
+            tablesample system (1)
+            WHERE identifier_database = '{identifier_database}'
+            AND
+            shape IS NOT NULL
+            limit {sample_size};
+        ''')
+        id_rows = cur.fetchall()
     comparison_ids = [str(id_row[0]) for id_row in id_rows]
     return comparison_ids
 
@@ -102,8 +105,8 @@ def return_service_where_clause(source_database, ids):
     return service_where_clause
 
 
-def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
-    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con, geom_col=geom_field)
+def postgis_query_to_gdf(pg_query, pg_conn, geom_field='shape'):
+    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_conn, geom_col=geom_field)
 
     if gdf.empty:
         return None
@@ -200,12 +203,14 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
         logger.info("No feature returned for unique_id(s):")
         logger.info(", ".join([str(item) for item in only_in_sweri]))
 
-
     if not diff.empty:
         logger.info('-' * 40)
         logger.info('Attribute Difference: ')
         logger.info("\n%s", diff.to_string())
 
+    else:
+        logger.info('-' * 40)
+        logger.info('No Attribute Differences Found')
 
     if not null_ids.empty:
         logger.info('-' * 40)
@@ -216,16 +221,16 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
         logger.info('-' * 40)
         logger.info(f"{len(geom_mismatch_indices)} geometry mismatches found, unique_id(s):")
         logger.info(", ".join([str(i) for i in geom_mismatch_indices]))
-        logger.info(f'{len(geom_mismatch_indices)+dropped_count} Total geom problems.')
 
+    logger.info(f'{len(geom_mismatch_indices) + dropped_count} Total geom problem(s)')
     logger.info('-' * 80)
 
-def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database, comparison_field_map,
+def return_sample_gdfs(pg_conn, schema, treatment_index, service_url, source_database, comparison_field_map,
                        wkid=4326):
-    feature_count = get_feature_count(cursor, schema, treatment_index, source_database)
+    feature_count = get_feature_count(pg_conn, schema, treatment_index, source_database)
     sample_size = get_sample_size(feature_count)
 
-    ids = get_comparison_ids(cursor, source_database, treatment_index, schema, sample_size)
+    ids = get_comparison_ids(pg_conn, source_database, treatment_index, schema, sample_size)
 
     service_fields, sweri_fields = zip(*comparison_field_map)
 
@@ -244,12 +249,12 @@ def return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, sou
         return None, None
 
     service_gdf = service_to_gdf(service_where_clause, service_fields, service_url, wkid)
-    sweri_gdf = postgis_query_to_gdf(sweri_pg_query, pg_con, geom_field='shape')
+    sweri_gdf = postgis_query_to_gdf(sweri_pg_query, pg_conn, geom_field='shape')
 
     return service_gdf, sweri_gdf
 
 
-def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_url):
+def common_attributes_sample(pg_conn, schema, treatment_index, service_url):
     source_database = 'FACTS Common Attributes'
     comparison_field_map = [
         ('NAME', 'name'),
@@ -267,7 +272,7 @@ def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_ur
     id_map = ('EVENT_CN', 'unique_id')
     service_date_field = 'DATE_COMPLETED'
 
-    service_gdf, sweri_gdf = return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database,
+    service_gdf, sweri_gdf = return_sample_gdfs(pg_conn, schema, treatment_index, service_url, source_database,
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
@@ -276,7 +281,7 @@ def common_attributes_sample(cursor, pg_con, treatment_index, schema, service_ur
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
-def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url):
+def hazardous_fuels_sample(pg_conn, schema, treatment_index, service_url):
     source_database = 'FACTS Hazardous Fuels'
     comparison_field_map = [
         ('ACTIVITY_SUB_UNIT_NAME', 'name'),
@@ -294,7 +299,7 @@ def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url)
     id_map = ('ACTIVITY_CN', 'unique_id')
     service_date_field = 'DATE_COMPLETED'
 
-    service_gdf, sweri_gdf = return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database,
+    service_gdf, sweri_gdf = return_sample_gdfs(pg_conn, schema, treatment_index, service_url, source_database,
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
@@ -303,7 +308,7 @@ def hazardous_fuels_sample(cursor, pg_con, treatment_index, schema, service_url)
         compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map)
 
 
-def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
+def nfpors_sample(pg_conn, schema, treatment_index,  service_url):
     source_database = 'NFPORS'
     comparison_field_map = [
         ('trt_nm', 'name'),
@@ -317,7 +322,7 @@ def nfpors_sample(cursor, pg_con, treatment_index, schema, service_url):
     id_map = (('nfporsfid', 'trt_id'), 'unique_id')
     service_date_field = 'act_comp_dt'
 
-    service_gdf, sweri_gdf = return_sample_gdfs(cursor, schema, treatment_index, pg_con, service_url, source_database,
+    service_gdf, sweri_gdf = return_sample_gdfs(pg_conn, schema, treatment_index, service_url, source_database,
                                                 comparison_field_map)
 
     if service_gdf is not None and sweri_gdf is not None:
@@ -347,7 +352,6 @@ if __name__ == '__main__':
     conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
                                  os.getenv('DOCKER_DB_USER'),
                                  os.getenv('DOCKER_DB_PASSWORD'))
-    cur = conn.cursor()
 
     target_schema = os.getenv('SCHEMA')
     treatment_index_table = 'treatment_index'
@@ -358,10 +362,10 @@ if __name__ == '__main__':
     logger.info('new run')
     logger.info('-' * 80)
 
-    hazardous_fuels_sample(cur, conn, treatment_index_table, target_schema,
+    hazardous_fuels_sample(conn, target_schema, treatment_index_table,
                            hazardous_fuels_url)
-    common_attributes_sample(cur, conn, treatment_index_table, target_schema,
+    common_attributes_sample(conn, target_schema, treatment_index_table,
                              common_attributes_url)
-    nfpors_sample(cur, conn, treatment_index_table, target_schema, nfpors_url)
+    nfpors_sample(conn, target_schema, treatment_index_table,  nfpors_url)
 
     conn.close()
