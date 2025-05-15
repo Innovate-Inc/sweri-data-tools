@@ -189,7 +189,7 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
     common_index = service_geom.index.intersection(sweri_geom.index)
 
     geom_matches = service_geom.loc[common_index].geom_equals_exact(
-        sweri_geom.loc[common_index], tolerance=1e-3
+        sweri_geom.loc[common_index], tolerance=1e-5
     )
 
     geom_mismatch_indices = geom_matches[~geom_matches].index
