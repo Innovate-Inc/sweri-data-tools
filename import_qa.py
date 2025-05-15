@@ -210,7 +210,7 @@ def compare_gdfs(service_gdf, sweri_gdf, comparison_field_map, id_map):
 
     else:
         logger.info('-' * 40)
-        logger.info('No Attribute Differences Found')
+        logger.info('No Attribute Differences')
 
     if not null_ids.empty:
         logger.info('-' * 40)
