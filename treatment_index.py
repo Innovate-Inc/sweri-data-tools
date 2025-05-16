@@ -1,4 +1,7 @@
 import os
+
+from scripts.sweri_utils.sql import revert_multi_to_poly
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
@@ -803,51 +806,52 @@ if __name__ == "__main__":
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
     # Truncate the table before inserting new data
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
-        cursor.execute('COMMIT;')
+    # cursor = conn.cursor()
+    # with conn.transaction():
+    #     cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
+    #     cursor.execute('COMMIT;')
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # FACTS Hazardous Fuels
-    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
-    # special input srs for common attributes
-    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
-    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
-    hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
-
-    # FACTS Common Attributes
-    common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    common_attributes_type_filter(conn, target_schema, insert_table)
-
-    # NFPORS
-    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
-    nfpors_date_filtering(conn, target_schema)
-    nfpors_insert(conn, target_schema, insert_table)
-    nfpors_fund_code(conn, target_schema, insert_table)
-    nfpors_treatment_date(conn, target_schema, insert_table)
-
-    # IFPRS processing and insert
-    update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
-    ifprs_date_filtering(conn, target_schema)
-    ifprs_insert(conn, target_schema, insert_table)
-    ifprs_treatment_date(conn, target_schema, insert_table)
-
-    # Modify treatment index in place
-    fund_source_updates(conn, target_schema, insert_table)
-    update_total_cost(conn, target_schema, insert_table)
-    correct_biomass_removal_typo(conn, target_schema, insert_table)
-    flag_high_cost(conn, target_schema, insert_table)
+    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    # # special input srs for common attributes
+    # # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+    # # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+    # input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    #                 target_schema, ogr_db_string, input_srs)
+    # hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
+    # hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
+    #
+    # # FACTS Common Attributes
+    # common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    # common_attributes_type_filter(conn, target_schema, insert_table)
+    #
+    # # NFPORS
+    # update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    # nfpors_date_filtering(conn, target_schema)
+    # nfpors_insert(conn, target_schema, insert_table)
+    # nfpors_fund_code(conn, target_schema, insert_table)
+    # nfpors_treatment_date(conn, target_schema, insert_table)
+    #
+    # # IFPRS processing and insert
+    # update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
+    # ifprs_date_filtering(conn, target_schema)
+    # ifprs_insert(conn, target_schema, insert_table)
+    # ifprs_treatment_date(conn, target_schema, insert_table)
+    #
+    # # Modify treatment index in place
+    # fund_source_updates(conn, target_schema, insert_table)
+    # update_total_cost(conn, target_schema, insert_table)
+    # correct_biomass_removal_typo(conn, target_schema, insert_table)
+    # flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
+    revert_multi_to_poly(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
