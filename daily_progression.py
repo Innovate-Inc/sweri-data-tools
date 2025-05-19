@@ -11,34 +11,27 @@ from sweri_utils.download import service_to_postgres
 
 logger = logging.getLogger(__name__)
 logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./daily_progression.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+# logger.addHandler(watchtower.CloudWatchLogHandler())
 
 def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
     #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
 
-    service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, db_conn, 'current_fires_snapshot', schema )
+    service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
     logger.info('current fires downloaded')
 
-def return_ids(connection, query):
+def return_ids(db_conn, query):
     # ArcSDEExecute returns boolean True when there are no ids,
     # a string when there is 1 id, and a list of 1 item lists
     #  when there are multiple ids
+    cursor = db_conn.cursor()
 
-    ids_nested_list = connection.execute(query)
-    if type(ids_nested_list) == str:
-         logger.info(f'nested Id list: {ids_nested_list}')
-         return f"'{ids_nested_list}'"
-    elif type(ids_nested_list) == list:
+    with db_conn.transaction():
+        cursor.execute(query)
+        ids_list = [row[0] for row in cursor.fetchall()]
 
-        ids_list = [item[0] for item in ids_nested_list]
-        ids_list_str  = ', '.join(f"'{id}'" for id in ids_list)
-        logger.info(f'list of ids: {ids_list_str}')
-        return ids_list_str
-    else:
-        logger.info('no ids')
-        return ''
+    return ids_list
 
-def add_new_fires(schema, connection, start_date):
+def add_new_fires(schema, db_conn, start_date):
     add_ids_query = f'''
     
         SELECT poly_irwinid FROM {schema}.current_fires_snapshot 
@@ -50,10 +43,10 @@ def add_new_fires(schema, connection, start_date):
         );
         
     '''
-    add_ids = return_ids(connection, add_ids_query)
+    add_ids = return_ids(db_conn, add_ids_query)
 
     if len(add_ids) > 0:
-        insert_fires(connection, schema, start_date, add_ids)
+        insert_fires(db_conn, schema, start_date, add_ids)
         logger.info(f'Added Fires : {add_ids}')
     else:
         logger.info(f'No new fires to add')
@@ -103,9 +96,10 @@ def update_modified_fires(schema, connection, removal_date):
         logger.info(f'No fires modified since last run')
     
 
-def insert_fires(connection, schema, start_date, id_list):
+def insert_fires(db_conn, schema, start_date, id_list):
     # insert from current fires into daily progression 
     # start_date set to current_date for all new entries
+    cursor = db_conn.cursor()
     common_fields = '''
     poly_sourceoid, poly_incidentname, poly_featurecategory, poly_mapmethod, 
     poly_gisacres, poly_createdate, poly_datecurrent, poly_polygondatetime, poly_irwinid, 
@@ -139,39 +133,41 @@ def insert_fires(connection, schema, start_date, id_list):
     attr_stratdecisionpublishdate, attr_createdondatetime_dt, attr_modifiedondatetime_dt, 
     attr_source, attr_iscpxchild, attr_cpxname, attr_cpxid, attr_sourceglobalid
     '''
+    with db_conn.transaction():
+        cursor.execute(f'''
+                                    
+            INSERT INTO {schema}.daily_progression
+            (
+            objectid, {common_fields},
+            globalid, removal_date, start_date, gdb_geomattr_data, shape
+            ) 
+        
+            SELECT
+        
+            sde.next_rowid('{schema}', 'daily_progression'), {common_fields}, 
+            sde.next_globalid(), NULL, '{start_date}', gdb_geomattr_data, shape
+        
+            FROM {schema}.current_fires_snapshot cf
+            WHERE cf.poly_irwinid IN (
+                {id_list}
+            );
     
-    connection.execute(f'''
-                                
-        INSERT INTO {schema}.daily_progression
-        (
-        objectid, {common_fields},
-        globalid, removal_date, start_date, gdb_geomattr_data, shape
-        ) 
-    
-        SELECT
-    
-        sde.next_rowid('{schema}', 'daily_progression'), {common_fields}, 
-        sde.next_globalid(), NULL, '{start_date}', gdb_geomattr_data, shape
-    
-        FROM {schema}.current_fires_snapshot cf
-        WHERE cf.poly_irwinid IN (
-            {id_list}
+        ''')
+
+def update_removal_date(db_conn, schema, removal_date, id_list):
+
+    cursor = db_conn.cursor()
+    with db_conn.transaction():
+        cursor.execute(f'''
+                                    
+            UPDATE {schema}.daily_progression
+            SET removal_date = '{removal_date}'
+            WHERE removal_date is null
+            AND poly_irwinid IN (
+                {id_list}
         );
-
-    ''')
-
-def update_removal_date(connection, schema, removal_date, id_list):
     
-    connection.execute(f'''
-                                
-        UPDATE {schema}.daily_progression
-        SET removal_date = '{removal_date}'
-        WHERE removal_date is null
-        AND poly_irwinid IN (
-            {id_list}
-    );
-
-    ''')
+        ''')
 
 if __name__ == '__main__':
     load_dotenv()
@@ -179,9 +175,9 @@ if __name__ == '__main__':
     target_schema = os.getenv('SCHEMA')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
     wkid = 4326
-    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
-                            os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+    conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
+                            os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
+    ogr_db_string = f"PG:dbname={os.getenv('DOCKER_DB_NAME')} user={os.getenv('DOCKER_DB_USER')} password={os.getenv('DOCKER_DB_PASSWORD')} port={os.getenv('DOCKER_DB_PORT')} host={os.getenv('DOCKER_DB_HOST')}"
 
 
     #import current fires layer into postgres
@@ -191,7 +187,7 @@ if __name__ == '__main__':
     add_new_fires(target_schema, conn, current_date)
 
     #set removal date to current date for fires removed from current fires since last update
-    notate_removed_fires(target_schema, con, current_date)
+    notate_removed_fires(target_schema, conn, current_date)
 
     #update entries modified since last run (inactivate old, add new)
-    update_modified_fires(target_schema, con, current_date)
+    update_modified_fires(target_schema, conn, current_date)
