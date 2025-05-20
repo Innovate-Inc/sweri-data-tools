@@ -10,8 +10,16 @@ from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import service_to_postgres
 
 logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./daily_progression.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-# logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+file_handler = logging.FileHandler('./daily_progression.log', encoding='utf-8')
+file_handler.setFormatter(formatter)
+
+if not logger.handlers:
+    logger.addHandler(file_handler)
+    logger.addHandler(w)
 
 def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
     #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
@@ -28,8 +36,8 @@ def return_ids(db_conn, query):
     with db_conn.transaction():
         cursor.execute(query)
         ids_list = [row[0] for row in cursor.fetchall()]
-
-    return ids_list
+        ids_string = ','.join(f"'{id}'" for id in ids_list)
+    return ids_string
 
 def add_new_fires(schema, db_conn, start_date):
     add_ids_query = f'''
@@ -51,7 +59,7 @@ def add_new_fires(schema, db_conn, start_date):
     else:
         logger.info(f'No new fires to add')
 
-def notate_removed_fires(schema, connection, removal_date):
+def notate_removed_fires(schema, db_conn, removal_date):
     removed_ids_query = f'''
     
         SELECT poly_irwinid from {schema}.daily_progression
@@ -64,16 +72,16 @@ def notate_removed_fires(schema, connection, removal_date):
         );
         
     '''
-    removed_ids = return_ids(connection, removed_ids_query)
+    removed_ids = return_ids(db_conn, removed_ids_query)
 
     if len(removed_ids) > 0:
-        update_removal_date(connection, schema, removal_date, removed_ids)
+        update_removal_date(db_conn, schema, removal_date, removed_ids)
         logger.info(f'removal_date set to {current_date} for : {removed_ids}')
     else:
         logger.info(f'No fire removals to notate')
 
 
-def update_modified_fires(schema, connection, removal_date):
+def update_modified_fires(schema, db_conn, removal_date):
     modified_ids_query = f'''
     
         SELECT dp.poly_irwinid  
@@ -86,11 +94,11 @@ def update_modified_fires(schema, connection, removal_date):
         cf.attr_modifiedondatetime_dt > dp.attr_modifiedondatetime_dt
         
     '''
-    modified_ids = return_ids(connection, modified_ids_query)
+    modified_ids = return_ids(db_conn, modified_ids_query)
 
     if len(modified_ids) > 0:
-        update_removal_date(connection, schema, removal_date, modified_ids)
-        insert_fires(connection, schema, removal_date, modified_ids)
+        update_removal_date(db_conn, schema, removal_date, modified_ids)
+        insert_fires(db_conn, schema, removal_date, modified_ids)
         logger.info(f'Modified fires {modified_ids}')
     else:
         logger.info(f'No fires modified since last run')
