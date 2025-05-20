@@ -1,4 +1,7 @@
 import os
+
+from scripts.sweri_utils.sql import revert_multi_to_poly
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
@@ -802,13 +805,13 @@ if __name__ == "__main__":
     conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+
     # Truncate the table before inserting new data
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         cursor.execute('COMMIT;')
-
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
@@ -848,6 +851,7 @@ if __name__ == "__main__":
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
+    revert_multi_to_poly(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
