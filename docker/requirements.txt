@@ -8,4 +8,6 @@ arcgis==2.3.0
 sqlalchemy==2.0.39
 psycopg2==2.9.10
 celery[redis,sqs]==5.5.1
-
+pytest
+pytest-cov
+git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
