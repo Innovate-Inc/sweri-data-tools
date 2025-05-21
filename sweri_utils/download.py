@@ -3,12 +3,9 @@ import json
 import os
 from time import sleep
 import requests
-import arcgis
-try:
-    import arcpy
-except ModuleNotFoundError:
-    logging.warning('Missing arcpy, some functions will not work')
-
+from osgeo.gdal import VectorTranslateOptions, VectorTranslate
+from datetime import datetime
+from .logging import log_this
 
 def get_fields(service_url):
     """
@@ -128,7 +125,33 @@ def get_ids(service_url, where='1=1', geometry=None, geometry_type=None):
     return data.get('objectIds')
 
 
-def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json'):
+def get_query_params_chunk(ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json'):
+    """
+    Function for creating query parameters for a feature service
+    :param ids: list of Object IDs
+    :param out_sr: output spatial reference
+    :param out_fields: out fields for query
+    :param chunk_size: check size for batch feature request
+    :return: query parameters
+    """
+    if out_fields is None:
+        out_fields = ['*']
+    start = 0
+    str_ids = [str(i) for i in ids]
+    while True:
+        # create comma-separated string of ids from chunk of id list
+        id_list = ','.join(str_ids[start:start + chunk_size])
+        # if no ids, break
+        if id_list == '':
+            break
+        # query params
+        params = {'f': format, 'outSR': 4326 if format == 'geojson' else out_sr, 'outFields': ','.join(out_fields), 'returnGeometry': 'true',
+                  'objectIds': id_list}
+        start += chunk_size
+        yield params
+
+
+def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json', return_full_response=False):
     """
     Fetches all features from a feature service using object ids
     :param url: REST endpoint of feature service
@@ -136,29 +159,17 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     :param out_sr: output spatial reference
     :param out_fields: out fields for query
     :param chunk_size: check size for batch feature request
+    :param format: format of the response, either 'json' or 'geojson'
+    :param return_full_response: if True, returns the full response, else returns only the features
     :return: None
     """
     logging.info(f'getting all features for {url}')
-    if out_fields is None:
-        out_fields = ['*']
-    start = 0
     total = 0
-    str_ids = [str(i) for i in ids]
-    while True:  # This loops through the service and compiles the output into all_features
+    for params in get_query_params_chunk(ids, out_sr, out_fields, chunk_size, format):  # This loops through the service and compiles the output into all_features
         try:
-            # create comma-separated string of ids from chunk of id list
-            id_list = ','.join(str_ids[start:start + chunk_size])
-            # if no ids, break
-            if id_list == '':
-                break
-            # query params
-            params = {'f': format, 'outSR': 4326 if format == 'geojson' else out_sr, 'outFields': ','.join(out_fields), 'returnGeometry': 'true',
-                      'objectIds': id_list}
-
-            start += chunk_size
             # fetch features and update total
-            r = fetch_features(url + '/query', params)
-            total += len(r)
+            r = fetch_features(url + '/query', params, return_full_response)
+            total += len(r) if not return_full_response else len(r['features'])
             yield r
             logging.info(f'{total} of {len(ids)} fetched')
         except Exception as e:
@@ -169,16 +180,21 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
 
 
 @retry(retries=2, on_failure=fetch_failure)
-def fetch_features(url, params):
+def fetch_features(url, params, return_full_response=False):
     """
     get features from a feature service
     :param url: REST endpoint of feature service
     :param params: query parameters
+    :param return_full_response: if True, returns the full response, else returns only the features
     :return: JSON features
     """
     try:
         r = requests.post(url, data=params)
         r_json = r.json()
+
+        if return_full_response:
+            return r_json
+
         if 'features' not in r_json:
             raise KeyError(f'Error: {r.content} With Params: {json.dumps(params)}')
         return r_json['features']
@@ -198,100 +214,57 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
     return out_features
 
 
-########################### arcpy required for below functions ###########################
-
-def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=None, geom_type=None, out_sr=3857,
-                                  out_fields=None, chunk_size = 2000):
-    """
-    fetches and converts ESRI JSON features to a FeatureClass in a geodatabase
-    :param service_url: REST endpoint of Esri service with feature access enabled
-    :param where: where clause for filtering features to fetch
-    :param gdb: output geodatabase for new FeatureClass
-    :param fc_name: name of new FeatureClass
-    :param geometry: geometry to use for query, if any
-    :param geom_type: type of geometry used for query, required only if geometry is provided
-    :param out_sr: out spatial reference WKID
-    :param out_fields: out fields for query
-    :return: new FeatureClass
-    """
-    # get count
-    ids = get_ids(service_url, where, geometry, geom_type)
-    out_features = []
-    # get all features
-    for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size):
-        out_features += f
-    if len(out_features) == 0:
-        raise Exception(f'No features fetched for ids: {ids}')
-    # save errors out if there is no geometry or attrbutes object
-    fields = get_fields(service_url)
-    fset = {'features': out_features, 'fields': fields, 'spatial_reference': {'wkid': out_sr}}
-    # create a json file from the features
-
-    with open(f'{fc_name}.json', 'w') as f:
-        json.dump(fset, f)
-    out_fc = os.path.join(gdb, fc_name)
-    if arcpy.Exists(out_fc):
-        arcpy.management.Delete(out_fc)
-    out_fc = arcpy.conversion.JSONToFeatures(f.name, out_fc)
-    # define the projection, without this FeaturesToJSON fails
-    arcpy.management.DefineProjection(out_fc, arcpy.SpatialReference(out_sr))
-    # delete JSON
-    os.remove(f.name)
-    return out_fc
-
-
-def service_to_postgres(service_url, where_clause, wkid, database, schema, destination_table, cursor, sde_file, call_insert_function,chunk_size = 70):
+@log_this
+def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, conn, chunk_size = 70):
     """
     service_to_postgres allows the capture of records from services that break other methods
     this method is much slower, and should be used when other methods are exhauseted
     :param service_url: REST endpoint of feature service
     :param where_clause:  where clause for filtering features to fetch
     :param wkid: out spatial reference WKID
-    :param database: destination postgres database
+    :param ogr_db_string: OGR connection string for Postgres
     :param schema: destination postgres schema
     :param destination_table: destination postgres table
-    :param cursor: psycopg2 cursor
-    :param sde_file: sde_file connected to target schema
-    :param call_insert_function: calls insert function passed in to insert from additions table to destination table
+    :param conn: psycopg2 connection object
     :param chunk_size: check size for batch feature request
     """
-    #clear data from the destination table
-    #destination table must be in place and have the proper schema
-    cursor.execute(f'TRUNCATE {schema}.{destination_table}')
 
-    service_fl = arcgis.features.FeatureLayer(service_url)
-    service_additions_postgres = os.path.join(sde_file, f'{database}.{schema}.{destination_table}_additions')
+    cursor = conn.cursor()
+    # create a buffer table to hold the data without copying data
+    # this is a workaround for the fact that vector translate does not support overwriting
+    # the destination table if it is already in use
+    with conn.transaction():
+        # create table has to be commited to be used in another transaction
+        cursor.execute(f'''
+                   DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
+                   CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);
+               ''')
 
-    #fetches all ids that will be added
-    ids = get_ids(service_url, where=where_clause)
-    str_ids = [str(i) for i in ids]
-    start = 0
-    total_len = len(ids)
+    with conn.transaction():
 
-    while start < total_len:
-        id_list = ','.join(str_ids[start:start + chunk_size])
-        count, fc = query_by_id_and_save_to_fc(id_list, service_fl, service_additions_postgres, wkid, sde_file, f'{destination_table}_additions')
+        #fetches all ids that will be added
+        ids = get_ids(service_url, where=where_clause)
 
-        if (count > 0):
-            try:
-                #insert additions to destination table
-                call_insert_function(cursor, schema)
+        for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
+            # convert epoch time to iso format for esriFieldTypeDate fields
+            date_fields = [x['name'] for x in r['fields'] if x['type'] == 'esriFieldTypeDate']
+            for f in r['features']:
+                for d in date_fields:
+                    if d in f['attributes'] and f['attributes'][d] is not None:
+                        f['attributes'][d] = int(f['attributes'][d]) / 1000
+                        f['attributes'][d] = datetime.fromtimestamp(f['attributes'][d]).isoformat()
 
-            except Exception as e:
-                logging.error(e.args[0])
-                raise e
-
-        logging.info(f'{start+chunk_size} of {total_len} records inserted into {destination_table}')
-        start+=chunk_size
-
-def query_by_id_and_save_to_fc(id_list, feature_layer, sde_fc_path, wkid, sde_file, out_fc_name):
-
-        service_fl_query = feature_layer.query(object_ids=id_list,  out_fields="*", return_geometry=True, out_sr=wkid)
-
-        #make space for additions
-        if(arcpy.Exists(sde_fc_path)):
-            arcpy.management.Delete(sde_fc_path)
-
-        service_additions_fc = service_fl_query.save(sde_file, f'{out_fc_name}')
-        count = int(arcpy.management.GetCount(service_additions_fc)[0])
-        return count, service_additions_fc
+            options = VectorTranslateOptions(format='PostgreSQL',
+                                             accessMode='append',
+                                             geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
+                                             layerName=f'{destination_table}_buffer')
+            # commit chunks to database in
+            _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
+            del _
+        # copy data from buffer table to destination table
+        cursor.execute(f'''
+            TRUNCATE {schema}.{destination_table};
+            INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);
+            DROP TABLE {schema}.{destination_table}_buffer;
+        ''')
+    conn.commit()

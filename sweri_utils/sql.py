@@ -238,7 +238,6 @@ def copy_table_across_servers(from_conn: psycopg.Connection, from_schema: str, f
                 with to_cursor.copy(to_copy) as in_copy:
                     for data in out_copy:
                         in_copy.write(data)
-                to_cursor.execute('COMMIT;')
 
     logging.info(f'Copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
@@ -291,3 +290,69 @@ def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str
         postgres_create_index(conn, schema, table, field)
     if spatial:
         refresh_spatial_index(conn, schema, table)
+
+def add_column(conn: psycopg.Connection, schema: str, table: str, column_name: str, column_type: str) -> None:
+    """
+    Adds a new column to a specified table in a PostgreSQL database.
+
+    :param cursor: The database cursor to execute the SQL commands.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to add the column to.
+    :param column_name: The name of the new column to be added.
+    :param column_type: The data type of the new column.
+    :return: None
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
+
+def limit_update(conn, schema, table, update_command, limit=150000):
+    """
+    Limits the number of rows in a PostgreSQL table to a specified limit.
+
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to limit rows in.
+    :param update_command: The main update command to be run.
+    :param limit: The maximum number of rows to keep in the table.
+    :return: None
+    """
+    cursor = conn.cursor()
+    current_id = 0
+    # pbar = tqdm.tqdm()
+    while True:
+        with conn.transaction():
+            max_id = cursor.execute(f"""
+                        select max(objectid) as max_id from (
+                          select objectid from {schema}.{table}
+                           where objectid > {current_id} group by objectid limit {limit}
+                          ) subquery
+                    """).fetchone()[0]
+            if max_id is None:
+                break
+            cursor.execute(f"""
+                {update_command}
+                {'AND' if 'where' in update_command.lower() else 'WHERE'} 
+                {current_id} < objectid and objectid <= {max_id}
+            """)
+            current_id = max_id
+            # pbar.update(limit)
+
+
+def revert_multi_to_poly(conn, schema, table):
+    """
+    Reverts a multi-part geometry to a single-part geometry in a PostgreSQL table where there is only one polygon.
+
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to revert geometries in.
+    :param field: The name of the geometry field to be reverted.
+    :return: None
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"""
+            UPDATE {schema}.{table} as x
+            SET shape = (select (ST_Dump(shape)).geom::geometry(Polygon,4326) from {schema}.{table} where objectid = x.objectid)
+            WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
+        """)

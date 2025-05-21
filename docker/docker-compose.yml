@@ -32,6 +32,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command: postgres -c max_wal_size=5GB -c wal_level=minimal -c synchronous_commit=off -c max_wal_senders=0
   app:
     image: ${DOCKER_IMAGE_NAME}
     build:
@@ -48,9 +49,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-
     volumes:
-      - ..:/code
+      - ..:/src
 #  app_console:
 #    extends:
 #      service:
@@ -69,7 +69,7 @@ services:
     extends:
       service: app # todo: change to image
     volumes:
-      - ..:/code
+      - ..:/src
     command: celery -A worker worker --loglevel=debug
   redis:
     image: redis:latest
