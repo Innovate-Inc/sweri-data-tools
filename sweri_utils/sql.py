@@ -64,7 +64,7 @@ def insert_from_db(
         from_fields: list[str],
         from_shape: str = 'shape',
         to_shape: str = 'shape',
-        wkid: int = 3857
+        wkid: int = 4326
 ) -> None:
     """
     Inserts records from one table into another in a PostgreSQL database.
