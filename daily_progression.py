@@ -4,109 +4,110 @@ from dotenv import load_dotenv
 import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 import logging
-import arcpy
 import watchtower
 
+from sweri_utils.sql import connect_to_pg_db
+from sweri_utils.download import service_to_postgres
 
 logger = logging.getLogger(__name__)
-logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./daily_progression.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-logger.addHandler(watchtower.CloudWatchLogHandler())
+logger.setLevel(logging.INFO)
 
-def import_current_fires_snapshot(sde_file, schema, out_wkid):
-    #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Covert to Feature Layer
-    current_fires_url = os.getenv('CURRENT_FIRES')
-    current_fires = FeatureLayer(current_fires_url)
-    current_fires_query = current_fires.query(where='1=1',  out_fields='*', return_geometry=True, out_sr=out_wkid)
-    current_fires_fc = current_fires_query.save(arcpy.env.scratchGDB, 'current_fires_snapshot')
-    current_fires_postgres = os.path.join(sde_file, f'sweri.{schema}.current_fires_snapshot')
+formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
+file_handler = logging.FileHandler('./daily_progression.log', encoding='utf-8')
+file_handler.setFormatter(formatter)
+
+if not logger.handlers:
+    logger.addHandler(file_handler)
+    logger.addHandler(w)
+
+def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
+    #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
+
+    service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
     logger.info('current fires downloaded')
 
-    if arcpy.Exists(current_fires_postgres):
-                        arcpy.management.Delete(current_fires_postgres)
-                        logger.info("current fires snapshot deleted")
-
-    arcpy.conversion.FeatureClassToGeodatabase(current_fires_fc, sde_connection_file)
-    arcpy.management.AddIndex(current_fires_postgres, 'poly_irwinid', 'irwinid_idx', 'NON_UNIQUE', 'ASCENDING') 
-      
-def return_ids(connection, query):
+def return_ids(db_conn, query):
     # ArcSDEExecute returns boolean True when there are no ids,
     # a string when there is 1 id, and a list of 1 item lists
     #  when there are multiple ids
+    cursor = db_conn.cursor()
 
-    ids_nested_list = connection.execute(query)
-    if type(ids_nested_list) == str:
-         logger.info(f'nested Id list: {ids_nested_list}')
-         return f"'{ids_nested_list}'"
-    elif type(ids_nested_list) == list:
+    with db_conn.transaction():
+        cursor.execute(query)
+        ids_list = [row[0] for row in cursor.fetchall()]
+        ids_string = ','.join(f"'{id}'" for id in ids_list)
+    return ids_string
 
-        ids_list = [item[0] for item in ids_nested_list]
-        ids_list_str  = ', '.join(f"'{id}'" for id in ids_list)
-        logger.info(f'list of ids: {ids_list_str}')
-        return ids_list_str
-    else:
-        logger.info('no ids')
-        return ''
-
-def add_new_fires(schema, connection, start_date):
+def add_new_fires(schema, db_conn, start_date):
     add_ids_query = f'''
-    SELECT poly_irwinid from {schema}.current_fires_snapshot where poly_irwinid not in (        
-    SELECT poly_irwinid 
-    FROM {schema}.daily_progression 
-    WHERE removal_date IS NULL
-    );
+    
+        SELECT poly_irwinid FROM {schema}.current_fires_snapshot 
+        WHERE poly_irwinid NOT IN 
+        (        
+        SELECT poly_irwinid 
+        FROM {schema}.daily_progression 
+        WHERE removal_date IS NULL
+        );
+        
     '''
-    add_ids = return_ids(con, add_ids_query)
+    add_ids = return_ids(db_conn, add_ids_query)
 
     if len(add_ids) > 0:
-        insert_fires(connection, schema, start_date, add_ids)
+        insert_fires(db_conn, schema, start_date, add_ids)
         logger.info(f'Added Fires : {add_ids}')
     else:
         logger.info(f'No new fires to add')
 
-def notate_removed_fires(schema, connection, removal_date):
+def notate_removed_fires(schema, db_conn, removal_date):
     removed_ids_query = f'''
-    SELECT poly_irwinid from {schema}.daily_progression
-    WHERE removal_date is null
-    AND
-    poly_irwinid NOT IN(
-        SELECT poly_irwinid
-        FROM {schema}.current_fires_snapshot
-    );
+    
+        SELECT poly_irwinid from {schema}.daily_progression
+        WHERE removal_date is null
+        AND
+        poly_irwinid NOT IN
+        (
+            SELECT poly_irwinid
+            FROM {schema}.current_fires_snapshot
+        );
+        
     '''
-    removed_ids = return_ids(connection, removed_ids_query)
+    removed_ids = return_ids(db_conn, removed_ids_query)
 
     if len(removed_ids) > 0:
-        update_removal_date(connection, schema, removal_date, removed_ids)
+        update_removal_date(db_conn, schema, removal_date, removed_ids)
         logger.info(f'removal_date set to {current_date} for : {removed_ids}')
     else:
         logger.info(f'No fire removals to notate')
 
 
-def update_modified_fires(schema, connection, removal_date):
+def update_modified_fires(schema, db_conn, removal_date):
     modified_ids_query = f'''
-    SELECT dp.poly_irwinid  
-    FROM {schema}.daily_progression dp
-    JOIN {schema}.current_fires_snapshot cf
-    ON dp.poly_irwinid = cf.poly_irwinid
-    WHERE
-    dp.removal_date is null
-    and
-    cf.attr_modifiedondatetime_dt > dp.attr_modifiedondatetime_dt
+    
+        SELECT dp.poly_irwinid  
+        FROM {schema}.daily_progression dp
+        JOIN {schema}.current_fires_snapshot cf
+        ON dp.poly_irwinid = cf.poly_irwinid
+        WHERE
+        dp.removal_date IS NULL
+        AND
+        cf.attr_modifiedondatetime_dt > dp.attr_modifiedondatetime_dt
+        
     '''
-    modified_ids = return_ids(connection, modified_ids_query)
+    modified_ids = return_ids(db_conn, modified_ids_query)
 
     if len(modified_ids) > 0:
-        update_removal_date(connection, schema, removal_date, modified_ids)
-        insert_fires(connection, schema, removal_date, modified_ids)
+        update_removal_date(db_conn, schema, removal_date, modified_ids)
+        insert_fires(db_conn, schema, removal_date, modified_ids)
         logger.info(f'Modified fires {modified_ids}')
     else:
         logger.info(f'No fires modified since last run')
     
-    
 
-def insert_fires(connection, schema, start_date, id_list):
+def insert_fires(db_conn, schema, start_date, id_list):
     # insert from current fires into daily progression 
     # start_date set to current_date for all new entries
+    cursor = db_conn.cursor()
     common_fields = '''
     poly_sourceoid, poly_incidentname, poly_featurecategory, poly_mapmethod, 
     poly_gisacres, poly_createdate, poly_datecurrent, poly_polygondatetime, poly_irwinid, 
@@ -140,59 +141,61 @@ def insert_fires(connection, schema, start_date, id_list):
     attr_stratdecisionpublishdate, attr_createdondatetime_dt, attr_modifiedondatetime_dt, 
     attr_source, attr_iscpxchild, attr_cpxname, attr_cpxid, attr_sourceglobalid
     '''
+    with db_conn.transaction():
+        cursor.execute(f'''
+                                    
+            INSERT INTO {schema}.daily_progression
+            (
+            objectid, {common_fields},
+            globalid, removal_date, start_date, gdb_geomattr_data, shape
+            ) 
+        
+            SELECT
+        
+            sde.next_rowid('{schema}', 'daily_progression'), {common_fields}, 
+            sde.next_globalid(), NULL, '{start_date}', gdb_geomattr_data, shape
+        
+            FROM {schema}.current_fires_snapshot cf
+            WHERE cf.poly_irwinid IN (
+                {id_list}
+            );
     
-    connection.execute(f'''
-                                
-    INSERT INTO {schema}.daily_progression
-    (
-    objectid, {common_fields},
-    globalid, removal_date, start_date, gdb_geomattr_data, shape
-    ) 
+        ''')
 
-    SELECT
+def update_removal_date(db_conn, schema, removal_date, id_list):
 
-    sde.next_rowid('{schema}', 'daily_progression'), {common_fields}, 
-    sde.next_globalid(), NULL, '{start_date}', gdb_geomattr_data, shape
-
-    FROM {schema}.current_fires_snapshot cf
-    WHERE cf.poly_irwinid IN (
-        {id_list}
-    );
-
-    ''')
-
-def update_removal_date(connection, schema, removal_date, id_list):
+    cursor = db_conn.cursor()
+    with db_conn.transaction():
+        cursor.execute(f'''
+                                    
+            UPDATE {schema}.daily_progression
+            SET removal_date = '{removal_date}'
+            WHERE removal_date is null
+            AND poly_irwinid IN (
+                {id_list}
+        );
     
-    connection.execute(f'''
-                                
-    UPDATE {schema}.daily_progression
-    SET removal_date = '{removal_date}'
-    WHERE removal_date is null
-    AND poly_irwinid IN (
-        {id_list}
-    );
-
-    ''')
+        ''')
 
 if __name__ == '__main__':
-    
-    current_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     load_dotenv()
-    arcpy.env.workspace = arcpy.env.scratchGDB
-    arcpy.env.overwriteOutput = True
-    sde_connection_file = os.getenv('SDE_FILE')
+    current_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     target_schema = os.getenv('SCHEMA')
+    wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
     wkid = 4326
-    con = arcpy.ArcSDESQLExecute(sde_connection_file)
+    conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
+                            os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
+    ogr_db_string = f"PG:dbname={os.getenv('DOCKER_DB_NAME')} user={os.getenv('DOCKER_DB_USER')} password={os.getenv('DOCKER_DB_PASSWORD')} port={os.getenv('DOCKER_DB_PORT')} host={os.getenv('DOCKER_DB_HOST')}"
+
 
     #import current fires layer into postgres
-    import_current_fires_snapshot(sde_connection_file, target_schema, wkid)
+    import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
 
     #add new fires from current fires into daily progression
-    add_new_fires(target_schema, con, current_date)
+    add_new_fires(target_schema, conn, current_date)
 
     #set removal date to current date for fires removed from current fires since last update
-    notate_removed_fires(target_schema, con, current_date)
+    notate_removed_fires(target_schema, conn, current_date)
 
     #update entries modified since last run (inactivate old, add new)
-    update_modified_fires(target_schema, con, current_date)
+    update_modified_fires(target_schema, conn, current_date)
