@@ -9,7 +9,7 @@ import re
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -847,6 +847,7 @@ if __name__ == "__main__":
     fund_source_updates(conn, target_schema, insert_table)
     update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(conn, target_schema, insert_table)
+    flag_duplicate_ids(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)

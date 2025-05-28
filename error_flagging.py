@@ -5,6 +5,31 @@ import logging
 from dotenv import load_dotenv
 import watchtower
 
+
+@log_this
+def flag_duplicate_ids(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        # Makes sp  ace for duplicate table
+        # cursor.execute('BEGIN;')
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table_name}
+             SET error = 
+                    CASE
+                        WHEN tid.error IS NULL THEN 'DUPLICATE-ID'
+                        ELSE tid.error || ';DUPLICATE-ID'
+                    END
+            WHERE unique_id IN (
+                SELECT unique_id
+                FROM {schema}.{table_name}
+                GROUP BY unique_id
+                HAVING COUNT(*) > 1
+            );
+
+        ''')
+
+
 @log_this
 def create_duplicate_table(conn, schema, table_name):
     cursor = conn.cursor()
@@ -45,6 +70,8 @@ def create_duplicate_table(conn, schema, table_name):
 
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'activity')
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'actual_completion_date')
+
+
 
 @log_this
 def flag_duplicate_table(conn, schema, table_name):
