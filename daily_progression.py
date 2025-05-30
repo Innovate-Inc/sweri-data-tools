@@ -19,7 +19,8 @@ file_handler.setFormatter(formatter)
 
 if not logger.handlers:
     logger.addHandler(file_handler)
-    logger.addHandler(w)
+    logger.addHandler(watchtower.CloudWatchLogHandler())
+
 
 def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
     #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
