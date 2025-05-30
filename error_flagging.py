@@ -8,10 +8,10 @@ import watchtower
 
 @log_this
 def flag_duplicate_ids(conn, schema, table_name):
+    # Sets DUPLICATE-ID Flag for all entries where the id appears in the table more than once
+
     cursor = conn.cursor()
     with conn.transaction():
-        # Makes sp  ace for duplicate table
-        # cursor.execute('BEGIN;')
         cursor.execute(f'''
 
             UPDATE {schema}.{table_name} tid
@@ -34,8 +34,7 @@ def flag_duplicate_ids(conn, schema, table_name):
 def create_duplicate_table(conn, schema, table_name):
     cursor = conn.cursor()
     with conn.transaction():
-        # Makes sp  ace for duplicate table
-        # cursor.execute('BEGIN;')
+        # Makes space for duplicate table
         cursor.execute(f'''
     
            DROP TABLE IF EXISTS
