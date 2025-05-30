@@ -14,7 +14,7 @@ def flag_duplicate_ids(conn, schema, table_name):
         # cursor.execute('BEGIN;')
         cursor.execute(f'''
 
-            UPDATE {schema}.{table_name}
+            UPDATE {schema}.{table_name} tid
              SET error = 
                     CASE
                         WHEN tid.error IS NULL THEN 'DUPLICATE-ID'
