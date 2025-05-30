@@ -1,4 +1,3 @@
-from arcgis.features import FeatureLayer
 import datetime
 from dotenv import load_dotenv
 import os
