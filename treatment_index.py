@@ -1,4 +1,7 @@
 import os
+
+from scripts.sweri_utils.sql import revert_multi_to_poly
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
@@ -6,7 +9,7 @@ import re
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -712,7 +715,12 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         logging.info(f'Extracting {zip_file}')
         extract_and_remove_zip_file(zip_file)
 
-        gdb_to_postgres(gdb, projection, common_attributes_fc_name, table_name, schema, ogr_db_string)
+        # special input srs for common attributes
+        # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+        # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+
+        input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+        gdb_to_postgres(gdb, projection, common_attributes_fc_name, table_name, schema, ogr_db_string, input_srs)
 
         add_fields_and_indexes(conn, schema, table_name, region_number)
 
@@ -797,20 +805,24 @@ if __name__ == "__main__":
     conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+
     # Truncate the table before inserting new data
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         cursor.execute('COMMIT;')
 
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
     download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
     extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    # special input srs for common attributes
+    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
     gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string)
+                    target_schema, ogr_db_string, input_srs)
     hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
     hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
 
@@ -835,10 +847,12 @@ if __name__ == "__main__":
     fund_source_updates(conn, target_schema, insert_table)
     update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(conn, target_schema, insert_table)
+    flag_duplicate_ids(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
-    flag_uom_outliers(conn, target_schema, f'{insert_table}_temp')
+    flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
+    revert_multi_to_poly(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
