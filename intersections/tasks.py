@@ -51,7 +51,6 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
 @app.task(time_limit=14400)
 def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, insert_table):
     docker_conn= create_db_conn_from_envs('DOCKER')
-    rds_conn= create_db_conn_from_envs('RDS')
     delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
     if value['source_type'] == 'url':
         logger.info(f'fetching geojson features from {value["source"]}')
