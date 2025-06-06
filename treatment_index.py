@@ -1,12 +1,10 @@
 import os
 
-from scripts.sweri_utils.sql import revert_multi_to_poly
-
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column
+from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
