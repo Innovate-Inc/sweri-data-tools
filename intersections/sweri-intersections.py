@@ -42,7 +42,7 @@ def configure_intersection_sources(features, start):
             'last_run': att['last_run'],
             'frequency_days': att['frequency_days'],
             'name': att['name'],
-            'chunk_size': int(att['chunk_size']),
+            'chunk_size': int(att['chunk_size']) if att['chunk_size'] else 1000,
         }
 
         # always set targets
