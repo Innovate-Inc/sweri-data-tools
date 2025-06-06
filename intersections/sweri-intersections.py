@@ -1,8 +1,5 @@
 import sys
 from os import path
-
-from sweri_utils.logging import log_this
-
 # for importing from sibling directories
 sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
 
@@ -16,6 +13,7 @@ import requests as r
 from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
+from sweri_utils.logging import log_this
 import watchtower
 
 from intersections.utils import create_db_conn_from_envs
@@ -157,8 +155,6 @@ if __name__ == '__main__':
     script_start = datetime.now()
     sr_wkid = 4326
 
-    # s3 bucket used for intersections
-    s3_bucket_name = os.getenv('S3_BUCKET')
     # configure intersection sources
     # URL for editing last run date
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
