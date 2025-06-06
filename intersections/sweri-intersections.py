@@ -15,8 +15,6 @@ from sweri_utils.download import fetch_features
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
 from sweri_utils.logging import log_this
 import watchtower
-
-from intersections.utils import create_db_conn_from_envs
 from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
 
 logger = logging.getLogger(__name__)
@@ -167,7 +165,7 @@ if __name__ == '__main__':
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('DB_SCHEMA')
-    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')),os.getenv('DB_NAME'), os.getenv('DB_USER'),os.getenv('DB_PASSWORD'))
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,os.getenv('DB_NAME'), os.getenv('DB_USER'),os.getenv('DB_PASSWORD'))
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker
     try:
