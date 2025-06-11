@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S')
 
-cw_handler = watchtower.CloudWatchLogHandler()
-cw_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
-logger.addHandler(cw_handler)
+# cw_handler = watchtower.CloudWatchLogHandler()
+# cw_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
+# logger.addHandler(cw_handler)
 logger.setLevel(logging.INFO)
 
 @log_this
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     portal_password = os.getenv('ESRI_PW')
     ############### database connections ################
     # local docker db environment variables
-    db_schema = os.getenv('DB_SCHEMA')
+    db_schema = os.getenv('SCHEMA')
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,os.getenv('DB_NAME'), os.getenv('DB_USER'),os.getenv('DB_PASSWORD'))
     ############## intersections processing in docker ################
     # function that runs everything for creating new intersections in docker

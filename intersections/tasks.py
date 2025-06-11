@@ -4,13 +4,13 @@ from sweri_utils.logging import log_this
 from sweri_utils.sql import delete_from_table, copy_table_across_servers, insert_from_db
 from worker import app
 import logging
-import watchtower
+# import watchtower
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='./treatment_index.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-cw = watchtower.CloudWatchLogHandler()
-cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
-logger.addHandler(cw)
+# cw = watchtower.CloudWatchLogHandler()
+# cw.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
+# logger.addHandler(cw)
 
 
 @app.task(time_limit=14400)
@@ -64,7 +64,7 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
             docker_conn,
             docker_schema,
             insert_table,
-            ['unique_id', 'feat_source', 'shape'],
+            ['unique_id', 'feat_source'],
             value['source'],
             [value['id'], f"'{key}' as feat_source"],
             'shape',
