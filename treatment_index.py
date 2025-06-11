@@ -701,7 +701,7 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
     for url in urls:
 
         #expression pulls just the number out of the url, 01-10
-        region_number = re.sub("\D", "", url)
+        region_number = re.sub(r"\D", "", url)
         table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
 
@@ -850,7 +850,6 @@ if __name__ == "__main__":
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
-    revert_multi_to_poly(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
