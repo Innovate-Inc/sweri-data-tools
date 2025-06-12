@@ -151,7 +151,8 @@ def get_query_params_chunk(ids, out_sr=3857, out_fields=None, chunk_size=2000, f
         yield params
 
 
-def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json', return_full_response=False):
+def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json', return_full_response=False,
+                     extra_params={}):
     """
     Fetches all features from a feature service using object ids
     :param url: REST endpoint of feature service
@@ -166,6 +167,7 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     logging.info(f'getting all features for {url}')
     total = 0
     for params in get_query_params_chunk(ids, out_sr, out_fields, chunk_size, format):  # This loops through the service and compiles the output into all_features
+        params = {**params, **extra_params}  # merge extra params if provided
         try:
             # fetch features and update total
             r = fetch_features(url + '/query', params, return_full_response)
@@ -215,7 +217,7 @@ def fetch_geojson_features(service_url, where, geometry=None, geom_type=None, ou
 
 
 @log_this
-def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, conn, chunk_size = 70):
+def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, destination_table, conn, chunk_size = 70, extra_params={}):
     """
     service_to_postgres allows the capture of records from services that break other methods
     this method is much slower, and should be used when other methods are exhauseted
@@ -245,7 +247,8 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
         #fetches all ids that will be added
         ids = get_ids(service_url, where=where_clause)
 
-        for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
+        for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json',
+                                  return_full_response=True, extra_params=extra_params):
             # convert epoch time to iso format for esriFieldTypeDate fields
             date_fields = [x['name'] for x in r['fields'] if x['type'] == 'esriFieldTypeDate']
             for f in r['features']:
