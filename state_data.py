@@ -20,3 +20,5 @@ if __name__ == "__main__":
                         {"geometryPrecision": "6"})
     # convert polygons to multi-polygons
     convert_poly_to_multi(conn, schema, table)
+    
+    # todo: delete or fix lines and points
