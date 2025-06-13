@@ -356,3 +356,22 @@ def revert_multi_to_poly(conn, schema, table):
             SET shape = (select (ST_Dump(shape)).geom::geometry(Polygon,4326) from {schema}.{table} where objectid = x.objectid)
             WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
         """)
+
+
+def convert_poly_to_multi(conn, schema, table):
+    """
+    Reverts a multi-part geometry to a single-part geometry in a PostgreSQL table where there is only one polygon.
+
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to revert geometries in.
+    :param field: The name of the geometry field to be reverted.
+    :return: None
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"""
+            UPDATE {schema}.{table} as x
+            SET shape = (select (ST_Dump(shape)).geom::geometry(Multipolygon,4326) from {schema}.{table} where objectid = x.objectid)
+            WHERE ST_GeometryType(shape) = 'ST_Polygon'
+        """)
