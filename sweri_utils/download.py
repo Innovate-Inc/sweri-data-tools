@@ -292,6 +292,12 @@ def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=Non
     """
     # get count
     ids = get_ids(service_url, where, geometry, geom_type)
+
+    # if len(ids) > 10k reject request
+    # at this time this function is only use for gp download tool so this is the simplest way to reject requests
+    if len(ids) > 10000:
+        raise Exception(f'Feature count {len(ids)} exceeds 10,000, please refine your query')
+
     out_features = []
     # get all features
     for f in get_all_features(service_url, ids, out_sr, out_fields, chunk_size):
