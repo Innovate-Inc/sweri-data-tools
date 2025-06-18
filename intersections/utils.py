@@ -20,7 +20,7 @@ def insert_feature_into_db(conn, target_table, feature, fc_name, id_field, schem
         raise KeyError(f'missing or incorrect id field: {id_field}')
 
     json_geom = json.dumps(feature['geometry'])
-    q = f"INSERT INTO {target_table} (objectid, unique_id, feat_source, shape) VALUES (sde.next_rowid('{schema}', '{target_table}'),'{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
+    q = f"INSERT INTO {schema}.{target_table} (objectid, unique_id, feat_source, shape) VALUES (sde.next_rowid('{schema}', '{target_table}'),'{feature['properties'][id_field]}', '{fc_name}',ST_MakeValid(ST_Transform(ST_SetSRID(ST_GeomFromGeoJSON('{json_geom}'), 4326), {to_srid})));"
     cursor = conn.cursor()
     try:
         with conn.transaction():
