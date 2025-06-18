@@ -34,8 +34,8 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
         with conn.transaction():
             query = f""" 
                  delete from {schema}.{insert_table} where id_1_source = '{source_key}' and id_2_source = '{target_key}';
-                 insert into {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
-                 select ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
+                 insert into {schema}.{insert_table} (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
+                 select sde.next_rowid('{schema}', '{insert_table}'), ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
                  a.unique_id as id_1, 
                  a.feat_source as id_1_source, 
                  b.unique_id as id_2, 
@@ -56,7 +56,7 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
         out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid,
                                     out_fields=None, chunk_size=value['chunk_size'])
         for f in out_feat:
-            insert_feature_into_db(docker_conn, f'{docker_schema}.{insert_table}', f, key, value['id'], wkid)
+            insert_feature_into_db(docker_conn, f'{docker_schema}.{insert_table}', f, key, value['id'], docker_schema, wkid)
     elif value['source_type'] == 'db_table':
         logger.info(f'copying data from rds db for {value["source"]}')
         # this will copy the current table from the production server and use that data for intersections, and remove the older source

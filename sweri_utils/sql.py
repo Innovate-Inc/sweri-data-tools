@@ -80,7 +80,7 @@ def insert_from_db(
     :param wkid: The spatial reference ID to use for the geometry transformation.
     :return: None
     """
-    q = f'''INSERT INTO {schema}.{insert_table} ({to_shape}, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
+    q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
     logging.info(q)
     cursor = conn.cursor()
     with conn.transaction():
