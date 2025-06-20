@@ -4,10 +4,11 @@ import os
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 import logging
 import watchtower
+from arcgis.gis import GIS
 
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import service_to_postgres
-
+from sweri_utils.hosted_upload import hosted_upload_and_swizzle
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -20,10 +21,8 @@ if not logger.handlers:
     logger.addHandler(file_handler)
     logger.addHandler(watchtower.CloudWatchLogHandler())
 
-
 def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
     #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
-
     service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
     logger.info('current fires downloaded')
 
@@ -183,10 +182,17 @@ if __name__ == '__main__':
     target_schema = os.getenv('SCHEMA')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
     wkid = 4326
-    conn = connect_to_pg_db(os.getenv('DOCKER_DB_HOST'), os.getenv('DOCKER_DB_PORT'), os.getenv('DOCKER_DB_NAME'),
-                            os.getenv('DOCKER_DB_USER'), os.getenv('DOCKER_DB_PASSWORD'))
-    ogr_db_string = f"PG:dbname={os.getenv('DOCKER_DB_NAME')} user={os.getenv('DOCKER_DB_USER')} password={os.getenv('DOCKER_DB_PASSWORD')} port={os.getenv('DOCKER_DB_PORT')} host={os.getenv('DOCKER_DB_HOST')}"
+    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+                            os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
+    #Hosted upload variables
+    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
+    daily_progression_table = 'daily_progression'
+    chunk = 1000
+    start_objectid = 0
 
     #import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
@@ -199,3 +205,6 @@ if __name__ == '__main__':
 
     #update entries modified since last run (inactivate old, add new)
     update_modified_fires(target_schema, conn, current_date)
+
+    #update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema, daily_progression_table, chunk, start_objectid)

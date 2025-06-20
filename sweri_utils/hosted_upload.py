@@ -1,7 +1,8 @@
 from arcgis.gis import GIS
 from dotenv import load_dotenv
 import os
-from arcgis.features import FeatureLayer, FeatureLayerCollection
+from arcgis.features import  FeatureLayerCollection, GeoAccessor, GeoSeriesAccessor, FeatureSet
+
 from sqlalchemy import create_engine
 import geopandas
 import logging
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logger.propagate = False
 
-file_handler = logging.FileHandler('./hosted_upload.log', encoding='utf-8')
+file_handler = logging.FileHandler('../hosted_upload.log', encoding='utf-8')
 file_formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 file_handler.setFormatter(file_formatter)
 file_handler.setLevel(logging.INFO)
@@ -40,8 +41,8 @@ def get_view_data_source_id(view):
 
 def gdf_to_features(gdf):
 
-    # Step 1: Convert GeoDataFrame to SEDF
-    sdf = pd.DataFrame.spatial.from_geodataframe(gdf)
+    # Convert GeoDataFrame to SEDF to featureset
+    sdf = GeoAccessor.from_geodataframe(gdf)
     features_to_add = sdf.spatial.to_featureset().features
 
     return features_to_add
@@ -96,8 +97,8 @@ def upload_chunk_to_feature_layer (feature_layer, schema, table, chunk_size, cur
 
     additions = feature_layer.edit_features(adds=features)
 
-    logger.info(additions)
-    logger.info(current_objectid)
+    logging.info(additions)
+    logging.info(current_objectid)
     return current_objectid
 
 def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
@@ -108,15 +109,15 @@ def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chu
             break
 
 
-def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size, start_objectid):
+def hosted_upload_and_swizzle(gis_con, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size, start_objectid):
     sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
 
-    view_item = gis.content.get(view_id)
+    view_item = gis_con.content.get(view_id)
 
     current_data_source_id = get_view_data_source_id(view_item)
 
     new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
-    new_source_item = gis.content.get(new_data_source_id)
+    new_source_item = gis_con.content.get(new_data_source_id)
 
     if(len(new_source_item.layers)) == 1:
         new_source_feature_layer = next(iter(new_source_item.layers))
@@ -125,17 +126,17 @@ def refresh_feature_data_and_swap_view_source(gis_con, view_id, source_feature_l
 
     new_source_feature_layer.manager.truncate()
 
-    logger.info(f'beginning update for {new_source_item.name} from {schema}.{table}')
+    logging.info(f'beginning update for {new_source_item.name} from {schema}.{table}')
 
 
     load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
 
     #refreshing old references before swizzle service
-    view_item = gis.content.get(view_id)
-    new_source_item = gis.content.get(new_data_source_id)
+    view_item = gis_con.content.get(view_id)
+    new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
-    logger.info(f'swapping {view_item.name} to data source {new_source_item.name}')
+    logging.info(f'swapping {view_item.name} to data source {new_source_item.name}')
     swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
 
 if __name__ == '__main__':
@@ -155,7 +156,7 @@ if __name__ == '__main__':
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
     treatment_index_points_table = 'treatment_index_points'
 
-    refresh_feature_data_and_swap_view_source(gis, treatment_index_points_view_id, treatment_index_points_data_ids,
+    hosted_upload_and_swizzle(gis, treatment_index_points_view_id, treatment_index_points_data_ids,
                                               conn, postgis_schema, treatment_index_points_table, chunk, start_objectid)
 
     #Refresh gis since it lasts 1 hour
@@ -166,7 +167,7 @@ if __name__ == '__main__':
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
     daily_progression_table = 'daily_progression'
 
-    refresh_feature_data_and_swap_view_source(gis, daily_progression_view_id, daily_progression_data_ids,
+    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids,
                                               conn, postgis_schema, daily_progression_table, chunk, start_objectid)
 
     # Refresh gis since it lasts 1 hour
@@ -177,5 +178,5 @@ if __name__ == '__main__':
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_table = 'treatment_index'
 
-    refresh_feature_data_and_swap_view_source(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, treatment_index_table, chunk, start_objectid)
+    hosted_upload_and_swizzle(gis, treatment_index_view_id, treatment_index_data_ids, conn, postgis_schema, treatment_index_table, chunk, start_objectid)
 
