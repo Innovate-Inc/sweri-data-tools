@@ -5,7 +5,7 @@ import requests
 import logging
 from osgeo.gdal import VectorTranslate, VectorTranslateOptions
 import shutil
-from sweri_logging import log_this
+from .sweri_logging import log_this
 
 try:
     import arcpy

@@ -1,8 +1,8 @@
 import os
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from . import download, files, conversion, s3, sql
-from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
+from sweri_utils import download, files, conversion, s3, sql
+from sweri_utils.swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 
 

@@ -5,7 +5,7 @@ from time import sleep
 import requests
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 from datetime import datetime
-from sweri_logging import log_this
+from .sweri_logging import log_this
 
 try:
     import arcpy
