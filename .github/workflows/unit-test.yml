@@ -59,7 +59,7 @@ jobs:
       - name: Run backend unit tests
         run: |
           docker run ${{ steps.build-image-backend.outputs.imageid }} \
-            sh -c "cd sweri_utils && pytest --cov=sweri_utils tests.py && coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
+            sh -c "pytest --cov=sweri_utils ./sweri_utils/tests.py && coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
