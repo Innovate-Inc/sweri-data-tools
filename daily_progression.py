@@ -1,35 +1,27 @@
 import datetime
 from dotenv import load_dotenv
 import os
-os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
-import logging
+
+os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import watchtower
 from arcgis.gis import GIS
 
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import service_to_postgres
-from sweri_utils.hosted_upload import hosted_upload_and_swizzle
+from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.logging import logging, log_this
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
-formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-file_handler = logging.FileHandler('./daily_progression.log', encoding='utf-8')
-file_handler.setFormatter(formatter)
-
-if not logger.handlers:
-    logger.addHandler(file_handler)
-    logger.addHandler(watchtower.CloudWatchLogHandler())
-
+@log_this
 def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_conn, schema):
-    #Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
+    # Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
     service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
-    logger.info('current fires downloaded')
+
 
 def return_ids(db_conn, query):
-    # ArcSDEExecute returns boolean True when there are no ids,
-    # a string when there is 1 id, and a list of 1 item lists
-    #  when there are multiple ids
+    # Formats returned ids for sql queries
     cursor = db_conn.cursor()
 
     with db_conn.transaction():
@@ -38,6 +30,8 @@ def return_ids(db_conn, query):
         ids_string = ','.join(f"'{id}'" for id in ids_list)
     return ids_string
 
+
+@log_this
 def add_new_fires(schema, db_conn, start_date):
     add_ids_query = f'''
     
@@ -58,6 +52,8 @@ def add_new_fires(schema, db_conn, start_date):
     else:
         logger.info(f'No new fires to add')
 
+
+@log_this
 def notate_removed_fires(schema, db_conn, removal_date):
     removed_ids_query = f'''
     
@@ -80,6 +76,7 @@ def notate_removed_fires(schema, db_conn, removal_date):
         logger.info(f'No fire removals to notate')
 
 
+@log_this
 def update_modified_fires(schema, db_conn, removal_date):
     modified_ids_query = f'''
     
@@ -101,8 +98,9 @@ def update_modified_fires(schema, db_conn, removal_date):
         logger.info(f'Modified fires {modified_ids}')
     else:
         logger.info(f'No fires modified since last run')
-    
 
+
+@log_this
 def insert_fires(db_conn, schema, start_date, id_list):
     # insert from current fires into daily progression 
     # start_date set to current_date for all new entries
@@ -161,8 +159,9 @@ def insert_fires(db_conn, schema, start_date, id_list):
     
         ''')
 
-def update_removal_date(db_conn, schema, removal_date, id_list):
 
+@log_this
+def update_removal_date(db_conn, schema, removal_date, id_list):
     cursor = db_conn.cursor()
     with db_conn.transaction():
         cursor.execute(f'''
@@ -176,6 +175,7 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
     
         ''')
 
+
 if __name__ == '__main__':
     load_dotenv()
     current_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -186,7 +186,7 @@ if __name__ == '__main__':
                             os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
-    #Hosted upload variables
+    # Hosted upload variables
     gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
     daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
@@ -194,17 +194,18 @@ if __name__ == '__main__':
     chunk = 1000
     start_objectid = 0
 
-    #import current fires layer into postgres
+    # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
 
-    #add new fires from current fires into daily progression
+    # add new fires from current fires into daily progression
     add_new_fires(target_schema, conn, current_date)
 
-    #set removal date to current date for fires removed from current fires since last update
+    # set removal date to current date for fires removed from current fires since last update
     notate_removed_fires(target_schema, conn, current_date)
 
-    #update entries modified since last run (inactivate old, add new)
+    # update entries modified since last run (inactivate old, add new)
     update_modified_fires(target_schema, conn, current_date)
 
-    #update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema, daily_progression_table, chunk, start_objectid)
+    # update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
+                              daily_progression_table, chunk, start_objectid)
