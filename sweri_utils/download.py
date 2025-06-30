@@ -257,7 +257,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
             options = VectorTranslateOptions(format='PostgreSQL',
                                              accessMode='append',
                                              geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                             layerName=f'{destination_table}_buffer')
+                                             layerName=f'{schema}.{destination_table}_buffer')
             # commit chunks to database in
             _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
             del _

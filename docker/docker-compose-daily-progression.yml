@@ -1,4 +1,4 @@
-name: Daily Progression
+name: dailyprogression
 services:
   pgadmin:
     image: dpage/pgadmin4:latest
