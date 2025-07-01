@@ -54,8 +54,9 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
     if value['source_type'] == 'url':
         logger.info(f'fetching geojson features from {value["source"]}')
         ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
-        for f in get_all_features(value['source'], ids, wkid, out_fields=None, chunk_size=value['chunk_size'], format='geojson'):
-            insert_feature_into_db(docker_conn, insert_table, f, key, value['id'], docker_schema, wkid)
+        for chunk in get_all_features(value['source'], ids, wkid, out_fields=None, chunk_size=value['chunk_size'], format='geojson'):
+            for f in chunk:
+                insert_feature_into_db(docker_conn, insert_table, f, key, value['id'], docker_schema, wkid)
     elif value['source_type'] == 'db_table':
         logger.info(f'copying data from rds db for {value["source"]}')
         # this will copy the current table from the production server and use that data for intersections, and remove the older source
