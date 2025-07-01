@@ -1,6 +1,6 @@
 from intersections.utils import create_db_conn_from_envs, insert_feature_into_db
 from sweri_utils.download import get_ids, get_all_features
-from sweri_utils.logging import log_this
+from sweri_utils.sweri_logging import log_this
 from sweri_utils.sql import delete_from_table, copy_table_across_servers, insert_from_db
 from worker import app
 import logging

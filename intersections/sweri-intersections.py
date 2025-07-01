@@ -13,7 +13,7 @@ import requests as r
 from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
-from sweri_utils.logging import log_this
+from sweri_utils.sweri_logging import log_this
 import watchtower
 from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
 
