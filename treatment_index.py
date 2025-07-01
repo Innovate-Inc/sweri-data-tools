@@ -8,7 +8,7 @@ from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column,
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
-from sweri_utils.logging import logging, log_this
+from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
@@ -811,6 +811,13 @@ if __name__ == "__main__":
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         cursor.execute('COMMIT;')
 
+        # NFPORS
+    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    nfpors_date_filtering(conn, target_schema)
+    nfpors_insert(conn, target_schema, insert_table)
+    nfpors_fund_code(conn, target_schema, insert_table)
+    nfpors_treatment_date(conn, target_schema, insert_table)
+
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
     download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
@@ -828,12 +835,7 @@ if __name__ == "__main__":
     common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
     common_attributes_type_filter(conn, target_schema, insert_table)
 
-    # NFPORS
-    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
-    nfpors_date_filtering(conn, target_schema)
-    nfpors_insert(conn, target_schema, insert_table)
-    nfpors_fund_code(conn, target_schema, insert_table)
-    nfpors_treatment_date(conn, target_schema, insert_table)
+
 
     # IFPRS processing and insert
     update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
