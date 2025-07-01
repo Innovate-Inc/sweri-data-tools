@@ -27,7 +27,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
     Returns:
         None
     """
-    conn = create_db_conn_from_envs('DOCKER')
+    conn = create_db_conn_from_envs()
     with conn:
         logger.info(f'beginning intersections on {source_key} and {target_key}')
         cursor = conn.cursor()
