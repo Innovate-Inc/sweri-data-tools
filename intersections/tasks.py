@@ -1,5 +1,5 @@
 from intersections.utils import create_db_conn_from_envs, insert_feature_into_db
-from sweri_utils.download import fetch_geojson_features
+from sweri_utils.download import get_ids, get_all_features
 from sweri_utils.logging import log_this
 from sweri_utils.sql import delete_from_table, copy_table_across_servers, insert_from_db
 from worker import app
@@ -53,9 +53,8 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
     delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
     if value['source_type'] == 'url':
         logger.info(f'fetching geojson features from {value["source"]}')
-        out_feat = fetch_geojson_features(value['source'], 'SHAPE IS NOT NULL', None, None, wkid,
-                                    out_fields=None, chunk_size=value['chunk_size'])
-        for f in out_feat:
+        ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
+        for f in get_all_features(value['source'], ids, wkid, out_fields=None, chunk_size=value['chunk_size'], format='geojson'):
             insert_feature_into_db(docker_conn, insert_table, f, key, value['id'], docker_schema, wkid)
     elif value['source_type'] == 'db_table':
         logger.info(f'copying data from rds db for {value["source"]}')
