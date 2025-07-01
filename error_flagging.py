@@ -1,4 +1,4 @@
-from sweri_utils.logging import log_this
+from sweri_utils.sweri_logging import log_this
 from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
 import os
 import logging
