@@ -36,10 +36,9 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {"objectIds": ["peach", "orange"]}
         mockresponse.status_code = 200
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query',
-                         {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'}]
         r = conversion.get_ids('http://test.url', '46=2')
-        self.assertTrue(mock_post.called_once_with(expected_args))
+        mock_post.assert_called_once_with('http://test.url/query',
+                         data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'})
         self.assertEqual(r, ["peach", "orange"])
 
     @patch('requests.post')
@@ -48,13 +47,13 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {"objectIds": ["peach", "orange"]}
         mockresponse.status_code = 200
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query', {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+
+        r = conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
+        mock_post.assert_called_once_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
                                                    'geometry': {'some': 'shape'},
                                                    'geometryType': 'esriGeometryEnvelope',
                                                    'spatialRel': 'esriSpatialRelIntersects'
-                                                   }]
-        r = conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
-        self.assertTrue(mock_post.called_once_with(expected_args))
+                                                   })
         self.assertEqual(r, ["peach", "orange"])
 
     @patch('requests.post')
@@ -63,16 +62,15 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {}
         mockresponse.status_code = 200
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query', {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
-                                                   'geometry': {'some': 'shape'},
-                                                   'geometryType': 'esriGeometryEnvelope',
-                                                   'spatialRel': 'esriSpatialRelIntersects'
-                                                   }]
 
         try:
             conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
         except Exception:
-            self.assertTrue(mock_post.called_once_with(expected_args))
+            mock_post.assert_called_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+                                                   'geometry': {'some': 'shape'},
+                                                   'geometryType': 'esriGeometryEnvelope',
+                                                   'spatialRel': 'esriSpatialRelIntersects'
+                                                   })
             self.assertTrue(True)
 
     @patch('requests.post')
@@ -81,16 +79,15 @@ class DownloadTests(TestCase):
         mockresponse.json = lambda: {"objectIds": ["a", "b"]}
         mockresponse.status_code = 400
         mock_post.return_value = mockresponse
-        expected_args = ['http://test.url/query', {'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
-                                                   'geometry': {'some': 'shape'},
-                                                   'geometryType': 'esriGeometryEnvelope',
-                                                   'spatialRel': 'esriSpatialRelIntersects'
-                                                   }]
 
         try:
             conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
         except Exception:
-            self.assertTrue(mock_post.called_once_with(expected_args))
+            mock_post.assert_called_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+                                                   'geometry': {'some': 'shape'},
+                                                   'geometryType': 'esriGeometryEnvelope',
+                                                   'spatialRel': 'esriSpatialRelIntersects'
+                                                   })
             self.assertTrue(True)
 
     @patch('osgeo.gdal.VectorTranslate')
@@ -112,11 +109,9 @@ class DownloadTests(TestCase):
         download.service_to_postgres(url, where, 4326, 'PG:', 'test', 'dest_tabl',
                                 conn, 1)
 
-        self.assertTrue(get_feat_mock.called_once_with(
-            url, where, 102100, None))
-        self.assertTrue(get_ids_mock.called_once_with(
-            url, where, geom, 'polygon', ))
-        self.assertTrue(get_fields_mock.called_once_with(url))
+        get_feat_mock.assert_called_once_with(url, where, 102100, None)
+        get_ids_mock.assert_called_once_with(url, where, geom, 'polygon', )
+        get_fields_mock.assert_called_once_with(url)
 
     def test_retry_calls_num_times_calls_failure_callback(self):
         i_failed = Mock(side_effect=Exception('retries exceeded'))
