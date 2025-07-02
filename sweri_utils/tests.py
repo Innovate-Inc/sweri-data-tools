@@ -556,7 +556,7 @@ class SqlTests(TestCase):
         insert_fields = ['field1', 'field2']
         from_table = 'source_table'
         from_fields = ['field1', 'field2']
-        expected_q = f'''INSERT INTO {schema}.{insert_table} (shape, {','.join(insert_fields)}) SELECT ST_MakeValid(ST_TRANSFORM(shape, 3857)), {','.join(from_fields)} FROM {schema}.{from_table};'''
+        expected_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} FROM {schema}.{from_table};'''
         # Call the function
         sql.insert_from_db(mock_connection, schema, insert_table, insert_fields, from_table, from_fields)
 
