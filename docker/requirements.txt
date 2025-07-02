@@ -1,12 +1,12 @@
-pygdal==3.6.2.11
-psycopg==3.2.4
+#pygdal==3.6.2.11
+psycopg[binary]==3.2.4
 python-dotenv==1.0.1
 geopandas==0.14.4
 watchtower==3.3.1
 requests==2.32.3
-arcgis==2.3.0
+arcgis==2.4.1
 sqlalchemy==2.0.39
-psycopg2==2.9.10
+#psycopg2==2.9.10
 celery[redis,sqs]==5.5.1
 pytest
 pytest-cov

@@ -1,13 +1,14 @@
 import os
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column
+from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers
-from sweri_utils.logging import logging, log_this
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
+from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
@@ -802,13 +803,13 @@ if __name__ == "__main__":
     conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+
     # Truncate the table before inserting new data
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         cursor.execute('COMMIT;')
-
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
@@ -844,10 +845,12 @@ if __name__ == "__main__":
     fund_source_updates(conn, target_schema, insert_table)
     update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(conn, target_schema, insert_table)
+    flag_duplicate_ids(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
+    revert_multi_to_poly(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
