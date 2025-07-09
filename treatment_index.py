@@ -9,10 +9,10 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
-
+0
 logger = logging.getLogger(__name__)
 
-def update_nfpors(nfpors_url, conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
+def update_nfpors(nfpors_url, conn, schema, wkid, ogr_db_string):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     # database = 'sweri'
@@ -25,9 +25,8 @@ def update_nfpors(nfpors_url, conn, schema, wkid, insert_nfpors_additions, ogr_d
 
 @log_this
 def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
-    where = '1=1'
-    destination_table = 'ifprs_actual_treatment'
-    # database = 'sweri'
+    where = "Class = 'Actual Treatment' or Class = 'Estimated Treatment'"
+    destination_table = 'ifprs'
 
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
 
@@ -41,78 +40,6 @@ def create_nfpors_where_clause():
         where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
 
     return where_clause
-
-@log_this
-def insert_nfpors_additions(conn, schema):
-    common_fields = '''
-        trt_unt_id, local_id, col_date, trt_status, col_meth,
-        comments, gis_acres, pstatus, modifiedon, createdon, 
-        cent_lat, cent_lon, userid, st_abbr, cong_dist, cnty_fips,
-        trt_nm, fy, plan_acc_ac, act_acc_ac, act_init_dt, act_comp_dt,
-        nfporsfid, trt_id_db, type_name, cat_nm, trt_statnm, col_methnm,
-        plan_int_dt, unit_id, agency, trt_id, created_by, edited_by,
-        projectname, regionname, projectid, keypointarea, unitname,
-        deptname, countyname, statename, regioncode, districtname,
-        isbil, bilfunding, shape
-    '''
-
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-        INSERT INTO {schema}.nfpors (
-            objectid,
-            {common_fields},
-            globalid
-            )
-        SELECT 
-            sde.next_rowid('{schema}', 'nfpors'),
-            {common_fields},
-            sde.next_globalid()
-        FROM {schema}.nfpors_additions;
-        ''')
-
-@log_this
-def insert_ifprs_additions(conn, schema):
-    common_fields = '''
-        objectid, actualtreatmentid, ispoint, createdby, name, unit, region,
-        agency, department, isdepartmentmanual, latitude, longitude,
-        calculatedacres, iswui, initiationdate, initiationfiscalyear,
-        initiationfiscalquarter, completiondate, completionfiscalyear,
-        completionfiscalquarter, notes, lastmodifiedby, createdondate,
-        lastmodifieddate, status, statusreason, isarchived, class,
-        category, type, durability, priority, fundingsource,
-        congressionaldistrictnumber, county, state, estimatedpersonnelcost, 
-        estimatedassetcost, estimatedgrantsfixedcost, estimatedcontractualcost,
-        estimatedothercost, estimatedtotalcost, localapprovaldate, 
-        regionalapprovaldate, agencyapprovaldate, departmentapprovaldate,
-        fundeddate, estimatedsuccessprobability, feasibility, isapproved,
-        isfunded, tribename, totalacres, fundingunit, fundingregion,
-        fundingagency, fundingdepartment, fundingtribe, wbsid, costcenter,
-        functionalarea, costcode, cancelleddate, hasgroup, groupcount,
-        unitid, vegdeparturepercentagederived, vegdeparturepercentagemanual,
-        isvegetationmanual, isrtrl, fundingsubunit, fundingunittype, isbil,
-        bilfunding, treatmentdriver, contributedfundingsource, contributednotes,
-        contributedpersonnelcost, contributedassetcost, contributedgrantsfixedcost,
-        contributedcontractualcost, contributedothercost, contributedtotalcost,
-        contributedcostcenter, contributedfunctionalarea, contributedcostcode,
-        fundingsourceprogram, fundingsourcecategory, fundingsourcesubcategory,
-        obligationfiscalyear, carryoverfiscalyear, iscarryover, iscanceled,
-        entityid, entitytype, entitycategory, subtype, fundingunitid,
-        originalinitiationdate, originalinitiationfiscalyear, 
-        originalinitiationfiscalquarter, issagebrush, unapprovaldate,
-        unapprovalreason, isfundingacresmanual, shape
-        '''
-
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-        INSERT INTO {schema}.ifprs_actual_treatment (    
-            {common_fields}
-            )
-        SELECT 
-            {common_fields}
-        FROM {schema}.ifprs_actual_treatment_additions;
-        ''')
 
 @log_this
 def ifprs_insert(conn, schema, treatment_index):
@@ -134,13 +61,13 @@ def ifprs_insert(conn, schema, treatment_index):
             sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current, completiondate AS actual_completion_date,
             calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
-            fundingsource as fund_source, 'IFPRS Actual Treatment' AS identifier_database, actualtreatmentid AS unique_id,
+            fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, completiondate as treatment_date, 'completiondate' as date_source,
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
     
-        FROM {schema}.ifprs_actual_treatment
-        WHERE {schema}.ifprs_actual_treatment.shape IS NOT NULL;
+        FROM {schema}.ifprs
+        WHERE {schema}.ifprs.shape IS NOT NULL;
         ''')
 
 def ifprs_treatment_date(conn, schema, treatment_index):
@@ -148,29 +75,29 @@ def ifprs_treatment_date(conn, schema, treatment_index):
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
-            SET treatment_date = i.initiationdate,
-            date_source = 'initiationdate'
-            FROM {schema}.ifprs_actual_treatment i
-            WHERE t.identifier_database = 'IFPRS Actual Treatment'
+            SET treatment_date = i.originalinitiationdate,
+            date_source = 'originalinitiationdate'
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
             AND t.treatment_date is null
-            AND t.unique_id = i.actualtreatmentid;
+            AND t.unique_id = i.id::text;
         ''')
 
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
             SET treatment_date = i.createdondate,
             date_source = 'createdondate'
-            FROM {schema}.ifprs_actual_treatment i
-            WHERE t.identifier_database = 'IFPRS Actual Treatment'
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
             AND t.treatment_date is null
-            AND t.unique_id = i.actualtreatmentid;
+            AND t.unique_id = i.id::text;
         ''')
 
 def ifprs_date_filtering(conn, schema):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''             
-            DELETE FROM {schema}.ifprs_actual_treatment WHERE
+            DELETE FROM {schema}.ifprs WHERE
             completiondate < '1984-1-1'::date
             OR
             (completiondate is null AND initiationdate < '1984-1-1'::date)
@@ -829,7 +756,7 @@ if __name__ == "__main__":
     common_attributes_type_filter(conn, target_schema, insert_table)
 
     # NFPORS
-    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
     nfpors_date_filtering(conn, target_schema)
     nfpors_insert(conn, target_schema, insert_table)
     nfpors_fund_code(conn, target_schema, insert_table)
