@@ -9,6 +9,8 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
+from sweri_utils.hosted import hosted_upload_and_swizzle
+
 
 logger = logging.getLogger(__name__)
 
@@ -805,6 +807,23 @@ if __name__ == "__main__":
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
+    # Hosted upload variables
+    gis_url = os.getenv("GIS_URL")
+    gis_user = os.getenv("ESRI_USER")
+    gis_password = os.getenv("ESRI_PW")
+
+    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    treatment_index_points_table = 'treatment_index_points'
+
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    treatment_index_table = 'treatment_index'
+
+
+    chunk = 1000
+    start_objectid = 0
+
     # Truncate the table before inserting new data
     cursor = conn.cursor()
     with conn.transaction():
@@ -854,5 +873,13 @@ if __name__ == "__main__":
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
+
+    # treatment index
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, conn, target_schema,
+                              treatment_index_points_table, chunk, start_objectid)
+
+    # treatment index points
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
+                              treatment_index_points_table, chunk, start_objectid)
 
     conn.close()
