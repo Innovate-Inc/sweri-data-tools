@@ -812,14 +812,12 @@ if __name__ == "__main__":
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
 
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
     treatment_index_points_table = 'treatment_index_points'
-
-    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
-    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    treatment_index_table = 'treatment_index'
-
 
     chunk = 1000
     start_objectid = 0
@@ -876,8 +874,7 @@ if __name__ == "__main__":
 
     # treatment index
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, conn, target_schema,
-                              treatment_index_points_table, chunk, start_objectid)
-
+                              insert_table, chunk, start_objectid)
     # treatment index points
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
                               treatment_index_points_table, chunk, start_objectid)
