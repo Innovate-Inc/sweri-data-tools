@@ -9,7 +9,7 @@ from arcgis.gis import GIS
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle
-from sweri_utils.logging import logging, log_this
+from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
