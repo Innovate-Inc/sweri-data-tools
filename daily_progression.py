@@ -213,7 +213,7 @@ if __name__ == '__main__':
 
     # update entries modified since last run (inactivate old, add new)
     update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
-    # 
-    # # update hosted feature layer with upload and swizzle
-    # hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
-    #                           daily_progression_table, chunk, start_objectid)
+
+    # update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
+                              daily_progression_table, chunk, start_objectid)
