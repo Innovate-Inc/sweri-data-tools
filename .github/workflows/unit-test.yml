@@ -60,11 +60,6 @@ jobs:
         run: |
           docker run ${{ steps.build-image-backend.outputs.imageid }} \
             sh -c "pip install -r requirements.testing.txt && pytest --cov=sweri_utils ./sweri_utils/tests.py && coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
-      - name: Upload coverage report
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
