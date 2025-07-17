@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 
 from .swizzle import swizzle_service
 from .download import retry
-from .logging import log_this, logging
+from .sweri_logging import log_this, logging
 
 
 @log_this

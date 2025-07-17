@@ -5,7 +5,7 @@ import os
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.hosted import hosted_upload_and_swizzle
 
-from sweri_utils.logging import logging, log_this
+from sweri_utils.sweri_logging import logging, log_this
 
 if __name__ == '__main__':
     load_dotenv()

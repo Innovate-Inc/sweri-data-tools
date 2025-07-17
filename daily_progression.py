@@ -9,7 +9,7 @@ from arcgis.gis import GIS
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle
-from sweri_utils.logging import logging, log_this
+from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,13 @@ def notate_removed_fires(schema, db_conn, removal_date):
 
     if len(removed_ids) > 0:
         update_removal_date(db_conn, schema, removal_date, removed_ids)
-        logger.info(f'removal_date set to {current_date} for : {removed_ids}')
+        logger.info(f'removal_date set to {removal_date} for : {removed_ids}')
     else:
         logger.info(f'No fire removals to notate')
 
 
 @log_this
-def update_modified_fires(schema, db_conn, removal_date):
+def update_modified_fires(schema, db_conn, start_date, removal_date):
     modified_ids_query = f'''
     
         SELECT dp.poly_irwinid  
@@ -94,7 +94,7 @@ def update_modified_fires(schema, db_conn, removal_date):
 
     if len(modified_ids) > 0:
         update_removal_date(db_conn, schema, removal_date, modified_ids)
-        insert_fires(db_conn, schema, removal_date, modified_ids)
+        insert_fires(db_conn, schema, start_date, modified_ids)
         logger.info(f'Modified fires {modified_ids}')
     else:
         logger.info(f'No fires modified since last run')
@@ -178,7 +178,15 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
 
 if __name__ == '__main__':
     load_dotenv()
-    current_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    #start date and removal date 1 second apart to prevent overlap between old and new polygons
+    current_time = datetime.datetime.now()
+    one_second_ago = current_time - datetime.timedelta(seconds=1)
+
+    # Time strings
+    current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
+    one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
+
     target_schema = os.getenv('SCHEMA')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
     wkid = 4326
@@ -198,14 +206,14 @@ if __name__ == '__main__':
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
 
     # add new fires from current fires into daily progression
-    add_new_fires(target_schema, conn, current_date)
+    add_new_fires(target_schema, conn, current_time_str)
 
     # set removal date to current date for fires removed from current fires since last update
-    notate_removed_fires(target_schema, conn, current_date)
+    notate_removed_fires(target_schema, conn, one_second_ago_str)
 
     # update entries modified since last run (inactivate old, add new)
-    update_modified_fires(target_schema, conn, current_date)
-
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
-                              daily_progression_table, chunk, start_objectid)
+    update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
+    # 
+    # # update hosted feature layer with upload and swizzle
+    # hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
+    #                           daily_progression_table, chunk, start_objectid)
