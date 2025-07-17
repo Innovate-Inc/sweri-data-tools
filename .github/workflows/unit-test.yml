@@ -60,11 +60,11 @@ jobs:
         run: |
           docker run ${{ steps.build-image-backend.outputs.imageid }} \
             sh -c "pip install -r requirements.testing.txt && pytest --cov=sweri_utils ./sweri_utils/tests.py && coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: myimage
-          path: ${{ runner.temp }}/myimage.tar
+#      - name: Upload artifact
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: myimage
+#          path: ${{ runner.temp }}/myimage.tar
   push_image:
     needs: unit_test
     permissions:
