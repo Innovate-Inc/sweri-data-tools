@@ -6,7 +6,6 @@ from sqlalchemy import create_engine
 from .swizzle import swizzle_service
 from .download import retry
 from .sweri_logging import log_this, logging
-from arcgis.gis import GIS
 
 
 @log_this
@@ -97,14 +96,10 @@ def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chu
         if current_objectid is None:
             break
 
-def refresh_gis(gis_url, gis_user, gis_password):
-    gis = GIS(gis_url,gis_user, gis_password)
-    return gis
 
 @log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size,
+def hosted_upload_and_swizzle(gis_con, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size,
                               start_objectid):
-    gis_con = refresh_gis(gis_url, gis_user, gis_password)
     sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
 
     view_item = gis_con.content.get(view_id)
