@@ -9,7 +9,7 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
-0
+
 logger = logging.getLogger(__name__)
 
 def update_nfpors(nfpors_url, conn, schema, wkid, ogr_db_string):
