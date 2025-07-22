@@ -144,9 +144,7 @@ def run_intersections( docker_conn, docker_schema,
     update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
     ############ hosted upload ################
-    gis = GIS(portal, user, password, expiration=120)
-
-    hosted_upload_and_swizzle(gis, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
+    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
     # close connections
     docker_conn.close()
 
