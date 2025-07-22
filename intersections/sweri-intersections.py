@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
 from sweri_utils.sweri_logging import log_this
+from sweri_utils.hosted import hosted_upload_and_swizzle
 import watchtower
 from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
 
@@ -112,7 +113,8 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 
 @log_this
 def run_intersections( docker_conn, docker_schema,
-                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password):
+                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password,
+                       intersection_view, intersection_data_ids):
     ############## setting intersection sources ################
     intersections = fetch_features( f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
@@ -134,9 +136,6 @@ def run_intersections( docker_conn, docker_schema,
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
 
-
-    # # truncate table
-    # truncate_table(docker_conn, docker_schema, 'intersections')
     # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
                                          docker_schema)
@@ -144,6 +143,10 @@ def run_intersections( docker_conn, docker_schema,
     ############ update run info on intersection sources table ################
     update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
+    ############ hosted upload ################
+    gis = GIS(portal, user, password, expiration=120)
+
+    hosted_upload_and_swizzle(gis, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
     # close connections
     docker_conn.close()
 
@@ -162,6 +165,9 @@ if __name__ == '__main__':
     portal_url = os.getenv('ESRI_PORTAL_URL')
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
+    # views
+    intersections_view_id = os.getenv('INTERSECTIONS_VIEW_ID')
+    intersections_data_ids = [os.getenv('INTERSECTIONS_DATA_ID_1'),os.getenv('INTERSECTIONS_DATA_ID_2')]
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -171,8 +177,9 @@ if __name__ == '__main__':
     try:
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
-                          portal_password)
+                          portal_password, intersections_view_id, intersections_data_ids)
         logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logger.error(f'ERROR: error running intersections: {e}')
         sys.exit(1)
+
