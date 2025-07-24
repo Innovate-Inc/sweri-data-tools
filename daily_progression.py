@@ -19,6 +19,7 @@ def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_co
     # Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
     service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
 
+@log_this
 def makevalid_snapshot_shapes(db_conn, schema):
     cursor = db_conn.cursor()
     with db_conn.transaction():
@@ -228,3 +229,5 @@ if __name__ == '__main__':
     # update hosted feature layer with upload and swizzle
     hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
                               daily_progression_table, chunk, start_objectid)
+
+    conn.close()
