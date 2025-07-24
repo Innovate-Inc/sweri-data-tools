@@ -19,6 +19,16 @@ def import_current_fires_snapshot(current_fires_url, out_wkid, ogr_string, db_co
     # Connect to NIFC WFIGS Current Wildfires Perimeters Service and Import to Database
     service_to_postgres(current_fires_url, '1=1', out_wkid, ogr_string, schema, 'current_fires_snapshot', db_conn)
 
+def makevalid_snapshot_shapes(db_conn, schema):
+    cursor = db_conn.cursor()
+    with db_conn.transaction():
+        cursor.execute(f'''
+            
+            UPDATE {schema}.current_fires_snapshot
+            SET shape = ST_MakeValid(shape)
+            WHERE NOT ST_IsValid(shape);
+
+        ''')
 
 def return_ids(db_conn, query):
     # Formats returned ids for sql queries
@@ -204,6 +214,7 @@ if __name__ == '__main__':
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
+    makevalid_snapshot_shapes(conn, target_schema)
 
     # add new fires from current fires into daily progression
     add_new_fires(target_schema, conn, current_time_str)
