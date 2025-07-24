@@ -9,7 +9,7 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
-0
+
 logger = logging.getLogger(__name__)
 
 def update_nfpors(nfpors_url, conn, schema, wkid, ogr_db_string):
@@ -145,7 +145,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
             type, category, fund_code, cost_per_uom,
             identifier_database, unique_id,
             uom, state, activity, activity_code, treatment_date,
-            date_source, method, equipment, agency,
+            treatment_status, method, equipment, agency,
             shape
     
         )
@@ -157,7 +157,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
             'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
             uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, 
             CASE WHEN date_completed IS NULL THEN date_planned ELSE date_completed END AS treatment_date,
-            CASE WHEN date_completed IS NULL THEN 'date_planned' ELSE 'date_completed' END AS date_source, 
+            CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Completed' END AS treatment_status, 
             method AS method, equipment AS equipment,
             'USFS' AS agency, shape
             
@@ -584,29 +584,15 @@ def common_attributes_insert(conn, schema, table, insert_table):
             nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
             cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
             event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity,
-            activity_code as activity_code, date_completed as treatment_date,
-            'date_completed' as date_source, method as method, equipment as equipment, 
+            activity_code as activity_code, CASE WHEN date_completed IS NULL THEN act_created_date ELSE date_completed END AS treatment_date,
+            CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Other' END AS treatment_status, method as method, equipment as equipment, 
             'USFS' as agency, shape as shape
             
         FROM {schema}.{table}
         WHERE included = 'yes'
         AND
         {schema}.{table}.shape IS NOT NULL;
-    
-        ''')
 
-@log_this
-def common_attributes_treatment_date(conn, schema, table, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-            UPDATE {schema}.{treatment_index} t
-            SET treatment_date = f.act_created_date,
-            date_source = 'act_created_date'
-            FROM {schema}.{table} f
-            WHERE t.treatment_date is null
-            AND t.identifier_database = 'FACTS Common Attributes'
-            AND t.unique_id = f.event_cn;
         ''')
 
 def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
@@ -664,7 +650,6 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         set_included(conn, schema, table_name)
 
         common_attributes_insert(conn, schema, table_name, treatment_index)
-        common_attributes_treatment_date(conn, schema, table_name, treatment_index)
         common_attributes_type_filter(conn, schema, treatment_index)
 
 
