@@ -1,5 +1,8 @@
 import sys
 from os import path
+
+from intersections.utils import create_db_conn_from_envs
+
 # for importing from sibling directories
 sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
 
@@ -12,7 +15,7 @@ from celery import group
 import requests as r
 from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
-from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
+from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db, delete_from_table
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 import watchtower
@@ -84,6 +87,11 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
         for target_key, target_value in intersect_targets.items():
             if target_key == source_key:
                 continue
+            conn = create_db_conn_from_envs()
+            # delete existing intersections for this source and target
+            delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'"  )
+            # get all object ids for the intersecting features
+
             t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key))
     g = group(t)()
     g.get()
@@ -95,6 +103,18 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
 #         # drop existing intersections table
 #         cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
 
+@log_this
+def fetch_intersecting_object_ids(conn, schema, source_key, target_key):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"""
+            SELECT objectId
+            FROM {schema}.intersection_features a, {schema}.intersection_features b
+            WHERE ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape)  
+            and a.feat_source = '{source_key}'
+            and b.feat_source = '{target_key}';
+        """)
+        return cursor.fetchall()
 
 @log_this
 def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, wkid):

@@ -14,7 +14,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='.
 
 
 @app.task(time_limit=1440000)
-def calculate_intersections_and_insert(schema, insert_table, source_key, target_key):
+def calculate_intersections_and_insert(schema, insert_table, source_key, target_key, object_ids):
     """
     Calculate intersections between features from two sources and insert the results into a specified table.
     ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap is used so we can calculate the geodesic area
@@ -32,8 +32,8 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
         logger.info(f'beginning intersections on {source_key} and {target_key}')
         cursor = conn.cursor()
         with conn.transaction():
+            # todo (outside task): select intersecting features first, and get objectids, then add an objectid IN clause to query and remove intersect steps
             query = f""" 
-                 delete from {schema}.{insert_table} where id_1_source = '{source_key}' and id_2_source = '{target_key}';
                  insert into {schema}.{insert_table} (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
                  select sde.next_rowid('{schema}', '{insert_table}'), ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap, 
                  a.unique_id as id_1, 
