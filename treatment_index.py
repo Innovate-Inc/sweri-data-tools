@@ -12,7 +12,7 @@ from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
 
-def update_nfpors(nfpors_url, conn, schema, wkid, insert_nfpors_additions, ogr_db_string):
+def update_nfpors(nfpors_url, conn, schema, wkid, ogr_db_string):
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     # database = 'sweri'
@@ -25,9 +25,8 @@ def update_nfpors(nfpors_url, conn, schema, wkid, insert_nfpors_additions, ogr_d
 
 @log_this
 def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
-    where = '1=1'
-    destination_table = 'ifprs_actual_treatment'
-    # database = 'sweri'
+    where = "Class = 'Actual Treatment' or Class = 'Estimated Treatment'"
+    destination_table = 'ifprs'
 
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
 
@@ -43,78 +42,6 @@ def create_nfpors_where_clause():
     return where_clause
 
 @log_this
-def insert_nfpors_additions(conn, schema):
-    common_fields = '''
-        trt_unt_id, local_id, col_date, trt_status, col_meth,
-        comments, gis_acres, pstatus, modifiedon, createdon, 
-        cent_lat, cent_lon, userid, st_abbr, cong_dist, cnty_fips,
-        trt_nm, fy, plan_acc_ac, act_acc_ac, act_init_dt, act_comp_dt,
-        nfporsfid, trt_id_db, type_name, cat_nm, trt_statnm, col_methnm,
-        plan_int_dt, unit_id, agency, trt_id, created_by, edited_by,
-        projectname, regionname, projectid, keypointarea, unitname,
-        deptname, countyname, statename, regioncode, districtname,
-        isbil, bilfunding, shape
-    '''
-
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-        INSERT INTO {schema}.nfpors (
-            objectid,
-            {common_fields},
-            globalid
-            )
-        SELECT 
-            sde.next_rowid('{schema}', 'nfpors'),
-            {common_fields},
-            sde.next_globalid()
-        FROM {schema}.nfpors_additions;
-        ''')
-
-@log_this
-def insert_ifprs_additions(conn, schema):
-    common_fields = '''
-        objectid, actualtreatmentid, ispoint, createdby, name, unit, region,
-        agency, department, isdepartmentmanual, latitude, longitude,
-        calculatedacres, iswui, initiationdate, initiationfiscalyear,
-        initiationfiscalquarter, completiondate, completionfiscalyear,
-        completionfiscalquarter, notes, lastmodifiedby, createdondate,
-        lastmodifieddate, status, statusreason, isarchived, class,
-        category, type, durability, priority, fundingsource,
-        congressionaldistrictnumber, county, state, estimatedpersonnelcost, 
-        estimatedassetcost, estimatedgrantsfixedcost, estimatedcontractualcost,
-        estimatedothercost, estimatedtotalcost, localapprovaldate, 
-        regionalapprovaldate, agencyapprovaldate, departmentapprovaldate,
-        fundeddate, estimatedsuccessprobability, feasibility, isapproved,
-        isfunded, tribename, totalacres, fundingunit, fundingregion,
-        fundingagency, fundingdepartment, fundingtribe, wbsid, costcenter,
-        functionalarea, costcode, cancelleddate, hasgroup, groupcount,
-        unitid, vegdeparturepercentagederived, vegdeparturepercentagemanual,
-        isvegetationmanual, isrtrl, fundingsubunit, fundingunittype, isbil,
-        bilfunding, treatmentdriver, contributedfundingsource, contributednotes,
-        contributedpersonnelcost, contributedassetcost, contributedgrantsfixedcost,
-        contributedcontractualcost, contributedothercost, contributedtotalcost,
-        contributedcostcenter, contributedfunctionalarea, contributedcostcode,
-        fundingsourceprogram, fundingsourcecategory, fundingsourcesubcategory,
-        obligationfiscalyear, carryoverfiscalyear, iscarryover, iscanceled,
-        entityid, entitytype, entitycategory, subtype, fundingunitid,
-        originalinitiationdate, originalinitiationfiscalyear, 
-        originalinitiationfiscalquarter, issagebrush, unapprovaldate,
-        unapprovalreason, isfundingacresmanual, shape
-        '''
-
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-        INSERT INTO {schema}.ifprs_actual_treatment (    
-            {common_fields}
-            )
-        SELECT 
-            {common_fields}
-        FROM {schema}.ifprs_actual_treatment_additions;
-        ''')
-
-@log_this
 def ifprs_insert(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -125,7 +52,7 @@ def ifprs_insert(conn, schema, treatment_index):
             name,  date_current, actual_completion_date, 
             acres, type, category, fund_code, fund_source,
             identifier_database, unique_id,
-            state, treatment_date, date_source,
+            state, treatment_date, status,
             total_cost, twig_category,
             agency, shape
         )
@@ -134,49 +61,53 @@ def ifprs_insert(conn, schema, treatment_index):
             sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current, completiondate AS actual_completion_date,
             calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
-            fundingsource as fund_source, 'IFPRS Actual Treatment' AS identifier_database, actualtreatmentid AS unique_id,
-            state AS state, completiondate as treatment_date, 'completiondate' as date_source,
+            fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
+            state AS state, completiondate as treatment_date, status as status,
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
     
-        FROM {schema}.ifprs_actual_treatment
-        WHERE {schema}.ifprs_actual_treatment.shape IS NOT NULL;
+        FROM {schema}.ifprs
+        WHERE {schema}.ifprs.shape IS NOT NULL;
         ''')
 
-def ifprs_treatment_date(conn, schema, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-            UPDATE {schema}.{treatment_index} t
-            SET treatment_date = i.initiationdate,
-            date_source = 'initiationdate'
-            FROM {schema}.ifprs_actual_treatment i
-            WHERE t.identifier_database = 'IFPRS Actual Treatment'
-            AND t.treatment_date is null
-            AND t.unique_id = i.actualtreatmentid;
-        ''')
-
-        cursor.execute(f'''
-            UPDATE {schema}.{treatment_index} t
-            SET treatment_date = i.createdondate,
-            date_source = 'createdondate'
-            FROM {schema}.ifprs_actual_treatment i
-            WHERE t.identifier_database = 'IFPRS Actual Treatment'
-            AND t.treatment_date is null
-            AND t.unique_id = i.actualtreatmentid;
-        ''')
 
 def ifprs_date_filtering(conn, schema):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''             
-            DELETE FROM {schema}.ifprs_actual_treatment WHERE
+            DELETE FROM {schema}.ifprs WHERE
             completiondate < '1984-1-1'::date
             OR
             (completiondate is null AND initiationdate < '1984-1-1'::date)
             OR
             ((completiondate is null AND initiationdate is NULL) AND createdondate < '1984-1-1'::date);
         ''')
+
+def ifprs_status_consolidation(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        
+            UPDATE {schema}.{treatment_index}
+            SET status =
+                CASE 
+                    WHEN status IN (
+                        'Draft',
+                        'Approved (Local)',
+                        'Approved (Regional)',
+                        'Ready for Approval',
+                        'Approved (Department)',
+                        'Approved (Agency)',
+                        'Approved',
+                        'Not Started'
+                    ) THEN 'Planned'
+                    WHEN status IN ('UnApproval Requested', 'Cancelled') THEN 'Other'
+                    ELSE status
+                END
+            WHERE identifier_database = 'IFPRS';
+
+                  ''')
+
 
 def nfpors_insert(conn, schema, treatment_index):
     cursor = conn.cursor()
@@ -189,7 +120,7 @@ def nfpors_insert(conn, schema, treatment_index):
             name,  date_current, actual_completion_date, 
             acres, type, category, fund_code, 
             identifier_database, unique_id,
-            state, treatment_date, date_source, 
+            state, treatment_date, status, 
             agency, shape
         )
         SELECT
@@ -198,7 +129,7 @@ def nfpors_insert(conn, schema, treatment_index):
             trt_nm AS name, modifiedon AS date_current, act_comp_dt AS actual_completion_date,
             gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
             'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
-            st_abbr AS state, act_comp_dt as treatment_date, 'act_comp_dt' as date_source,
+            st_abbr AS state, act_comp_dt as treatment_date, 'Completed' as status,
             agency as agency, shape
     
         FROM {schema}.nfpors
@@ -218,7 +149,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
             type, category, fund_code, cost_per_uom,
             identifier_database, unique_id,
             uom, state, activity, activity_code, treatment_date,
-            date_source, method, equipment, agency,
+            status, method, equipment, agency,
             shape
     
         )
@@ -230,7 +161,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
             'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
             uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, 
             CASE WHEN date_completed IS NULL THEN date_planned ELSE date_completed END AS treatment_date,
-            CASE WHEN date_completed IS NULL THEN 'date_planned' ELSE 'date_completed' END AS date_source, 
+            CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Completed' END AS status, 
             method AS method, equipment AS equipment,
             'USFS' AS agency, shape
             
@@ -280,13 +211,13 @@ def nfpors_fund_code(conn, schema, treatment_index):
         ''')
 
 @log_this
-def nfpors_treatment_date(conn, schema,treatment_index):
+def nfpors_status(conn, schema,treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
             SET treatment_date = n.plan_int_dt,
-            date_source = 'plan_int_dt'
+            status = 'Planned'
             FROM {schema}.nfpors n
             WHERE t.identifier_database = 'NFPORS'
             AND t.treatment_date is null
@@ -296,7 +227,7 @@ def nfpors_treatment_date(conn, schema,treatment_index):
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
             SET treatment_date = n.col_date,
-            date_source = 'col_date'
+            status = 'Other'
             FROM {schema}.nfpors n
             WHERE t.identifier_database = 'NFPORS'
             AND t.treatment_date is null
@@ -366,12 +297,12 @@ def update_treatment_points(conn, schema, treatment_index):
         cursor.execute(
          f'''
             insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
-            date_source, identifier_database, date_current, 
+            status, identifier_database, date_current, 
             actual_completion_date, activity_code, activity, method, equipment, category, type, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
-            unique_id, name, state, acres, treatment_date, date_source, identifier_database, date_current, 
+            unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
             actual_completion_date, activity_code, activity, method, equipment, category, type, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
             from {schema}.{treatment_index}
@@ -645,7 +576,7 @@ def common_attributes_insert(conn, schema, table, insert_table):
     
             objectid, name, date_current, actual_completion_date, acres, 
             type, category, fund_code, cost_per_uom, identifier_database, 
-            unique_id, uom, state, activity, activity_code, treatment_date, date_source, 
+            unique_id, uom, state, activity, activity_code, treatment_date, status, 
             method, equipment, agency, shape
     
         )
@@ -657,29 +588,15 @@ def common_attributes_insert(conn, schema, table, insert_table):
             nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
             cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
             event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity,
-            activity_code as activity_code, date_completed as treatment_date,
-            'date_completed' as date_source, method as method, equipment as equipment, 
+            activity_code as activity_code, CASE WHEN date_completed IS NULL THEN act_created_date ELSE date_completed END AS treatment_date,
+            CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Completed' END AS status, method as method, equipment as equipment, 
             'USFS' as agency, shape as shape
             
         FROM {schema}.{table}
         WHERE included = 'yes'
         AND
         {schema}.{table}.shape IS NOT NULL;
-    
-        ''')
 
-@log_this
-def common_attributes_treatment_date(conn, schema, table, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-            UPDATE {schema}.{treatment_index} t
-            SET treatment_date = f.act_created_date,
-            date_source = 'act_created_date'
-            FROM {schema}.{table} f
-            WHERE t.treatment_date is null
-            AND t.identifier_database = 'FACTS Common Attributes'
-            AND t.unique_id = f.event_cn;
         ''')
 
 def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
@@ -737,7 +654,6 @@ def common_attributes_download_and_insert(projection, cursor, ogr_db_string, sch
         set_included(conn, schema, table_name)
 
         common_attributes_insert(conn, schema, table_name, treatment_index)
-        common_attributes_treatment_date(conn, schema, table_name, treatment_index)
         common_attributes_type_filter(conn, schema, treatment_index)
 
 
@@ -829,17 +745,17 @@ if __name__ == "__main__":
     common_attributes_type_filter(conn, target_schema, insert_table)
 
     # NFPORS
-    update_nfpors(nfpors_url, conn, target_schema, out_wkid, insert_nfpors_additions, ogr_db_string)
+    update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
     nfpors_date_filtering(conn, target_schema)
     nfpors_insert(conn, target_schema, insert_table)
     nfpors_fund_code(conn, target_schema, insert_table)
-    nfpors_treatment_date(conn, target_schema, insert_table)
+    nfpors_status(conn, target_schema, insert_table)
 
     # IFPRS processing and insert
     update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     ifprs_date_filtering(conn, target_schema)
     ifprs_insert(conn, target_schema, insert_table)
-    ifprs_treatment_date(conn, target_schema, insert_table)
+    ifprs_status_consolidation(conn, target_schema, insert_table)
 
     # Modify treatment index in place
     fund_source_updates(conn, target_schema, insert_table)
