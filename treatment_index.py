@@ -83,6 +83,32 @@ def ifprs_date_filtering(conn, schema):
             ((completiondate is null AND initiationdate is NULL) AND createdondate < '1984-1-1'::date);
         ''')
 
+def ifprs_status_consolidation(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        
+            UPDATE {schema}.{treatment_index}
+            SET status =
+                CASE 
+                    WHEN status IN (
+                        'Draft',
+                        'Approved (Local)',
+                        'Approved (Regional)',
+                        'Ready for Approval',
+                        'Approved (Department)',
+                        'Approved (Agency)',
+                        'Approved',
+                        'Not Started'
+                    ) THEN 'Planned'
+                    WHEN status IN ('UnApproval Requested', 'Cancelled') THEN 'Other'
+                    ELSE status
+                END
+            WHERE identifier_database = 'IFPRS';
+
+                  ''')
+
+
 def nfpors_insert(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -729,6 +755,7 @@ if __name__ == "__main__":
     update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     ifprs_date_filtering(conn, target_schema)
     ifprs_insert(conn, target_schema, insert_table)
+    ifprs_status_consolidation(conn, target_schema, insert_table)
 
     # Modify treatment index in place
     fund_source_updates(conn, target_schema, insert_table)
