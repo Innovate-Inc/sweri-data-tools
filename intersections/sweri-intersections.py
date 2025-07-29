@@ -1,9 +1,5 @@
 import sys
 from os import path
-
-from intersections.utils import create_db_conn_from_envs
-
-# for importing from sibling directories
 sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
 
 import json
@@ -20,6 +16,7 @@ from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 import watchtower
 from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
+from intersections.utils import create_db_conn_from_envs
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
@@ -89,10 +86,18 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
                 continue
             conn = create_db_conn_from_envs()
             # delete existing intersections for this source and target
-            delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'"  )
+            delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
             # get all object ids for the intersecting features
-
-            t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key))
+            source_ids, target_ids = fetch_intersecting_object_ids(conn, schema, source_key, target_key)
+            if 0 < len(source_ids) == len(target_ids) and len(target_ids) > 0:
+                i = 0
+                chunk = 1000
+                while i < len(source_ids):
+                    # calculate intersections in chunks
+                    source_object_ids = str(tuple(source_ids[i:i + chunk]))
+                    target_object_ids = str(tuple(target_ids[i:i + chunk]))
+                    t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key, source_object_ids, target_object_ids))
+                    i += chunk
     g = group(t)()
     g.get()
 
@@ -108,13 +113,15 @@ def fetch_intersecting_object_ids(conn, schema, source_key, target_key):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f"""
-            SELECT objectId
+            SELECT a.objectId as OIDS_1, 
+            b.objectId as OIDS_2
             FROM {schema}.intersection_features a, {schema}.intersection_features b
             WHERE ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape)  
             and a.feat_source = '{source_key}'
             and b.feat_source = '{target_key}';
         """)
-        return cursor.fetchall()
+        ids = cursor.fetchall()
+        return tuple(sl[0] for sl in ids), tuple(sl[1] for sl in ids) # flatten the list of tuples to two tuples of object ids
 
 @log_this
 def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, wkid):
@@ -141,19 +148,19 @@ def run_intersections( docker_conn, docker_schema,
 
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
 
-    if len(intersect_sources.keys()) == 0:
-        logging.info('no intersections to run')
-        return
+    # if len(intersect_sources.keys()) == 0:
+    #     logging.info('no intersections to run')
+    #     return
 
     ############## setting up intersection features ################
     ############## fetching features ################
     # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
+    # fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
     # refresh the spatial index
-    refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
+    # refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
 
     # run VACUUM ANALYZE to increase performance after bulk updates
-    run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
+    #run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
 
     # calculate intersections
@@ -161,10 +168,10 @@ def run_intersections( docker_conn, docker_schema,
                                          docker_schema)
 
     ############ update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
+    # update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
     ############ hosted upload ################
-    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
+    # hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
     # close connections
     docker_conn.close()
 
