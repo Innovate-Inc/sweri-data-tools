@@ -1,6 +1,5 @@
 import sys
 from os import path
-# for importing from sibling directories
 sys.path.append( path.dirname( path.dirname( path.abspath(__file__) ) ) )
 
 import json
@@ -12,10 +11,12 @@ from celery import group
 import requests as r
 from dotenv import load_dotenv
 from sweri_utils.download import fetch_features
-from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db
+from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db, delete_from_table
 from sweri_utils.sweri_logging import log_this
+from sweri_utils.hosted import hosted_upload_and_swizzle
 import watchtower
 from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
+from intersections.utils import create_db_conn_from_envs
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='utf-8', level=logging.INFO,
@@ -83,17 +84,34 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
         for target_key, target_value in intersect_targets.items():
             if target_key == source_key:
                 continue
-            t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key))
+            conn = create_db_conn_from_envs()
+            # delete existing intersections for this source and target
+            # todo: move this into a separate task
+            delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
+            # get all object ids for the intersecting features
+            ids = fetch_object_ids(conn, schema, source_key)
+            if  len(ids) > 0:
+                i = 0
+                chunk = 1000
+                while i < len(ids):
+                    # calculate intersections in chunks
+                    source_object_ids = str(tuple(ids[i:i + chunk]))
+                    t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key, source_object_ids))
+                    i += chunk
     g = group(t)()
     g.get()
 
-# @log_this
-# def truncate_table(conn, schema, table):
-#     cursor = conn.cursor()
-#     with conn.transaction():
-#         # drop existing intersections table
-#         cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
-
+@log_this
+def fetch_object_ids(conn, schema, source_key):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"""
+            SELECT objectId
+            FROM {schema}.intersection_features 
+            where feat_source = '{source_key}';
+        """)
+        ids = cursor.fetchall()
+        return tuple(i[0] for i in ids)
 
 @log_this
 def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, wkid):
@@ -112,38 +130,38 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 
 @log_this
 def run_intersections( docker_conn, docker_schema,
-                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password):
+                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password,
+                       intersection_view, intersection_data_ids):
     ############## setting intersection sources ################
     intersections = fetch_features( f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
 
     intersect_sources, intersect_targets = configure_intersection_sources(intersections, start)
 
-    if len(intersect_sources.keys()) == 0:
-        logging.info('no intersections to run')
-        return
+    # if len(intersect_sources.keys()) == 0:
+    #     logging.info('no intersections to run')
+    #     return
 
     ############## setting up intersection features ################
     ############## fetching features ################
     # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
+    # fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
     # refresh the spatial index
-    refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
+    # refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
 
     # run VACUUM ANALYZE to increase performance after bulk updates
-    run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
+    #run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
 
-
-    # # truncate table
-    # truncate_table(docker_conn, docker_schema, 'intersections')
     # calculate intersections
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
                                          docker_schema)
 
     ############ update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
+    # update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
+    ############ hosted upload ################
+    # hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
     # close connections
     docker_conn.close()
 
@@ -162,6 +180,9 @@ if __name__ == '__main__':
     portal_url = os.getenv('ESRI_PORTAL_URL')
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
+    # views
+    intersections_view_id = os.getenv('INTERSECTIONS_VIEW_ID')
+    intersections_data_ids = [os.getenv('INTERSECTIONS_DATA_ID_1'),os.getenv('INTERSECTIONS_DATA_ID_2')]
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -171,8 +192,9 @@ if __name__ == '__main__':
     try:
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url, portal_user,
-                          portal_password)
+                          portal_password, intersections_view_id, intersections_data_ids)
         logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logger.error(f'ERROR: error running intersections: {e}')
         sys.exit(1)
+
