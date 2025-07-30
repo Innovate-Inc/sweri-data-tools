@@ -86,42 +86,32 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
                 continue
             conn = create_db_conn_from_envs()
             # delete existing intersections for this source and target
+            # todo: move this into a separate task
             delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
             # get all object ids for the intersecting features
-            source_ids, target_ids = fetch_intersecting_object_ids(conn, schema, source_key, target_key)
-            if 0 < len(source_ids) == len(target_ids) and len(target_ids) > 0:
+            ids = fetch_object_ids(conn, schema, source_key)
+            if  len(ids) > 0:
                 i = 0
                 chunk = 1000
-                while i < len(source_ids):
+                while i < len(ids):
                     # calculate intersections in chunks
-                    source_object_ids = str(tuple(source_ids[i:i + chunk]))
-                    target_object_ids = str(tuple(target_ids[i:i + chunk]))
-                    t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key, source_object_ids, target_object_ids))
+                    source_object_ids = str(tuple(ids[i:i + chunk]))
+                    t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key, source_object_ids))
                     i += chunk
     g = group(t)()
     g.get()
 
-# @log_this
-# def truncate_table(conn, schema, table):
-#     cursor = conn.cursor()
-#     with conn.transaction():
-#         # drop existing intersections table
-#         cursor.execute(f'TRUNCATE TABLE {schema}.{table};')
-
 @log_this
-def fetch_intersecting_object_ids(conn, schema, source_key, target_key):
+def fetch_object_ids(conn, schema, source_key):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f"""
-            SELECT a.objectId as OIDS_1, 
-            b.objectId as OIDS_2
-            FROM {schema}.intersection_features a, {schema}.intersection_features b
-            WHERE ST_IsValid(a.shape) and ST_IsValid(b.shape) and ST_INTERSECTS (a.shape, b.shape)  
-            and a.feat_source = '{source_key}'
-            and b.feat_source = '{target_key}';
+            SELECT objectId
+            FROM {schema}.intersection_features 
+            where feat_source = '{source_key}';
         """)
         ids = cursor.fetchall()
-        return tuple(sl[0] for sl in ids), tuple(sl[1] for sl in ids) # flatten the list of tuples to two tuples of object ids
+        return tuple(i[0] for i in ids)
 
 @log_this
 def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, wkid):
