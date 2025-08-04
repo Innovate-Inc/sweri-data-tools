@@ -150,10 +150,10 @@ def run_intersections( docker_conn, docker_schema,
     # get latest features based on source
     # fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
     # refresh the spatial index
-    # refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
+    refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
 
     # run VACUUM ANALYZE to increase performance after bulk updates
-    #run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
+    run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     ############## calculate intersections ################
 
     # calculate intersections
@@ -161,10 +161,10 @@ def run_intersections( docker_conn, docker_schema,
                                          docker_schema)
 
     ############ update run info on intersection sources table ################
-    # update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
+    update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
     ############ hosted upload ################
-    # hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
+    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema, 'intersections', 1000, 0)
     # close connections
     docker_conn.close()
 
