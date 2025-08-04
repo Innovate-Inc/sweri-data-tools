@@ -42,7 +42,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                             b.unique_id AS id_2,
                             b.feat_source AS id_2_source
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
-                        WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}'
+                        WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     )
                     INSERT INTO {schema}.{insert_table} (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
                     SELECT objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source

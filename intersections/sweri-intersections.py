@@ -80,19 +80,22 @@ def update_last_run(features, start_time, url, layer_id, portal, user, password)
 @log_this
 def calculate_intersections_from_sources(intersect_sources, intersect_targets, intersections_name, schema):
     t = []
+    source_ids = {}
     for source_key, source_value in intersect_sources.items():
         for target_key, target_value in intersect_targets.items():
             if target_key == source_key:
                 continue
             conn = create_db_conn_from_envs()
             # delete existing intersections for this source and target
-            # todo: move this into a separate task
             delete_from_table(conn, schema, intersections_name, f"id_1_source = '{source_key}' and id_2_source = '{target_key}'")
+            # fetch object ids for the source if not already fetched
+            if source_key not in source_ids:
+                source_ids[source_key] = fetch_object_ids(conn, schema, source_key)
+            ids = source_ids[source_key]
             # get all object ids for the intersecting features
-            ids = fetch_object_ids(conn, schema, source_key)
             if  len(ids) > 0:
                 i = 0
-                chunk = 1000
+                chunk = 10000
                 while i < len(ids):
                     # calculate intersections in chunks
                     source_object_ids = str(tuple(ids[i:i + chunk]))
