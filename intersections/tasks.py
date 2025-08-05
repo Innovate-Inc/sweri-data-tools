@@ -13,7 +13,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',filename='.
 # logger.addHandler(cw)
 
 
-@app.task(time_limit=14400)
+@app.task(time_limit=1440000)
 def calculate_intersections_and_insert(schema, insert_table, source_key, target_key):
     """
     Calculate intersections between features from two sources and insert the results into a specified table.
@@ -47,7 +47,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
             cursor.execute(query)
             logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
 
-@app.task(time_limit=14400)
+@app.task(time_limit=1440000)
 def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, insert_table):
     docker_conn= create_db_conn_from_envs()
     delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
