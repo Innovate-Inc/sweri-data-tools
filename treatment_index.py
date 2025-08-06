@@ -770,7 +770,6 @@ if __name__ == "__main__":
 
     # FACTS Common Attributes
     common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    common_attributes_type_filter(conn, target_schema, insert_table)
 
     # NFPORS
     update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
