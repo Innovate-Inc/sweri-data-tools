@@ -50,7 +50,7 @@ def ifprs_insert(conn, schema, treatment_index):
         INSERT INTO {schema}.{treatment_index} (
     
             objectid, 
-            name,  date_current, actual_completion_date, 
+            name,  date_current, 
             acres, type, category, fund_code, fund_source,
             identifier_database, unique_id,
             state, treatment_date, status,
@@ -60,7 +60,7 @@ def ifprs_insert(conn, schema, treatment_index):
         SELECT
     
             sde.next_rowid('{schema}', '{treatment_index}'),
-            name AS name, lastmodifieddate AS date_current, completiondate AS actual_completion_date,
+            name AS name, lastmodifieddate AS date_current,
             calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
             fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, completiondate as treatment_date, status as status,
@@ -118,7 +118,7 @@ def nfpors_insert(conn, schema, treatment_index):
         INSERT INTO {schema}.{treatment_index} (
     
             objectid, 
-            name,  date_current, actual_completion_date, 
+            name,  date_current,
             acres, type, category, fund_code, 
             identifier_database, unique_id,
             state, treatment_date, status, 
@@ -127,7 +127,7 @@ def nfpors_insert(conn, schema, treatment_index):
         SELECT
     
             sde.next_rowid('{schema}', '{treatment_index}'),
-            trt_nm AS name, modifiedon AS date_current, act_comp_dt AS actual_completion_date,
+            trt_nm AS name, modifiedon AS date_current,
             gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
             'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
             st_abbr AS state, act_comp_dt as treatment_date, 'Completed' as status,
@@ -146,7 +146,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
         INSERT INTO {schema}.{treatment_index}(
     
             objectid, name, 
-            date_current, actual_completion_date, acres,    
+            date_current, acres,    
             type, category, fund_code, cost_per_uom,
             identifier_database, unique_id,
             uom, state, activity, activity_code, treatment_date,
@@ -157,7 +157,7 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
         SELECT
     
             sde.next_rowid('{schema}', '{treatment_index}'), activity_sub_unit_name AS name,
-            etl_modified_date_haz AS date_current, date_completed AS actual_completion_date, gis_acres AS acres,
+            etl_modified_date_haz AS date_current, gis_acres AS acres,
             treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
             'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
             uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, 
@@ -299,12 +299,12 @@ def update_treatment_points(conn, schema, treatment_index):
          f'''
             insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
             status, identifier_database, date_current, 
-            actual_completion_date, activity_code, activity, method, equipment, category, type, agency, 
+             activity_code, activity, method, equipment, category, type, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
             unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
-            actual_completion_date, activity_code, activity, method, equipment, category, type, agency, 
+             activity_code, activity, method, equipment, category, type, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
             from {schema}.{treatment_index}
         ''')
@@ -575,7 +575,7 @@ def common_attributes_insert(conn, schema, table, insert_table):
                        
         INSERT INTO {schema}.{insert_table}(
     
-            objectid, name, date_current, actual_completion_date, acres, 
+            objectid, name, date_current,  acres, 
             type, category, fund_code, cost_per_uom, identifier_database, 
             unique_id, uom, state, activity, activity_code, treatment_date, status, 
             method, equipment, agency, shape
@@ -584,8 +584,7 @@ def common_attributes_insert(conn, schema, table, insert_table):
         SELECT
     
             sde.next_rowid('{schema}', '{insert_table}'),
-            name AS name, act_modified_date AS date_current, 
-            date_completed AS actual_completion_date, gis_acres AS acres, 
+            name AS name, act_modified_date AS date_current, gis_acres AS acres, 
             nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
             cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
             event_cn AS unique_id, uom as uom, state_abbr AS state, activity as activity,
