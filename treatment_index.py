@@ -599,7 +599,7 @@ def common_attributes_insert(conn, schema, table, insert_table):
 
         ''')
 
-def common_attributes_download_and_insert(projection, cursor, ogr_db_string, schema, treatment_index, facts_haz_table):
+def common_attributes_download_and_insert(projection, conn, ogr_db_string, schema, treatment_index, facts_haz_table):
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
     'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
@@ -699,6 +699,16 @@ def facts_nfpors_twig_category(conn, schema):
             ti.type = tc.type;
         ''')
 
+def remove_zero_area_polygons(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        
+            DELETE FROM {schema}.{table}
+            WHERE ST_Area(shape) = 0;
+            
+        ''')
+
 if __name__ == "__main__":
     load_dotenv()
 
@@ -781,6 +791,7 @@ if __name__ == "__main__":
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
     revert_multi_to_poly(conn, target_schema, insert_table)
+    remove_zero_area_polygons(conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)
