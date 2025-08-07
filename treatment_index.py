@@ -9,6 +9,7 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
+from sweri_utils.hosted import hosted_upload_and_swizzle
 
 logger = logging.getLogger(__name__)
 
@@ -757,7 +758,6 @@ if __name__ == "__main__":
 
     # FACTS Common Attributes
     common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    common_attributes_type_filter(conn, target_schema, insert_table)
 
     # NFPORS
     update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
