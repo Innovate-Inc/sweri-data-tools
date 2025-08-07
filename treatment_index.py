@@ -567,13 +567,13 @@ def set_included(conn, schema, table):
         ''')
 
 @log_this
-def common_attributes_insert(conn, schema, table, insert_table):
+def common_attributes_insert(conn, schema, common_attributes_table, treatment_index_table):
     # insert records where included = 'yes'
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
                        
-        INSERT INTO {schema}.{insert_table}(
+        INSERT INTO {schema}.{treatment_index_table}(
     
             objectid, name, date_current,  acres, 
             type, category, fund_code, cost_per_uom, identifier_database, 
@@ -583,7 +583,7 @@ def common_attributes_insert(conn, schema, table, insert_table):
         )
         SELECT
     
-            sde.next_rowid('{schema}', '{insert_table}'),
+            sde.next_rowid('{schema}', '{treatment_index_table}'),
             name AS name, act_modified_date AS date_current, gis_acres AS acres, 
             nfpors_treatment AS type, nfpors_category AS category, fund_codes as fund_code, 
             cost_per_unit as cost_per_uom, 'FACTS Common Attributes' AS identifier_database, 
@@ -592,10 +592,10 @@ def common_attributes_insert(conn, schema, table, insert_table):
             CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Completed' END AS status, method as method, equipment as equipment, 
             'USFS' as agency, shape as shape
             
-        FROM {schema}.{table}
+        FROM {schema}.{common_attributes_table}
         WHERE included = 'yes'
         AND
-        {schema}.{table}.shape IS NOT NULL;
+        {schema}.{common_attributes_table}.shape IS NOT NULL;
 
         ''')
 
@@ -619,10 +619,10 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
 
         #expression pulls just the number out of the url, 01-10
         region_number = re.sub("\D", "", url)
-        table_name = f'common_attributes_{region_number}'
+        ca_table_name = f'common_attributes_{region_number}'
         gdb = f'Actv_CommonAttribute_PL_Region{region_number}.gdb'
 
-        zip_file = f'{table_name}.zip'
+        zip_file = f'{ca_table_name}.zip'
 
         logging.info(f'Downloading {url}')
         download_file_from_url(url, zip_file)
@@ -635,25 +635,25 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
         # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
 
         input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-        gdb_to_postgres(gdb, projection, common_attributes_fc_name, table_name, schema, ogr_db_string, input_srs)
+        gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
 
-        add_fields_and_indexes(conn, schema, table_name, region_number)
+        add_fields_and_indexes(conn, schema, ca_table_name, region_number)
 
-        common_attributes_date_filtering(conn, schema, table_name)
-        exclude_by_acreage(conn, schema, table_name)
-        exclude_facts_hazardous_fuels(conn, schema, table_name, facts_haz_table)
+        common_attributes_date_filtering(conn, schema, ca_table_name)
+        exclude_by_acreage(conn, schema, ca_table_name)
+        exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
 
-        trim_whitespace(conn, schema, table_name)
+        trim_whitespace(conn, schema, ca_table_name)
 
-        include_logging_activities(conn, schema, table_name)
-        include_fire_activites(conn, schema, table_name)
-        include_fuel_activities(conn, schema, table_name)
-        activity_filter(conn, schema, table_name)
-        include_other_activites(conn, schema, table_name)
+        include_logging_activities(conn, schema, ca_table_name)
+        include_fire_activites(conn, schema, ca_table_name)
+        include_fuel_activities(conn, schema, ca_table_name)
+        activity_filter(conn, schema, ca_table_name)
+        include_other_activites(conn, schema, ca_table_name)
 
-        set_included(conn, schema, table_name)
+        set_included(conn, schema, ca_table_name)
 
-        common_attributes_insert(conn, schema, table_name, treatment_index)
+        common_attributes_insert(conn, schema, ca_table_name, treatment_index)
         common_attributes_type_filter(conn, schema, treatment_index)
 
 
