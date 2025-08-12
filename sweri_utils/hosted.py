@@ -1,4 +1,5 @@
 import geopandas
+import pandas as pd
 import math
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from sqlalchemy import create_engine
@@ -24,9 +25,9 @@ def get_view_data_source_id(view):
     return source_id
 
 
-def gdf_to_features(gdf):
-    # Convert GeoDataFrame to SEDF to featureset
-    sdf = GeoAccessor.from_geodataframe(gdf)
+def gdf_to_features(gdf, is_table=False):
+    # Convert DataFrame or GeoDataFrame to SEDF to featureset
+    sdf = GeoAccessor.from_geodataframe(gdf) if not is_table else gdf
     features_to_add = sdf.spatial.to_featureset().features
 
     return features_to_add
@@ -43,8 +44,11 @@ def build_postgis_chunk_query(schema, table, chunk_size, objectid=0):
     return query
 
 
-def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
-    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con, geom_col=geom_field)
+def postgis_query_to_gdf(pg_query, pg_con, geom_field):
+    if geom_field is None:
+        gdf = pd.read_sql(pg_query, pg_con)
+    else:
+        gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con)
 
     if gdf.empty:
         return None, None
@@ -70,14 +74,14 @@ def retry_upload(func, *args, **kwargs):
 
 @retry(retries=1, on_failure=retry_upload)
 @log_this
-def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, db_con):
+def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, db_con, is_table=False):
     sql_query = build_postgis_chunk_query(schema, table, chunk_size, current_objectid)
-    features_gdf, current_objectid = postgis_query_to_gdf(sql_query, db_con, geom_field='shape')
+    features_df, current_objectid = postgis_query_to_gdf(sql_query, db_con, geom_field=None if is_table else 'shape')
 
     if current_objectid is None:
         return None
 
-    features = gdf_to_features(features_gdf)
+    features = gdf_to_features(features_df, is_table)
 
     for feature in features:
         for key, value in feature.attributes.items():
@@ -90,10 +94,10 @@ def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, curr
 
 
 @log_this
-def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
+def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid, is_table=False):
     while True:
         current_objectid = upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid,
-                                                         sqla_engine)
+                                                         sqla_engine, is_table)
         if current_objectid is None:
             break
 
@@ -104,7 +108,7 @@ def refresh_gis(gis_url, gis_user, gis_password):
 
 @log_this
 def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size,
-                              start_objectid):
+                              start_objectid, is_table=False):
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
 
@@ -115,14 +119,16 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
     new_source_item = gis_con.content.get(new_data_source_id)
 
-    if (len(new_source_item.layers)) == 1:
+    if (len(new_source_item.layers)) == 1 :
         new_source_feature_layer = next(iter(new_source_item.layers))
+    elif len(new_source_item.tables) == 1:
+        new_source_feature_layer = next(iter(new_source_item.tables))
     else:
         raise ValueError(f"{len(new_source_item.layers)} sources returned, 1 expected")
 
     new_source_feature_layer.manager.truncate()
 
-    load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
+    load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid, is_table)
 
     # refreshing old references before swizzle service
     view_item = gis_con.content.get(view_id)
