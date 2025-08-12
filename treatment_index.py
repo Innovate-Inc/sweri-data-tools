@@ -19,14 +19,19 @@ def update_nfpors(nfpors_url, conn, schema, wkid, ogr_db_string):
     # database = 'sweri'
 
     try:
-        service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, 70)
+        service_to_postgres(nfpors_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
     except Exception as e:
         logger.error(f'Error downloading NFPORS: {e}... continuing')
         pass
 
 @log_this
 def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
-    where = "Class = 'Actual Treatment' or Class = 'Estimated Treatment'"
+    where = '''
+    (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
+    OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+    OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
+'''
+
     destination_table = 'ifprs'
 
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
@@ -69,19 +74,6 @@ def ifprs_insert(conn, schema, treatment_index):
     
         FROM {schema}.ifprs
         WHERE {schema}.ifprs.shape IS NOT NULL;
-        ''')
-
-
-def ifprs_date_filtering(conn, schema):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''             
-            DELETE FROM {schema}.ifprs WHERE
-            completiondate < '1984-1-1'::date
-            OR
-            (completiondate is null AND initiationdate < '1984-1-1'::date)
-            OR
-            ((completiondate is null AND initiationdate is NULL) AND createdondate < '1984-1-1'::date);
         ''')
 
 def ifprs_status_consolidation(conn, schema, treatment_index):
@@ -718,8 +710,8 @@ if __name__ == "__main__":
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
-    facts_haz_gdb = 'S_USA.Activity_HazFuelTrt_PL.gdb'
-    facts_haz_fc_name = 'Activity_HazFuelTrt_PL'
+    facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
+    facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
     nfpors_url = os.getenv('NFPORS_URL')
 
@@ -770,14 +762,13 @@ if __name__ == "__main__":
 
     # NFPORS
     update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
-    nfpors_date_filtering(conn, target_schema)
+    # nfpors_date_filtering(conn, target_schema)
     nfpors_insert(conn, target_schema, insert_table)
     nfpors_fund_code(conn, target_schema, insert_table)
     nfpors_status(conn, target_schema, insert_table)
 
     # IFPRS processing and insert
     update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
-    ifprs_date_filtering(conn, target_schema)
     ifprs_insert(conn, target_schema, insert_table)
     ifprs_status_consolidation(conn, target_schema, insert_table)
 
