@@ -66,7 +66,7 @@ def ifprs_insert(conn, schema, treatment_index):
     
             sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current,
-            calculatedacres AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
+            calculatedarea AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
             fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, completiondate as treatment_date, status as status,
             estimatedtotalcost as total_cost, category as twig_category, 
