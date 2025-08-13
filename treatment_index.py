@@ -76,6 +76,27 @@ def ifprs_insert(conn, schema, treatment_index):
         WHERE {schema}.ifprs.shape IS NOT NULL;
         ''')
 
+def ifprs_treatment_date(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.originalinitiationdate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text;
+        ''')
+
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.createdondate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text;
+        ''')
+
 def ifprs_status_consolidation(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -762,7 +783,7 @@ if __name__ == "__main__":
 
     # NFPORS
     update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
-    # nfpors_date_filtering(conn, target_schema)
+    nfpors_date_filtering(conn, target_schema)
     nfpors_insert(conn, target_schema, insert_table)
     nfpors_fund_code(conn, target_schema, insert_table)
     nfpors_status(conn, target_schema, insert_table)
@@ -770,6 +791,7 @@ if __name__ == "__main__":
     # IFPRS processing and insert
     update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     ifprs_insert(conn, target_schema, insert_table)
+    ifprs_treatment_date(conn, target_schema, insert_table)
     ifprs_status_consolidation(conn, target_schema, insert_table)
 
     # Modify treatment index in place
