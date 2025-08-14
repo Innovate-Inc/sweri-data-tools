@@ -49,11 +49,11 @@ def create_duplicate_table(conn, schema, table_name):
             SELECT * 
             FROM {schema}.{table_name}
             WHERE shape IS NOT NULL
-              AND (actual_completion_date, activity, shape::text) IN (
-                  SELECT actual_completion_date, activity, shape::text
+              AND (treatment_date, activity, shape::text) IN (
+                  SELECT treatment_date, activity, shape::text
                   FROM {schema}.{table_name}
                   WHERE shape IS NOT NULL
-                  GROUP BY actual_completion_date, activity, shape::text
+                  GROUP BY treatment_date, activity, shape::text
                   HAVING COUNT(*) > 1);
                   
         ''')
