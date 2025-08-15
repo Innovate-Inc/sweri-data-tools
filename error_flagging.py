@@ -69,7 +69,7 @@ def create_duplicate_table(conn, schema, table_name):
         ''')
 
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'activity')
-    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'actual_completion_date')
+    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'treatment_date')
 
 
 
@@ -84,7 +84,7 @@ def flag_duplicate_table(conn, schema, table_name):
             WITH ranking_treatment_duplicates AS (
                 SELECT *,
                     ROW_NUMBER() OVER (
-                        PARTITION BY actual_completion_date, activity, shape::text
+                        PARTITION BY treatment_date, activity, shape::text
                     ) AS row_num
                 FROM {schema}.treatment_index_duplicates
             )
