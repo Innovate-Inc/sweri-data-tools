@@ -4,7 +4,7 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly
+from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
@@ -712,17 +712,6 @@ def facts_nfpors_twig_category(conn, schema):
             ti.type = tc.type;
         ''')
 
-def makevalid_shapes(conn, schema, table):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-
-            UPDATE {schema}.{table}
-            SET shape = ST_MakeValid(shape)
-            WHERE NOT ST_ISVALID(shape);
-
-        ''')
-
 def remove_zero_area_polygons(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
@@ -815,7 +804,7 @@ if __name__ == "__main__":
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
     revert_multi_to_poly(conn, target_schema, insert_table)
-    makevalid_shapes(conn, target_schema, insert_table)
+    makevalid_shapes(conn, target_schema, insert_table, 'shape')
     remove_zero_area_polygons(conn, target_schema, insert_table)
 
     # update treatment points

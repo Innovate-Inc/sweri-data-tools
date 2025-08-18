@@ -356,3 +356,14 @@ def revert_multi_to_poly(conn, schema, table):
             SET shape = (select (ST_Dump(shape)).geom::geometry(Polygon,4326) from {schema}.{table} where objectid = x.objectid)
             WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
         """)
+
+def makevalid_shapes(conn, schema, table, shape_field):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table}
+            SET {shape_field} = ST_MakeValid({shape_field})
+            WHERE NOT ST_ISVALID({shape_field});
+
+        ''')
