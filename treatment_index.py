@@ -712,6 +712,17 @@ def facts_nfpors_twig_category(conn, schema):
             ti.type = tc.type;
         ''')
 
+def makevalid_shapes(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table}
+            SET shape = ST_MakeValid(shape)
+            WHERE NOT ST_ISVALID(shape);
+
+        ''')
+
 def remove_zero_area_polygons(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
@@ -804,6 +815,7 @@ if __name__ == "__main__":
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
     revert_multi_to_poly(conn, target_schema, insert_table)
+    makevalid_shapes(conn, target_schema, insert_table)
     remove_zero_area_polygons(conn, target_schema, insert_table)
 
     # update treatment points
