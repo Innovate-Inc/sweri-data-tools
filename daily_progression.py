@@ -195,7 +195,7 @@ if __name__ == '__main__':
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # Hosted upload variables
-    gis_url = os.getenv("GIS_URL")
+    gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
 
