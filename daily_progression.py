@@ -206,10 +206,14 @@ if __name__ == '__main__':
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # Hosted upload variables
-    gis = GIS("https://gis.reshapewildfire.org/arcgis", os.getenv("ESRI_USER"), os.getenv("ESRI_PW"), expiration=120)
+    gis_url = os.getenv("ESRI_PORTAL_URL")
+    gis_user = os.getenv("ESRI_USER")
+    gis_password = os.getenv("ESRI_PW")
+
     daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
     daily_progression_table = 'daily_progression'
+
     chunk = 1000
     start_objectid = 0
 
@@ -227,7 +231,7 @@ if __name__ == '__main__':
     update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
 
     # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
                               daily_progression_table, chunk, start_objectid)
 
     conn.close()
