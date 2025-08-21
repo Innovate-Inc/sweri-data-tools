@@ -30,5 +30,5 @@ app = Celery(
     result_backend_transport_options={
         "is_secure": True,
     } if os.environ.get('CELERY_BROKER_AWS_ACCESS_KEY_ID') and os.environ.get('CELERY_BROKER_AWS_SECRET_ACCESS_KEY') else {},
-    include=['intersections.tasks']
+    include=['intersections.tasks', 'treatment-index-tasks']
 )
