@@ -58,7 +58,7 @@ def ifprs_insert(conn, schema, treatment_index):
             name,  date_current, 
             acres, type, category, fund_code, fund_source,
             identifier_database, unique_id,
-            state, treatment_date, status,
+            state, status,
             total_cost, twig_category,
             agency, shape
         )
@@ -68,7 +68,7 @@ def ifprs_insert(conn, schema, treatment_index):
             name AS name, lastmodifieddate AS date_current,
             calculatedarea AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
             fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
-            state AS state, completiondate as treatment_date, status as status,
+            state AS state, status as status,
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
     
@@ -81,11 +81,21 @@ def ifprs_treatment_date(conn, schema, treatment_index):
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.completiondate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text
+            AND i.completiondate IS NOT NULL;
+        ''')
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
             SET treatment_date = i.originalinitiationdate
             FROM {schema}.ifprs i
             WHERE t.identifier_database = 'IFPRS'
             AND t.treatment_date is null
-            AND t.unique_id = i.id::text;
+            AND t.unique_id = i.id::text
+            AND i.originalinitiationdate IS NOT NULL;
         ''')
 
         cursor.execute(f'''
@@ -94,7 +104,8 @@ def ifprs_treatment_date(conn, schema, treatment_index):
             FROM {schema}.ifprs i
             WHERE t.identifier_database = 'IFPRS'
             AND t.treatment_date is null
-            AND t.unique_id = i.id::text;
+            AND t.unique_id = i.id::text
+            AND i.createdondate IS NOT NULL;
         ''')
 
 def ifprs_status_consolidation(conn, schema, treatment_index):
@@ -770,10 +781,10 @@ if __name__ == "__main__":
     start_objectid = 0
 
     # Truncate the table before inserting new data
-    cursor = pg_conn.cursor()
+    pg_cursor = pg_conn.cursor()
     with pg_conn.transaction():
-        cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
-        cursor.execute('COMMIT;')
+        pg_cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
+        pg_cursor.execute('COMMIT;')
 
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
