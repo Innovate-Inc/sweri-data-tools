@@ -4,10 +4,10 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly
-from sweri_utils.download import service_to_postgres, get_ids
+from sweri_utils.sql import connect_to_pg_db, add_column, revert_multi_to_poly
+from sweri_utils.download import service_to_postgres
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -342,6 +342,18 @@ def correct_biomass_removal_typo(conn, schema, treatment_index):
             WHERE 
             type = 'Biomass Removall'
         ''')
+
+@log_this
+def update_state_abbr(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        UPDATE {schema}.{treatment_index} ti
+        SET state = s.stusps
+        FROM {schema}.states s
+        WHERE ti.state = s.name;
+        ''')
+
 
 @log_this
 def update_total_cost(conn, schema, treatment_index):
@@ -845,6 +857,7 @@ if __name__ == "__main__":
     fund_source_updates(conn, target_schema, insert_table)
     update_total_cost(conn, target_schema, insert_table)
     correct_biomass_removal_typo(conn, target_schema, insert_table)
+    update_state_abbr(conn, target_schema, insert_table)
     flag_duplicate_ids(conn, target_schema, insert_table)
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
