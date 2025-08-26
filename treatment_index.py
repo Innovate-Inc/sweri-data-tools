@@ -41,7 +41,11 @@ def create_nfpors_where_clause():
     exclusion_ids = os.getenv('EXCLUSION_IDS')
     exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
 
-    where_clause = f"1=1"
+    where_clause = f'''
+        (act_comp_dt > DATE '1984-01-01' 
+        OR (act_comp_dt IS NULL AND plan_int_dt > DATE '1984-01-01') 
+        OR (act_comp_dt IS NULL AND plan_int_dt IS NULL AND col_date > DATE '1984-01-01'))
+    '''
     if len(exlusion_ids_tuple) > 0:
         where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
 
@@ -202,19 +206,6 @@ def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
             date_completed < '1984-1-1'::date
             OR
             (date_completed is null AND date_planned < '1984-1-1'::date);
-        ''')
-
-@log_this
-def nfpors_date_filtering(conn, schema):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''             
-            DELETE FROM {schema}.nfpors WHERE
-            act_comp_dt < '1984-1-1'::date
-            OR
-            (act_comp_dt is null AND plan_int_dt < '1984-1-1'::date)
-            OR
-            ((act_comp_dt is null AND plan_int_dt is NULL) AND col_date < '1984-1-1'::date);
         ''')
 
 @log_this
@@ -788,8 +779,8 @@ if __name__ == "__main__":
 
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
     # special input srs for common attributes
     # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
@@ -804,7 +795,6 @@ if __name__ == "__main__":
 
     # NFPORS
     update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
-    nfpors_date_filtering(pg_conn, target_schema)
     nfpors_insert(pg_conn, target_schema, insert_table)
     nfpors_fund_code(pg_conn, target_schema, insert_table)
     nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
