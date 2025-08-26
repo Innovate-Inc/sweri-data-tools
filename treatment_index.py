@@ -134,8 +134,7 @@ def nfpors_insert(conn, schema, treatment_index):
             name,  date_current,
             acres, type, category, fund_code, 
             identifier_database, unique_id,
-            state, treatment_date, status, 
-            agency, shape
+            state, agency, shape
         )
         SELECT
     
@@ -143,8 +142,7 @@ def nfpors_insert(conn, schema, treatment_index):
             trt_nm AS name, modifiedon AS date_current,
             gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
             'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
-            st_abbr AS state, act_comp_dt as treatment_date, 'Completed' as status,
-            agency as agency, shape
+            st_abbr AS state, agency as agency, shape
     
         FROM {schema}.nfpors
         WHERE {schema}.nfpors.shape IS NOT NULL;
@@ -225,9 +223,19 @@ def nfpors_fund_code(conn, schema, treatment_index):
         ''')
 
 @log_this
-def nfpors_status(conn, schema,treatment_index):
+def nfpors_treatment_date_and_status(conn, schema,treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = n.act_comp_dt,
+            status = 'Completed'
+            FROM {schema}.nfpors n
+            WHERE t.identifier_database = 'NFPORS'
+            AND t.treatment_date IS NULL
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.act_comp_dt IS NOT NULL;
+        ''')
         cursor.execute(f'''
             UPDATE {schema}.{treatment_index} t
             SET treatment_date = n.plan_int_dt,
@@ -235,7 +243,8 @@ def nfpors_status(conn, schema,treatment_index):
             FROM {schema}.nfpors n
             WHERE t.identifier_database = 'NFPORS'
             AND t.treatment_date is null
-            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id);
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.plan_int_dt IS NOT NULL;
         ''')
 
         cursor.execute(f'''
@@ -245,7 +254,8 @@ def nfpors_status(conn, schema,treatment_index):
             FROM {schema}.nfpors n
             WHERE t.identifier_database = 'NFPORS'
             AND t.treatment_date is null
-            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id);
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.col_date IS NOT NULL;
         ''')
 
 
@@ -739,7 +749,7 @@ if __name__ == "__main__":
     #This is the final table
     insert_table = 'treatment_index'
 
-    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
@@ -760,8 +770,8 @@ if __name__ == "__main__":
     start_objectid = 0
 
     # Truncate the table before inserting new data
-    cursor = conn.cursor()
-    with conn.transaction():
+    cursor = pg_conn.cursor()
+    with pg_conn.transaction():
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         cursor.execute('COMMIT;')
 
@@ -773,48 +783,48 @@ if __name__ == "__main__":
     # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
-    hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
-
-    # FACTS Common Attributes
-    common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    #                 target_schema, ogr_db_string, input_srs)
+    # hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
+    # hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
+    #
+    # # FACTS Common Attributes
+    # common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
 
     # NFPORS
-    update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
-    nfpors_date_filtering(conn, target_schema)
-    nfpors_insert(conn, target_schema, insert_table)
-    nfpors_fund_code(conn, target_schema, insert_table)
-    nfpors_status(conn, target_schema, insert_table)
+    update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
+    nfpors_date_filtering(pg_conn, target_schema)
+    nfpors_insert(pg_conn, target_schema, insert_table)
+    nfpors_fund_code(pg_conn, target_schema, insert_table)
+    nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
 
     # IFPRS processing and insert
-    update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
-    ifprs_insert(conn, target_schema, insert_table)
-    ifprs_treatment_date(conn, target_schema, insert_table)
-    ifprs_status_consolidation(conn, target_schema, insert_table)
+    update_ifprs(pg_conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
+    ifprs_insert(pg_conn, target_schema, insert_table)
+    ifprs_treatment_date(pg_conn, target_schema, insert_table)
+    ifprs_status_consolidation(pg_conn, target_schema, insert_table)
 
     # Modify treatment index in place
-    fund_source_updates(conn, target_schema, insert_table)
-    update_total_cost(conn, target_schema, insert_table)
-    correct_biomass_removal_typo(conn, target_schema, insert_table)
-    flag_duplicate_ids(conn, target_schema, insert_table)
-    flag_high_cost(conn, target_schema, insert_table)
-    flag_duplicates(conn, target_schema, insert_table)
-    flag_uom_outliers(conn, target_schema, insert_table)
-    add_twig_category(conn, target_schema)
-    revert_multi_to_poly(conn, target_schema, insert_table)
-    makevalid_shapes(conn, target_schema, insert_table, 'shape')
-    remove_zero_area_polygons(conn, target_schema, insert_table)
+    fund_source_updates(pg_conn, target_schema, insert_table)
+    update_total_cost(pg_conn, target_schema, insert_table)
+    correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
+    flag_duplicate_ids(pg_conn, target_schema, insert_table)
+    flag_high_cost(pg_conn, target_schema, insert_table)
+    flag_duplicates(pg_conn, target_schema, insert_table)
+    flag_uom_outliers(pg_conn, target_schema, insert_table)
+    add_twig_category(pg_conn, target_schema)
+    revert_multi_to_poly(pg_conn, target_schema, insert_table)
+    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
+    remove_zero_area_polygons(pg_conn, target_schema, insert_table)
 
     # update treatment points
-    update_treatment_points(conn, target_schema, insert_table)
+    update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, conn, target_schema,
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, pg_conn, target_schema,
                               insert_table, chunk, start_objectid)
     # treatment index points
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, pg_conn, target_schema,
                               treatment_index_points_table, chunk, start_objectid)
 
-    conn.close()
+    pg_conn.close()
