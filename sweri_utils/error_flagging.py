@@ -173,9 +173,17 @@ def flag_uom_outliers(conn, schema, table_name):
             uom = 'EACH';
         ''')
 
-def flag_spatial_errors():
-    print()
-# Check number of treatments with geoms outside of the state listed in the state field of the treatment
-#
-# Check number of treatments outside of US
-
+def flag_spatial_errors(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name} ti
+            SET error =
+                CASE
+                  WHEN ti.error IS NULL THEN 'SPATIAL'
+                  ELSE ti.error || ';SPATIAL'
+                END
+            FROM {schema}.states s
+            WHERE ti.state = s.stusps
+            AND NOT ST_Intersects(ti.shape, s.shape);
+        ''')

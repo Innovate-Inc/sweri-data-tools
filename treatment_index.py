@@ -7,7 +7,7 @@ import re
 from sweri_utils.sql import connect_to_pg_db, add_column, revert_multi_to_poly
 from sweri_utils.download import service_to_postgres
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -821,7 +821,6 @@ if __name__ == "__main__":
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
-        cursor.execute('COMMIT;')
 
     # FACTS Hazardous Fuels
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
@@ -862,6 +861,7 @@ if __name__ == "__main__":
     flag_high_cost(conn, target_schema, insert_table)
     flag_duplicates(conn, target_schema, insert_table)
     flag_uom_outliers(conn, target_schema, insert_table)
+    flag_spatial_errors(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
     revert_multi_to_poly(conn, target_schema, insert_table)
 
