@@ -4,10 +4,10 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes
-from sweri_utils.download import service_to_postgres, get_ids
+from sweri_utils.sql import connect_to_pg_db, add_column, revert_multi_to_poly, makevalid_shapes
+from sweri_utils.download import service_to_postgres
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 
@@ -298,6 +298,17 @@ def correct_biomass_removal_typo(conn, schema, treatment_index):
             SET type = 'Biomass Removal'
             WHERE 
             type = 'Biomass Removall'
+        ''')
+
+@log_this
+def update_state_abbr(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        UPDATE {schema}.{treatment_index} ti
+        SET state = s.stusps
+        FROM {schema}.states s
+        WHERE ti.state = s.name;
         ''')
 
 @log_this
@@ -810,23 +821,26 @@ if __name__ == "__main__":
     fund_source_updates(pg_conn, target_schema, insert_table)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
-    flag_duplicate_ids(pg_conn, target_schema, insert_table)
-    flag_high_cost(pg_conn, target_schema, insert_table)
-    flag_duplicates(pg_conn, target_schema, insert_table)
-    flag_uom_outliers(pg_conn, target_schema, insert_table)
+    update_state_abbr(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
     makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
+    flag_duplicate_ids(pg_conn, target_schema, insert_table)
+    flag_high_cost(pg_conn, target_schema, insert_table)
+    flag_duplicates(pg_conn, target_schema, insert_table)
+    flag_uom_outliers(pg_conn, target_schema, insert_table)
+    flag_spatial_errors(pg_conn, target_schema, insert_table)
+
 
     # update treatment points
     update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, pg_conn, target_schema,
-                              insert_table, chunk, start_objectid)
-    # treatment index points
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, pg_conn, target_schema,
-                              treatment_index_points_table, chunk, start_objectid)
+    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, pg_conn, target_schema,
+    #                           insert_table, chunk, start_objectid)
+    # # treatment index points
+    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, pg_conn, target_schema,
+    #                           treatment_index_points_table, chunk, start_objectid)
 
     pg_conn.close()
