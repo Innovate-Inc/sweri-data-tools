@@ -174,17 +174,17 @@ def flag_uom_outliers(conn, schema, table_name):
             uom = 'EACH';
         ''')
 
-if __name__ == "__main__":
-    load_dotenv()
-    target_table = 'treatment_index_facts_nfpors_temp'
-    target_schema = os.getenv('SCHEMA')
-    logger = logging.getLogger(__name__)
-    logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./error_flagging.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    logger.addHandler(watchtower.CloudWatchLogHandler())
-
-
-    conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
-    flag_high_cost(conn, target_schema, target_table)
-    flag_duplicates(conn, target_schema, target_table)
-    flag_uom_outliers(conn, target_schema, target_table)
-    conn.close()
+def flag_spatial_errors(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name} ti
+            SET error =
+                CASE
+                  WHEN ti.error IS NULL THEN 'SPATIAL'
+                  ELSE ti.error || ';SPATIAL'
+                END
+            FROM {schema}.states s
+            WHERE ti.state = s.stusps
+            AND NOT ST_Intersects(ti.shape, s.shape);
+        ''')
