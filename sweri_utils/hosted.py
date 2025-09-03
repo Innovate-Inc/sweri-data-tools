@@ -1,12 +1,16 @@
 import geopandas
 import math
+from arcgis import gis
 from arcgis.features import FeatureLayerCollection, GeoAccessor
+from celery import group
 from sqlalchemy import create_engine
-
+from .sql import create_db_conn_from_envs
 from .swizzle import swizzle_service
 from .download import retry
 from .sweri_logging import log_this, logging
 from arcgis.gis import GIS
+from worker import app
+
 
 
 @log_this
@@ -32,15 +36,14 @@ def gdf_to_features(gdf):
     return features_to_add
 
 
-def build_postgis_chunk_query(schema, table, chunk_size, objectid=0):
+def build_postgis_chunk_query(schema, table, object_ids):
     query = f"""
         SELECT * FROM {schema}.{table}
         WHERE
-        objectid > {objectid}
-        ORDER BY objectid ASC
-        limit {chunk_size};
+        objectid IN {object_ids};
     """
     return query
+
 
 
 def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
@@ -50,10 +53,9 @@ def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
         return None, None
 
     # set max_objectid to the max or last record in the gdf for objectid column
-    max_objectid = gdf.iloc[-1]['objectid']
     gdf.drop(columns=['objectid', 'gdb_geomattr_data'], inplace=True, errors='ignore')
 
-    return gdf, max_objectid
+    return gdf
 
 
 @log_this
@@ -68,14 +70,73 @@ def retry_upload(func, *args, **kwargs):
         raise Exception('Upload Tries Exceeded')
 
 
-@retry(retries=1, on_failure=retry_upload)
-@log_this
-def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, db_con):
-    sql_query = build_postgis_chunk_query(schema, table, chunk_size, current_objectid)
-    features_gdf, current_objectid = postgis_query_to_gdf(sql_query, db_con, geom_field='shape')
+def refresh_gis(gis_url, gis_user, gis_password):
+    gis = GIS(gis_url,gis_user, gis_password)
+    return gis
 
-    if current_objectid is None:
-        return None
+@log_this
+def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, chunk_size):
+    # setup new layer connection
+    gis_con = refresh_gis(gis_url, gis_user, gis_password)
+    view_item = gis_con.content.get(view_id)
+    current_data_source_id = get_view_data_source_id(view_item)
+
+    new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
+    new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
+    new_source_feature_layer.manager.truncate()
+    conn = create_db_conn_from_envs()
+    ids = get_object_ids(conn, schema, table)
+    # list of tasks
+    t = []
+    i = 0
+    while i <= len(ids):
+        chunk_ids = str(tuple(ids[i:i+chunk_size]))
+        i += chunk_size
+        t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table, chunk_ids))
+
+    g = group(t)()
+    g.get()
+    # refreshing old references before swizzle service
+    view_item = gis_con.content.get(view_id)
+    new_source_item = gis_con.content.get(new_data_source_id)
+    token = gis_con.session.auth.token
+
+    swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
+
+
+def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
+    gis_con = refresh_gis(gis_url, gis_user, gis_password)
+    new_source_item = gis_con.content.get(new_data_source_id)
+    if (len(new_source_item.layers)) == 1:
+        new_source_feature_layer = next(iter(new_source_item.layers))
+    else:
+        raise ValueError(f"{len(new_source_item.layers)} sources returned, 1 expected")
+
+    return new_source_feature_layer
+
+def get_object_ids(pg_con, schema, table):
+    q = f"SELECT objectid FROM {schema}.{table};"
+    cursor = pg_con.cursor()
+    try:
+        with pg_con.transaction():
+            cursor.execute(q)
+            results = cursor.fetchall()
+            ids = [r[0] for r in results]
+    except Exception as err:
+        logging.error(f'error getting objectids: {err}, {q}')
+        raise err
+    return ids
+
+
+from worker import app
+
+@app.task()
+def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids):
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
+    conn = create_db_conn_from_envs()
+    sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
+    sql_query = build_postgis_chunk_query(schema, table, object_ids)
+    features_gdf = postgis_query_to_gdf(sql_query, sql_engine, geom_field='shape')
 
     features = gdf_to_features(features_gdf)
 
@@ -84,49 +145,4 @@ def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, curr
             if isinstance(value, float) and math.isnan(value):
                 feature.attributes[key] = None
 
-    additions = feature_layer.edit_features(adds=features)
-
-    return current_objectid
-
-
-@log_this
-def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid):
-    while True:
-        current_objectid = upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid,
-                                                         sqla_engine)
-        if current_objectid is None:
-            break
-
-
-def refresh_gis(gis_url, gis_user, gis_password):
-    gis = GIS(gis_url,gis_user, gis_password)
-    return gis
-
-@log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, psycopg_con, schema, table, chunk_size,
-                              start_objectid):
-    gis_con = refresh_gis(gis_url, gis_user, gis_password)
-    sql_engine = create_engine("postgresql+psycopg://", creator=lambda: psycopg_con)
-
-    view_item = gis_con.content.get(view_id)
-
-    current_data_source_id = get_view_data_source_id(view_item)
-
-    new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
-    new_source_item = gis_con.content.get(new_data_source_id)
-
-    if (len(new_source_item.layers)) == 1:
-        new_source_feature_layer = next(iter(new_source_item.layers))
-    else:
-        raise ValueError(f"{len(new_source_item.layers)} sources returned, 1 expected")
-
-    new_source_feature_layer.manager.truncate()
-
-    load_postgis_to_feature_layer(new_source_feature_layer, sql_engine, schema, table, chunk_size, start_objectid)
-
-    # refreshing old references before swizzle service
-    view_item = gis_con.content.get(view_id)
-    new_source_item = gis_con.content.get(new_data_source_id)
-    token = gis_con.session.auth.token
-
-    swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
+    feature_layer.edit_features(adds=features)

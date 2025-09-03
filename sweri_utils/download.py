@@ -5,6 +5,8 @@ from time import sleep
 import requests
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 from datetime import datetime
+
+from intersections.utils import create_db_conn_from_envs
 from .sweri_logging import log_this
 
 try:
@@ -233,7 +235,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     :param conn: psycopg2 connection object
     :param chunk_size: check size for batch feature request
     """
-
+    conn = create_db_conn_from_envs()
     cursor = conn.cursor()
     # create a buffer table to hold the data without copying data
     # this is a workaround for the fact that vector translate does not support overwriting
