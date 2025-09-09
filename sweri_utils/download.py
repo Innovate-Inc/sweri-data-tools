@@ -3,9 +3,13 @@ import json
 import os
 from time import sleep
 import requests
-from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 from datetime import datetime
 from .sweri_logging import log_this
+
+try:
+    from osgeo.gdal import VectorTranslateOptions, VectorTranslate
+except ModuleNotFoundError:
+    logging.warning('Missing osgeo, some functions will not work')
 
 try:
     import arcpy
