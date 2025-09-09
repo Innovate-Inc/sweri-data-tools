@@ -7,6 +7,7 @@ from urllib.parse import urljoin
 mod = r"C:\Data\Sweri\twig\scripts\sweri_utils"
 ##########################################################################################################
 sys.path.append(mod)
+# any relative imports in any of the sweri_utils need to be changed to absolute imports to work when published to the server
 import files
 import download
 
