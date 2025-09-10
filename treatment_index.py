@@ -756,7 +756,8 @@ if __name__ == "__main__":
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
     treatment_index_points_table = 'treatment_index_points'
 
-    chunk = 1000
+    chunk = 500
+    max_points_before_single_geom_chunk = 20000
     start_objectid = 0
 
     # # Truncate the table before inserting new data
@@ -813,7 +814,8 @@ if __name__ == "__main__":
     # get current
     # treatment index
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-                              insert_table, chunk)
+                              insert_table, max_points_before_single_geom_chunk, chunk)
+
     # treatment index points
     # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
     #                           treatment_index_points_table, chunk, start_objectid)

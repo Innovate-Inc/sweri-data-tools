@@ -35,25 +35,32 @@ def gdf_to_features(gdf):
 
     return features_to_add
 
+def gdf_to_feature_set(gdf):
+    # Convert GeoDataFrame to SEDF to featureset
+    sdf = GeoAccessor.from_geodataframe(gdf)
+    feature_set = sdf.spatial.to_featureset()
+
+    return feature_set
 
 def build_postgis_chunk_query(schema, table, object_ids):
+
+    object_ids_str = ", ".join(str(i) for i in object_ids)
+
     query = f"""
         SELECT * FROM {schema}.{table}
         WHERE
-        objectid IN {object_ids};
+        objectid IN ({object_ids_str});
     """
     return query
 
 
 
-def postgis_query_to_gdf(pg_query, pg_con, geom_field='shape'):
-    gdf = geopandas.GeoDataFrame.from_postgis(pg_query, pg_con, geom_col=geom_field)
+def postgis_query_to_gdf(pg_query, sql_engine, geom_field='shape'):
+    with sql_engine.begin() as conn:
+        gdf = geopandas.read_postgis(pg_query, conn, geom_col=geom_field)
 
-    if gdf.empty:
-        return None, None
-
-    # set max_objectid to the max or last record in the gdf for objectid column
-    gdf.drop(columns=['objectid', 'gdb_geomattr_data'], inplace=True, errors='ignore')
+    if not gdf.empty:
+        gdf.drop(columns=['objectid', 'gdb_geomattr_data'], inplace=True, errors='ignore')
 
     return gdf
 
@@ -74,8 +81,19 @@ def refresh_gis(gis_url, gis_user, gis_password):
     gis = GIS(gis_url,gis_user, gis_password)
     return gis
 
+def get_object_id_chunks(conn, schema, table, where, chunk_size=500):
+    ids = get_object_ids(conn, schema, table, where)
+
+    if chunk_size == 1:
+        for id in ids:
+            yield [id]
+        return
+
+    for i in range(0, len(ids), chunk_size):
+        yield ids[i:i + chunk_size]
+
 @log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, chunk_size):
+def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size):
     # setup new layer connection
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     view_item = gis_con.content.get(view_id)
@@ -85,14 +103,15 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
     new_source_feature_layer.manager.truncate()
     conn = create_db_conn_from_envs()
-    ids = get_object_ids(conn, schema, table)
     # list of tasks
     t = []
-    i = 0
-    while i <= len(ids):
-        chunk_ids = str(tuple(ids[i:i+chunk_size]))
-        i += chunk_size
-        t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table, chunk_ids))
+    # for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) > {max_points_before_single_geom_chunk}', 1):
+    #     t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+    #                                              chunk_ids))
+
+    for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) <= {max_points_before_single_geom_chunk}', chunk_size):
+        t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+                                                 chunk_ids))
 
     g = group(t)()
     g.get()
@@ -114,14 +133,15 @@ def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_sourc
 
     return new_source_feature_layer
 
-def get_object_ids(pg_con, schema, table):
-    q = f"SELECT objectid FROM {schema}.{table};"
-    cursor = pg_con.cursor()
+def get_object_ids(conn, schema, table, where = '1=1'):
+    q = f"SELECT objectid FROM {schema}.{table} WHERE {where};"
+    cursor = conn.cursor()
     try:
-        with pg_con.transaction():
+        with conn.transaction():
             cursor.execute(q)
             results = cursor.fetchall()
             ids = [r[0] for r in results]
+
     except Exception as err:
         logging.error(f'error getting objectids: {err}, {q}')
         raise err
@@ -146,3 +166,25 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
                 feature.attributes[key] = None
 
     feature_layer.edit_features(adds=features)
+    conn.close()
+
+# def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids):
+#
+#
+#     feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
+#
+#     conn = create_db_conn_from_envs()
+#     sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
+#     sql_query = build_postgis_chunk_query(schema, table, object_ids)
+#     features_gdf = postgis_query_to_gdf(sql_query, sql_engine, geom_field='shape')
+#
+#     fs = gdf_to_feature_set(features_gdf)
+#
+#     result = feature_layer.append(
+#         edits=fs,
+#         upload_format="featureCollection"
+#     )
+#
+#     print(result)
+#
+#     conn.close()
