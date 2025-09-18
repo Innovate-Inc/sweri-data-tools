@@ -369,6 +369,27 @@ def makevalid_shapes(conn, schema, table, shape_field):
 
         ''')
 
+def remove_zero_area_polygons(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            DELETE FROM {schema}.{table}
+            WHERE ST_Area(shape) = 0;
+
+        ''')
+
+def extract_geometry_collections(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table}
+            SET shape = ST_CollectionExtract(shape, 3) --3 is type polygon
+            WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
+
+        ''')
+
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))

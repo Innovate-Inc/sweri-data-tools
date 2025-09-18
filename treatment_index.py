@@ -4,7 +4,8 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes
+from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
+    extract_geometry_collections, remove_zero_area_polygons
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
@@ -182,6 +183,14 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
         FROM {schema}.{facts_haz_table}
         WHERE {schema}.{facts_haz_table}.shape IS NOT NULL;
         
+        ''')
+
+def remove_wildfire_non_treatment(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''             
+            DELETE FROM {schema}.{treatment_index} 
+            WHERE category = 'Wildfire Non-Treatment';
         ''')
 
 @log_this
@@ -712,14 +721,25 @@ def facts_nfpors_twig_category(conn, schema):
             ti.type = tc.type;
         ''')
 
-def remove_zero_area_polygons(conn, schema, table):
+@log_this
+def simplify_large_polygons(conn, schema, table, wkid, points_cutoff, tolerance):
+    # Reprojects into 5070, simplifies, and projects back into original wkid. tolerance in meters
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
-        
-            DELETE FROM {schema}.{table}
-            WHERE ST_Area(shape) = 0;
-            
+
+            UPDATE {schema}.{table}
+            SET shape = 
+            ST_Transform(
+                ST_SimplifyPreserveTopology(ST_Transform(shape, 5070),{tolerance}),
+            {wkid}), 
+            error = 
+            CASE
+                WHEN error IS NULL THEN 'SIMPLIFIED'
+                ELSE error || ';SIMPLIFIED'
+            END
+            WHERE ST_NPoints(shape) > {points_cutoff};
+
         ''')
 
 if __name__ == "__main__":
@@ -757,67 +777,70 @@ if __name__ == "__main__":
     treatment_index_points_table = 'treatment_index_points'
 
     chunk = 500
-    max_points_before_single_geom_chunk = 20000
+    max_points_before_simplify = 10000
+    simplify_tolerance = 1  #meters
     start_objectid = 0
 
-    # # Truncate the table before inserting new data
-    # cursor = conn.cursor()
-    # with conn.transaction():
-    #     cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
-    #     cursor.execute('COMMIT;')
-    #
-    # # FACTS Hazardous Fuels
-    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    # Truncate the table before inserting new data
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
+        cursor.execute('COMMIT;')
+
+    # FACTS Hazardous Fuels
+    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    extract_and_remove_zip_file(hazardous_fuels_zip_file)
     # special input srs for common attributes
     # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    # input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-    #                 target_schema, ogr_db_string, input_srs)
-    # hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
-    # hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
-    #
-    # # FACTS Common Attributes
-    # common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-    #
-    # # NFPORS
-    # update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
-    # nfpors_date_filtering(conn, target_schema)
-    # nfpors_insert(conn, target_schema, insert_table)
-    # nfpors_fund_code(conn, target_schema, insert_table)
-    # nfpors_status(conn, target_schema, insert_table)
-    #
-    # # IFPRS processing and insert
-    # update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
-    # ifprs_insert(conn, target_schema, insert_table)
-    # ifprs_treatment_date(conn, target_schema, insert_table)
-    # ifprs_status_consolidation(conn, target_schema, insert_table)
-    #
-    # # Modify treatment index in place
-    # fund_source_updates(conn, target_schema, insert_table)
-    # update_total_cost(conn, target_schema, insert_table)
-    # correct_biomass_removal_typo(conn, target_schema, insert_table)
-    # flag_duplicate_ids(conn, target_schema, insert_table)
-    # flag_high_cost(conn, target_schema, insert_table)
-    # flag_duplicates(conn, target_schema, insert_table)
-    # flag_uom_outliers(conn, target_schema, insert_table)
-    # add_twig_category(conn, target_schema)
-    # revert_multi_to_poly(conn, target_schema, insert_table)
-    # makevalid_shapes(conn, target_schema, insert_table, 'shape')
-    # remove_zero_area_polygons(conn, target_schema, insert_table)
-    #
-    # # update treatment points
-    # update_treatment_points(conn, target_schema, insert_table)
+    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+                    target_schema, ogr_db_string, input_srs)
+    hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
+    hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
+    remove_wildfire_non_treatment(conn, target_schema, insert_table)
 
-    # get current
+    # FACTS Common Attributes
+    common_attributes_download_and_insert(out_wkid, conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+
+    # NFPORS
+    update_nfpors(nfpors_url, conn, target_schema, out_wkid, ogr_db_string)
+    nfpors_date_filtering(conn, target_schema)
+    nfpors_insert(conn, target_schema, insert_table)
+    nfpors_fund_code(conn, target_schema, insert_table)
+    nfpors_status(conn, target_schema, insert_table)
+
+    # IFPRS processing and insert
+    update_ifprs(conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
+    ifprs_insert(conn, target_schema, insert_table)
+    ifprs_treatment_date(conn, target_schema, insert_table)
+    ifprs_status_consolidation(conn, target_schema, insert_table)
+
+    # Modify treatment index in place
+    fund_source_updates(conn, target_schema, insert_table)
+    update_total_cost(conn, target_schema, insert_table)
+    correct_biomass_removal_typo(conn, target_schema, insert_table)
+    flag_duplicate_ids(conn, target_schema, insert_table)
+    flag_high_cost(conn, target_schema, insert_table)
+    flag_duplicates(conn, target_schema, insert_table)
+    flag_uom_outliers(conn, target_schema, insert_table)
+    add_twig_category(conn, target_schema)
+    revert_multi_to_poly(conn, target_schema, insert_table)
+    extract_geometry_collections(conn, target_schema, insert_table)
+    makevalid_shapes(conn, target_schema, insert_table, 'shape')
+    remove_zero_area_polygons(conn, target_schema, insert_table)
+    simplify_large_polygons(conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
+
+    # update treatment points
+    update_treatment_points(conn, target_schema, insert_table)
+
     # treatment index
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-                              insert_table, max_points_before_single_geom_chunk, chunk)
+                              insert_table, max_points_before_simplify, chunk)
 
     # treatment index points
-    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
-    #                           treatment_index_points_table, chunk, start_objectid)
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
+                              treatment_index_points_table, max_points_before_simplify, chunk)
 
     conn.close()

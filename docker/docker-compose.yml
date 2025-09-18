@@ -70,7 +70,7 @@ services:
       service: app # todo: change to image
     volumes:
       - ..:/src
-    command: celery -A worker worker --loglevel=debug
+    command: celery -A worker worker --loglevel=info
   redis:
     image: redis:latest
     ports:
