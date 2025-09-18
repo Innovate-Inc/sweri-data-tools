@@ -827,10 +827,10 @@ if __name__ == "__main__":
     flag_uom_outliers(conn, target_schema, insert_table)
     add_twig_category(conn, target_schema)
     revert_multi_to_poly(conn, target_schema, insert_table)
+    simplify_large_polygons(conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
     extract_geometry_collections(conn, target_schema, insert_table)
     makevalid_shapes(conn, target_schema, insert_table, 'shape')
     remove_zero_area_polygons(conn, target_schema, insert_table)
-    simplify_large_polygons(conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
 
     # update treatment points
     update_treatment_points(conn, target_schema, insert_table)

@@ -365,7 +365,7 @@ def makevalid_shapes(conn, schema, table, shape_field):
 
             UPDATE {schema}.{table}
             SET {shape_field} = ST_MakeValid({shape_field})
-            WHERE NOT ST_ISVALID({shape_field});
+            WHERE NOT ST_IsValid({shape_field});
 
         ''')
 

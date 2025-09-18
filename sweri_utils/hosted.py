@@ -161,6 +161,13 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
             if isinstance(value, float) and math.isnan(value):
                 feature.attributes[key] = None
 
-    feature_layer.edit_features(adds=features)
+    response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
+
+    for index, feature in enumerate(response['addResults']):
+        unique_id = features[index].attributes["unique_id"]
+
+        if not feature.get("success", False):
+            logging.warning(f"This feature could not be inserted: unique_id={unique_id}")
+
     conn.close()
 
