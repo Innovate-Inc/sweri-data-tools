@@ -32,13 +32,6 @@ def gdf_to_features(gdf):
 
     return features_to_add
 
-def gdf_to_feature_set(gdf):
-    # Convert GeoDataFrame to SEDF to featureset
-    sdf = GeoAccessor.from_geodataframe(gdf)
-    feature_set = sdf.spatial.to_featureset()
-
-    return feature_set
-
 def build_postgis_chunk_query(schema, table, object_ids):
 
     object_ids_str = ", ".join(str(i) for i in object_ids)
