@@ -810,9 +810,9 @@ if __name__ == "__main__":
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
     gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
                     target_schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(conn, target_schema, hazardous_fuels_table)
-    hazardous_fuels_insert(conn, target_schema, insert_table, hazardous_fuels_table)
-    remove_wildfire_non_treatment(conn, target_schema, insert_table)
+    hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
+    hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
+    remove_wildfire_non_treatment(pg_conn, target_schema, insert_table)
 
 
     # FACTS Common Attributes
@@ -831,19 +831,19 @@ if __name__ == "__main__":
     ifprs_status_consolidation(pg_conn, target_schema, insert_table)
 
     # Modify treatment index in place
-    fund_source_updates(conn, target_schema, insert_table)
-    update_total_cost(conn, target_schema, insert_table)
-    correct_biomass_removal_typo(conn, target_schema, insert_table)
-    flag_duplicate_ids(conn, target_schema, insert_table)
-    flag_high_cost(conn, target_schema, insert_table)
-    flag_duplicates(conn, target_schema, insert_table)
-    flag_uom_outliers(conn, target_schema, insert_table)
-    add_twig_category(conn, target_schema)
-    revert_multi_to_poly(conn, target_schema, insert_table)
-    simplify_large_polygons(conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
-    extract_geometry_collections(conn, target_schema, insert_table)
-    makevalid_shapes(conn, target_schema, insert_table, 'shape')
-    remove_zero_area_polygons(conn, target_schema, insert_table)
+    fund_source_updates(pg_conn, target_schema, insert_table)
+    update_total_cost(pg_conn, target_schema, insert_table)
+    correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
+    flag_duplicate_ids(pg_conn, target_schema, insert_table)
+    flag_high_cost(pg_conn, target_schema, insert_table)
+    flag_duplicates(pg_conn, target_schema, insert_table)
+    flag_uom_outliers(pg_conn, target_schema, insert_table)
+    add_twig_category(pg_conn, target_schema)
+    revert_multi_to_poly(pg_conn, target_schema, insert_table)
+    simplify_large_polygons(pg_conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
+    extract_geometry_collections(pg_conn, target_schema, insert_table)
+    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
+    remove_zero_area_polygons(pg_conn, target_schema, insert_table)
 
 
     # update treatment points
