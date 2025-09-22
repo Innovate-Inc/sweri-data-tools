@@ -6,7 +6,7 @@ import requests
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 from datetime import datetime
 
-from intersections.utils import create_db_conn_from_envs
+from .sql import create_db_conn_from_envs
 from .sweri_logging import log_this
 
 try:
