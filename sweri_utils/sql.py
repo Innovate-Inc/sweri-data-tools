@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import TextIO
 import psycopg
 
@@ -364,6 +365,35 @@ def makevalid_shapes(conn, schema, table, shape_field):
 
             UPDATE {schema}.{table}
             SET {shape_field} = ST_MakeValid({shape_field})
-            WHERE NOT ST_ISVALID({shape_field});
+            WHERE NOT ST_IsValid({shape_field});
 
         ''')
+
+def remove_zero_area_polygons(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            DELETE FROM {schema}.{table}
+            WHERE ST_Area(shape) = 0;
+
+        ''')
+
+def extract_geometry_collections(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table}
+            SET shape = ST_CollectionExtract(shape, 3) --3 is type polygon
+            WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
+
+        ''')
+
+def create_db_conn_from_envs():
+    docker_db_host = os.getenv('DB_HOST')
+    docker_db_port = int(os.getenv('DB_PORT'))
+    docker_db_name = os.getenv('DB_NAME')
+    docker_db_user = os.getenv('DB_USER')
+    docker_db_password = os.getenv('DB_PASSWORD')
+    return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
