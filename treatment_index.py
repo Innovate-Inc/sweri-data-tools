@@ -853,9 +853,8 @@ if __name__ == "__main__":
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
                               insert_table, max_points_before_simplify, chunk)
 
-    # treatment index points
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, conn, target_schema,
-                              treatment_index_points_table, max_points_before_simplify, chunk)
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+                              insert_table, max_points_before_simplify, chunk)
 
 
     pg_conn.close()
