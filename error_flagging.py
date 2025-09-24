@@ -44,19 +44,20 @@ def create_duplicate_table(conn, schema, table_name):
 
         # Creates a table of duplicates
         cursor.execute(f'''
-    
+        
             CREATE TABLE {schema}.treatment_index_duplicates AS 
-                SELECT * FROM {schema}.{table_name} as s
-                WHERE shape IS NOT NULL
-                AND EXISTS (SELECT 1
-                    FROM sweri.treatment_index as s2
-                    WHERE shape IS NOT NULL
-                    AND s.actual_completion_date = s2.actual_completion_date
-                    AND s.activity = s2.activity
-                    AND s.shape::text = s2.shape::text
-                    GROUP BY actual_completion_date, activity, shape::text
-                    HAVING COUNT(*) > 1);
+            SELECT * 
+            FROM {schema}.{table_name}
+            WHERE shape IS NOT NULL
+              AND (treatment_date, activity, shape::text) IN (
+                  SELECT treatment_date, activity, shape::text
+                  FROM {schema}.{table_name}
+                  WHERE shape IS NOT NULL
+                  GROUP BY treatment_date, activity, shape::text
+                  HAVING COUNT(*) > 1);
+                  
         ''')
+
         # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
 
         cursor.execute(f'''
@@ -68,7 +69,7 @@ def create_duplicate_table(conn, schema, table_name):
         ''')
 
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'activity')
-    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'actual_completion_date')
+    postgres_create_index(conn, schema, 'treatment_index_duplicates', 'treatment_date')
 
 
 
@@ -83,7 +84,7 @@ def flag_duplicate_table(conn, schema, table_name):
             WITH ranking_treatment_duplicates AS (
                 SELECT *,
                     ROW_NUMBER() OVER (
-                        PARTITION BY actual_completion_date, activity, shape::text
+                        PARTITION BY treatment_date, activity, shape::text
                     ) AS row_num
                 FROM {schema}.treatment_index_duplicates
             )
