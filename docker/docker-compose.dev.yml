@@ -1,4 +1,4 @@
-name: dailyprogression
+name: SWERI Processing dev
 services:
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -28,30 +28,16 @@ services:
         - "5432:5432"
     shm_size: 1gb
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
     command: postgres -c max_wal_size=5GB -c wal_level=minimal -c synchronous_commit=off -c max_wal_senders=0
   app:
-    image: ${DOCKER_IMAGE_NAME}
-    build:
-      context: ../
-      dockerfile: ./docker/Dockerfile
-    env_file:
-      - "../.env"
-    environment:
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: db
-      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+
     depends_on:
       db:
         condition: service_healthy
-    command: python daily_progression.py
-    volumes:
-      - ..:/src
 
 
 volumes:

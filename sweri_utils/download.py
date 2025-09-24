@@ -3,9 +3,15 @@ import json
 import os
 from time import sleep
 import requests
-from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 from datetime import datetime
+
+from .sql import create_db_conn_from_envs
 from .sweri_logging import log_this
+
+try:
+    from osgeo.gdal import VectorTranslateOptions, VectorTranslate
+except ModuleNotFoundError:
+    logging.warning('Missing osgeo, some functions will not work')
 
 try:
     import arcpy
@@ -233,7 +239,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     :param conn: psycopg2 connection object
     :param chunk_size: check size for batch feature request
     """
-
+    conn = create_db_conn_from_envs()
     cursor = conn.cursor()
     # create a buffer table to hold the data without copying data
     # this is a workaround for the fact that vector translate does not support overwriting
@@ -245,34 +251,24 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
                    CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);
                ''')
 
+    #fetches all ids that will be added
+    ids = get_ids(service_url, where=where_clause)
+
+    for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
+
+        options = VectorTranslateOptions(format='PostgreSQL',
+                                         accessMode='append',
+                                         geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
+                                         layerName=f'{schema}.{destination_table}_buffer')
+        # commit chunks to database in
+        _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
+        del _
+
+    # copy data from buffer table to destination table
     with conn.transaction():
-
-        #fetches all ids that will be added
-        ids = get_ids(service_url, where=where_clause)
-
-        for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
-            # convert epoch time to iso format for esriFieldTypeDate fields
-            date_fields = [x['name'] for x in r['fields'] if x['type'] == 'esriFieldTypeDate']
-            for f in r['features']:
-                for d in date_fields:
-                    if d in f['attributes'] and f['attributes'][d] is not None:
-                        f['attributes'][d] = int(f['attributes'][d]) / 1000
-                        f['attributes'][d] = datetime.fromtimestamp(f['attributes'][d]).isoformat()
-
-            options = VectorTranslateOptions(format='PostgreSQL',
-                                             accessMode='append',
-                                             geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                             layerName=f'{schema}.{destination_table}_buffer')
-            # commit chunks to database in
-            _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
-            del _
-        # copy data from buffer table to destination table
-        cursor.execute(f'''
-            TRUNCATE {schema}.{destination_table};
-            INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);
-            DROP TABLE {schema}.{destination_table}_buffer;
-        ''')
-    conn.commit()
+        cursor.execute(f'''TRUNCATE {schema}.{destination_table};''')
+        cursor.execute(f'''INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);''')
+        cursor.execute(f'''DROP TABLE {schema}.{destination_table}_buffer;''')
 
 ########################### arcpy required for below functions ###########################
 
