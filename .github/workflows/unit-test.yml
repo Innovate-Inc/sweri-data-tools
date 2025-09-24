@@ -72,7 +72,7 @@ jobs:
       contents: read
     uses: ./.github/workflows/ecr-publish.yml
     with:
-      tag: staging
+      tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
       environment: production
     #  image_temp: ${{ runner.temp }}
     secrets:
