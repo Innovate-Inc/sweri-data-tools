@@ -5,6 +5,8 @@ import pandas as pd
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
+
+from .download import retry
 from .sql import create_db_conn_from_envs
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
