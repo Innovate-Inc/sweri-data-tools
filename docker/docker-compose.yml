@@ -9,7 +9,11 @@ services:
       - "../.env"
     environment:
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-    command: python treatment_index.py
+    
+    depends_on:
+      - celery
+      - redis
+      - rabbit
     volumes:
       - ..:/src
 #  app_console:
@@ -27,8 +31,9 @@ services:
     volumes:
       - ../rabbitmq.conf:/etc/rabbitmq/conf.d/rabbitmq.conf
   celery:
-    extends:
-      service: app # todo: change to image
+    env_file:
+      - "../.env"
+    image: ${DOCKER_IMAGE_NAME}
     volumes:
       - ..:/src
     command: celery -A worker worker --loglevel=info
@@ -37,4 +42,5 @@ services:
     image: redis:latest
     ports:
       - "6379:6379"
+
 
