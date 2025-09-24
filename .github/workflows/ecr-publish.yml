@@ -19,9 +19,9 @@ on:
     secrets:
       AWS_ECR_IAM_ARN:
         required: true
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
 #  pull_request:
 #    branches:
 #      - main
