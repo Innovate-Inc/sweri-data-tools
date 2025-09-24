@@ -841,8 +841,8 @@ if __name__ == "__main__":
     add_twig_category(pg_conn, target_schema)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
     simplify_large_polygons(pg_conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
-    extract_geometry_collections(pg_conn, target_schema, insert_table)
     makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
+    extract_geometry_collections(pg_conn, target_schema, insert_table)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
 
 
