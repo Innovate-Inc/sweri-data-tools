@@ -72,27 +72,6 @@ def retry_upload(func, *args, **kwargs):
         raise Exception('Upload Tries Exceeded')
 
 
-@retry(retries=1, on_failure=retry_upload)
-@log_this
-def upload_chunk_to_feature_layer(feature_layer, schema, table, chunk_size, current_objectid, db_con, is_table=False):
-    sql_query = build_postgis_chunk_query(schema, table, chunk_size, current_objectid)
-    features_df, current_objectid = postgis_query_to_gdf(sql_query, db_con, geom_field=None if is_table else 'shape')
-
-    if current_objectid is None:
-        return None
-
-    features = gdf_to_features(features_df, is_table)
-
-    for feature in features:
-        for key, value in feature.attributes.items():
-            if isinstance(value, float) and math.isnan(value):
-                feature.attributes[key] = None
-
-    additions = feature_layer.edit_features(adds=features)
-
-    return current_objectid
-
-
 @log_this
 def load_postgis_to_feature_layer(feature_layer, sqla_engine, schema, table, chunk_size, current_objectid, is_table=False):
     while True:
@@ -118,7 +97,7 @@ def get_object_id_chunks(conn, schema, table, where, chunk_size=500):
         yield ids[i:i + chunk_size]
 
 @log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size):
+def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True):
     # setup new layer connection
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     view_item = gis_con.content.get(view_id)
@@ -130,13 +109,20 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     conn = create_db_conn_from_envs()
     # list of tasks
     t = []
-    for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) > {max_points_before_single_geom_chunk}', 1):
-        t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
-                                                 chunk_ids))
+    if not shape:
+        # attribute only table, no geometry
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f'1=1', 1):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+                                                     chunk_ids))
+    else:
 
-    for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) <= {max_points_before_single_geom_chunk}', chunk_size):
-        t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
-                                                 chunk_ids))
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) > {max_points_before_single_geom_chunk}', 1):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+                                                     chunk_ids))
+
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f'ST_NPoints(shape) <= {max_points_before_single_geom_chunk}', chunk_size):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+                                                     chunk_ids))
 
     g = group(t)()
     g.get()

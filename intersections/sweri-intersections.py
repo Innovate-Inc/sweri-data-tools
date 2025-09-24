@@ -173,8 +173,8 @@ def run_intersections(docker_conn, docker_schema,
     update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
 
     ############ hosted upload ################
-    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, pg_conn, docker_schema,
-                              'intersections', 1000, 0, is_table=True)
+    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, docker_schema,
+                              'intersections', 0, 2000, is_table=True)
     # close connections
     docker_conn.close()
 
