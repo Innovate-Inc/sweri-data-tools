@@ -5,6 +5,8 @@ import pandas as pd
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
+
+from .download import retry
 from .sql import create_db_conn_from_envs
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
@@ -174,25 +176,28 @@ from worker import app
 
 @app.task()
 def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids):
-    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
-    conn = create_db_conn_from_envs()
-    sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
-    sql_query = build_postgis_chunk_query(schema, table, object_ids)
-    features_gdf = postgis_query_to_gdf(sql_query, sql_engine, geom_field='shape')
+    try:
+        feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
+        conn = create_db_conn_from_envs()
+        sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
+        sql_query = build_postgis_chunk_query(schema, table, object_ids)
+        features_gdf = postgis_query_to_gdf(sql_query, sql_engine, geom_field='shape')
 
-    features = gdf_to_features(features_gdf)
-    for feature in features:
-        for key, value in feature.attributes.items():
-            if isinstance(value, float) and math.isnan(value):
-                feature.attributes[key] = None
+        features = gdf_to_features(features_gdf)
+        for feature in features:
+            for key, value in feature.attributes.items():
+                if isinstance(value, float) and math.isnan(value):
+                    feature.attributes[key] = None
 
-    response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
+        response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
 
-    for index, feature in enumerate(response['addResults']):
-        unique_id = features[index].attributes["unique_id"]
+        for index, feature in enumerate(response['addResults']):
+            unique_id = features[index].attributes["unique_id"]
 
-        if not feature.get("success", False):
-            logging.warning(f"This feature could not be inserted: unique_id={unique_id}")
+            if not feature.get("success", False):
+                logging.warning(f"This feature could not be inserted: unique_id={unique_id}")
 
-    conn.close()
+        conn.close()
+    except Exception as e:
+        logging.error(f'error uploading features: {e}')
 
