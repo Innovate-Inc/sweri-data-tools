@@ -14,8 +14,6 @@ services:
       - celery
       - redis
       - rabbit
-    volumes:
-      - ..:/src
 #  app_console:
 #    extends:
 #      service:
@@ -34,8 +32,6 @@ services:
     env_file:
       - "../.env"
     image: ${DOCKER_IMAGE_NAME}
-    volumes:
-      - ..:/src
     command: celery -A worker worker --loglevel=info
   
   redis:
