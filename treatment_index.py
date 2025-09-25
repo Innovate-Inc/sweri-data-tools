@@ -8,7 +8,7 @@ from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column,
     extract_geometry_collections, remove_zero_area_polygons
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 
