@@ -850,8 +850,8 @@ if __name__ == "__main__":
     update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-    #                           insert_table, max_points_before_simplify, chunk)
+     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+                               insert_table, max_points_before_simplify, chunk)
 
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
                               points_table, max_points_before_simplify, chunk)
