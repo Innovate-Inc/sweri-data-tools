@@ -770,6 +770,7 @@ if __name__ == "__main__":
 
     #This is the final table
     insert_table = 'treatment_index'
+    points_table = 'treatment_index_points'
 
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -850,11 +851,11 @@ if __name__ == "__main__":
     #update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-                              insert_table, max_points_before_simplify, chunk)
+    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+    #                           insert_table, max_points_before_simplify, chunk)
 
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
-                              insert_table, max_points_before_simplify, chunk)
+                              points_table, max_points_before_simplify, chunk)
 
 
     pg_conn.close()
