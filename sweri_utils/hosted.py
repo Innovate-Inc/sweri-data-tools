@@ -161,13 +161,13 @@ def get_object_ids(conn, schema, table, where = '1=1'):
 from worker import app
 
 @app.task()
-def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids):
+def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids, is_table=False):
     try:
         feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
         conn = create_db_conn_from_envs()
         sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
-        features_gdf = postgis_query_to_gdf(sql_query, sql_engine, geom_field='shape')
+        features_gdf = postgis_query_to_gdf(sql_query, sql_engine, None if is_table else 'shape')
 
         features = gdf_to_features(features_gdf)
         for feature in features:
