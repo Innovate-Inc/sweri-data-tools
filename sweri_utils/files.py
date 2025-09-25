@@ -1,11 +1,14 @@
 import os
-from urllib.parse import urljoin
 import zipfile
 import requests
 import logging
-from osgeo.gdal import VectorTranslate, VectorTranslateOptions
 import shutil
 from .sweri_logging import log_this
+
+try:
+    from osgeo.gdal import VectorTranslateOptions, VectorTranslate
+except ModuleNotFoundError:
+    logging.warning('Missing osgeo, some functions will not work')
 
 try:
     import arcpy
