@@ -333,12 +333,12 @@ def update_treatment_points(conn, schema, treatment_index):
          f'''
             insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
             status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
             unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
             from {schema}.{treatment_index}
         ''')
@@ -770,6 +770,7 @@ if __name__ == "__main__":
 
     #This is the final table
     insert_table = 'treatment_index'
+    points_table = 'treatment_index_points'
 
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -841,20 +842,19 @@ if __name__ == "__main__":
     add_twig_category(pg_conn, target_schema)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
     simplify_large_polygons(pg_conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
-    extract_geometry_collections(pg_conn, target_schema, insert_table)
     makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
+    extract_geometry_collections(pg_conn, target_schema, insert_table)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
-
 
     # update treatment points
     update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-                              insert_table, max_points_before_simplify, chunk)
+                               insert_table, max_points_before_simplify, chunk)
 
     hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
-                              insert_table, max_points_before_simplify, chunk)
+                              points_table, max_points_before_simplify, chunk)
 
 
     pg_conn.close()
