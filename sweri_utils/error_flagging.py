@@ -1,5 +1,5 @@
 from sweri_utils.sweri_logging import log_this
-from sweri_utils.sql import  connect_to_pg_db, postgres_create_index
+from sweri_utils.sql import connect_to_pg_db, postgres_create_index
 import os
 import logging
 from dotenv import load_dotenv
@@ -36,15 +36,15 @@ def create_duplicate_table(conn, schema, table_name):
     with conn.transaction():
         # Makes space for duplicate table
         cursor.execute(f'''
-    
+
            DROP TABLE IF EXISTS
            {schema}.treatment_index_duplicates;
-    
+
         ''')
 
         # Creates a table of duplicates
         cursor.execute(f'''
-        
+
             CREATE TABLE {schema}.treatment_index_duplicates AS 
             SELECT * 
             FROM {schema}.{table_name}
@@ -55,22 +55,21 @@ def create_duplicate_table(conn, schema, table_name):
                   WHERE shape IS NOT NULL
                   GROUP BY treatment_date, activity, shape::text
                   HAVING COUNT(*) > 1);
-                  
+
         ''')
 
         # logging.info(f'Duplicates table created at {schema}.treatment_index_duplicates')
 
         cursor.execute(f'''
-    
+
             CREATE INDEX
             ON {schema}.treatment_index_duplicates
             USING GIST (shape);
-    
+
         ''')
 
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'activity')
     postgres_create_index(conn, schema, 'treatment_index_duplicates', 'treatment_date')
-
 
 
 @log_this
@@ -88,7 +87,7 @@ def flag_duplicate_table(conn, schema, table_name):
                     ) AS row_num
                 FROM {schema}.treatment_index_duplicates
             )
-                
+
             UPDATE {schema}.treatment_index_duplicates tid
                 SET error =
                     CASE
@@ -105,9 +104,10 @@ def flag_duplicate_table(conn, schema, table_name):
                     END	
                 FROM ranking_treatment_duplicates
                 WHERE tid.unique_id = ranking_treatment_duplicates.unique_id;
-    
+
         ''')
     # logging.info(f'Duplicates flagged in {schema}.treatment_index_duplicates')
+
 
 @log_this
 def update_treatment_index_duplicates(conn, schema, table_name):
@@ -120,7 +120,7 @@ def update_treatment_index_duplicates(conn, schema, table_name):
             SET error = dup.error
             FROM {schema}.treatment_index_duplicates dup
             WHERE ti.unique_id = dup.unique_id;
-    
+
         ''')
     # logging.info(f'Duplicates updated in {schema}.{table_name}')
 
@@ -134,6 +134,7 @@ def flag_duplicates(cursor, schema, table_name):
     create_duplicate_table(cursor, schema, table_name)
     flag_duplicate_table(cursor, schema, table_name)
     update_treatment_index_duplicates(cursor, schema, table_name)
+
 
 @log_this
 def flag_high_cost(conn, schema, table_name):
@@ -154,8 +155,9 @@ def flag_high_cost(conn, schema, table_name):
                 OR
                 (uom = 'ACRES' AND acres IS NOT NULL AND cost_per_uom > 10000)
                 );
-    
+
         ''')
+
 
 @log_this
 def flag_uom_outliers(conn, schema, table_name):
@@ -174,17 +176,19 @@ def flag_uom_outliers(conn, schema, table_name):
             uom = 'EACH';
         ''')
 
-if __name__ == "__main__":
-    load_dotenv()
-    target_table = 'treatment_index_facts_nfpors_temp'
-    target_schema = os.getenv('SCHEMA')
-    logger = logging.getLogger(__name__)
-    logging.basicConfig( format='%(asctime)s %(levelname)-8s %(message)s',filename='./error_flagging.log', encoding='utf-8', level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S')
-    logger.addHandler(watchtower.CloudWatchLogHandler())
 
-
-    conn = connect_to_pg_db(os.getenv('RDS_DB_HOST'), os.getenv('RDS_DB_PORT'), os.getenv('RDS_DB_NAME'), os.getenv('RDS_DB_USER'), os.getenv('RDS_DB_PASSWORD'))
-    flag_high_cost(conn, target_schema, target_table)
-    flag_duplicates(conn, target_schema, target_table)
-    flag_uom_outliers(conn, target_schema, target_table)
-    conn.close()
+@log_this
+def flag_spatial_errors(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name} ti
+            SET error =
+                CASE
+                  WHEN ti.error IS NULL THEN 'SPATIAL'
+                  ELSE ti.error || ';SPATIAL'
+                END
+            FROM {schema}.states s
+            WHERE ti.state = s.stusps
+            AND NOT ST_Intersects(ti.shape, s.shape);
+        ''')
