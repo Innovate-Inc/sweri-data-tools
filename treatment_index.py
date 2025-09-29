@@ -298,18 +298,16 @@ def fund_source_updates(conn, schema, treatment_index):
                 fund_code IS NOT null
             ''')
 
-def remove_blank_strings(conn, schema, treatment_index):
-    #sets fund_source and type to null if they are populated with blank strings
-
+def remove_blank_strings(conn, schema, treatment_index, fields_for_removal):
     cursor = conn.cursor()
     with conn.transaction():
-        cursor.execute(f'''
-    
-            UPDATE {schema}.{treatment_index}
-            SET fund_source = NULLIF(fund_source, ''),
-            type = NULLIF(type, '');
-
-        ''')
+        for field in fields_for_removal:
+            cursor.execute(f'''
+            
+                UPDATE {schema}.{treatment_index}
+                SET {field} = NULLIF({field}, '');
+                
+            ''')
 
 
 @log_this
@@ -796,6 +794,7 @@ if __name__ == "__main__":
     #This is the final table
     insert_table = 'treatment_index'
     points_table = 'treatment_index_points'
+    fields_to_clean = ['type', 'fund_source']
 
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -858,7 +857,7 @@ if __name__ == "__main__":
 
     # Modify treatment index in place
     fund_source_updates(pg_conn, target_schema, insert_table)
-    remove_blank_strings(pg_conn, target_schema, insert_table)
+    remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)
