@@ -298,6 +298,20 @@ def fund_source_updates(conn, schema, treatment_index):
                 fund_code IS NOT null
             ''')
 
+def remove_blank_strings(conn, schema, treatment_index):
+    #sets fund_source and type to null if they are populated with blank strings
+
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+    
+            UPDATE {schema}.{treatment_index}
+            SET fund_source = NULLIF(fund_source, ''),
+            type = NULLIF(type, '');
+
+        ''')
+
+
 @log_this
 def correct_biomass_removal_typo(conn, schema, treatment_index):
     cursor = conn.cursor()
@@ -844,6 +858,7 @@ if __name__ == "__main__":
 
     # Modify treatment index in place
     fund_source_updates(pg_conn, target_schema, insert_table)
+    remove_blank_strings(pg_conn, target_schema, insert_table)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)
