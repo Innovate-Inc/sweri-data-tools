@@ -298,6 +298,18 @@ def fund_source_updates(conn, schema, treatment_index):
                 fund_code IS NOT null
             ''')
 
+def remove_blank_strings(conn, schema, treatment_index, fields_for_removal):
+    cursor = conn.cursor()
+    with conn.transaction():
+        for field in fields_for_removal:
+            cursor.execute(f'''
+            
+                UPDATE {schema}.{treatment_index}
+                SET {field} = NULLIF({field}, '');
+                
+            ''')
+
+
 @log_this
 def correct_biomass_removal_typo(conn, schema, treatment_index):
     cursor = conn.cursor()
