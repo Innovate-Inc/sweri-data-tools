@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import re
 
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
-    extract_geometry_collections, remove_zero_area_polygons
+    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
@@ -782,6 +782,7 @@ if __name__ == "__main__":
     #This is the final table
     insert_table = 'treatment_index'
     points_table = 'treatment_index_points'
+    fields_to_clean = ['type', 'fund_source']
 
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -844,6 +845,7 @@ if __name__ == "__main__":
 
     # Modify treatment index in place
     fund_source_updates(pg_conn, target_schema, insert_table)
+    remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)

@@ -687,6 +687,40 @@ class SqlTests(TestCase):
         fields = ["field1", "field2"]
         spatial = True
 
+    def test_remove_blank_strings(self):
+        # Arrange
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = 'public'
+        table = 'test_table'
+        fields = ['test1', 'test2']
+
+        # Act
+        sql.remove_blank_strings(mock_connection, schema, table, fields)
+
+        # Assert
+        expected_calls = [
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test1 = NULLIF(test1, '');
+
+            '''),
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test2 = NULLIF(test2, '');
+
+            ''')
+        ]
+
+        mock_cursor.execute.assert_has_calls(expected_calls)
+        mock_connection.transaction.assert_called_once()
+
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
         # Mock connection, cursor, and trasaction context

@@ -390,6 +390,17 @@ def extract_geometry_collections(conn, schema, table):
 
         ''')
 
+def remove_blank_strings(conn, schema, treatment_index, fields_for_removal):
+    cursor = conn.cursor()
+    with conn.transaction():
+        for field in fields_for_removal:
+            cursor.execute(f'''
+
+                UPDATE {schema}.{treatment_index}
+                SET {field} = NULLIF({field}, '');
+
+            ''')
+
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))
