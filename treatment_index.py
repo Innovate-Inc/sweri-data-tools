@@ -61,7 +61,7 @@ def ifprs_insert(conn, schema, treatment_index):
     
             objectid, 
             name,  date_current, 
-            acres, type, category, fund_code, fund_source,
+            acres, type, category, fund_source,
             identifier_database, unique_id,
             state, status,
             total_cost, twig_category,
@@ -71,8 +71,8 @@ def ifprs_insert(conn, schema, treatment_index):
     
             sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current,
-            calculatedarea AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
-            fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
+            calculatedarea AS acres, type AS type, category AS category,
+            fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, status as status,
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
@@ -81,6 +81,7 @@ def ifprs_insert(conn, schema, treatment_index):
         WHERE {schema}.ifprs.shape IS NOT NULL;
         ''')
 
+@log_this
 def ifprs_treatment_date(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -113,6 +114,7 @@ def ifprs_treatment_date(conn, schema, treatment_index):
             AND i.createdondate IS NOT NULL;
         ''')
 
+@log_this
 def ifprs_status_consolidation(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -272,30 +274,44 @@ def nfpors_treatment_date_and_status(conn, schema,treatment_index):
 
 @log_this
 def fund_source_updates(conn, schema, treatment_index):
+    #IFPRS Processing is handled seperate since it does not have a fund code
     cursor = conn.cursor()
     with conn.transaction():
-        cursor.execute(f'''UPDATE {schema}.{treatment_index}
-                    SET fund_source = 'Multiple'
-                    WHERE position(',' in fund_code) > 0''')
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index}
+                SET fund_source = 'Multiple'
+                WHERE position(',' in fund_code) > 0;
+        ''')
 
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index}
                 SET fund_source = 'No Funding Code'
                 WHERE fund_code is null
+                AND
+                fund_source is null;
             ''')
 
         cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_code = lt.fund_code
-                AND ti.fund_source IS null
+                AND ti.fund_source IS null;
             ''')
+
+        #Fund source consolidation from IFPRS fundsourcecategory
+        cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
+                SET fund_source = lt.fund_source
+                FROM {schema}.fund_source_lookup lt
+                WHERE ti.fund_source = lt.fund_code
+                AND ti.identifier_database = 'IFPRS';
+            ''')
+
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index}
                 SET fund_source = 'Other'
                 WHERE fund_source IS null
                 AND
-                fund_code IS NOT null
+                fund_code IS NOT null;
             ''')
 
 @log_this
@@ -844,8 +860,8 @@ if __name__ == "__main__":
     ifprs_status_consolidation(pg_conn, target_schema, insert_table)
 
     # Modify treatment index in place
-    fund_source_updates(pg_conn, target_schema, insert_table)
     remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
+    fund_source_updates(pg_conn, target_schema, insert_table)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)
