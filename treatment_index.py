@@ -291,19 +291,31 @@ def fund_source_updates(conn, schema, treatment_index):
                 fund_source is null;
             ''')
 
-        cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_code = lt.fund_code
                 AND ti.fund_source IS null;
             ''')
 
-        #Fund source consolidation from IFPRS fundsourcecategory
-        cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
+        # Fund source consolidation from IFPRS fundsourcecategory
+        # fund_source populated and overwritten since IFPRS has no fund_code
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_source = lt.fund_code
                 AND ti.identifier_database = 'IFPRS';
+            ''')
+        # Set IFPRS entries that didn't get consolidated to 'Other'
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
+                SET fund_source = 'Other'
+                WHERE ti.identifier_database = 'IFPRS'
+                AND ti.fund_source NOT IN 
+                (SELECT lt.fund_source
+                FROM {schema}.fund_source_lookup lt);
             ''')
 
         cursor.execute(f'''
@@ -828,30 +840,30 @@ if __name__ == "__main__":
         pg_cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         pg_cursor.execute('COMMIT;')
 
-    # FACTS Hazardous Fuels
-    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
-
-    # special input srs for common attributes
-    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
-    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
-    hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
-    remove_wildfire_non_treatment(pg_conn, target_schema, insert_table)
-
-
-    # FACTS Common Attributes
-    common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
-
-    # NFPORS
-    update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
-    nfpors_insert(pg_conn, target_schema, insert_table)
-    nfpors_fund_code(pg_conn, target_schema, insert_table)
-    nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
+    # # FACTS Hazardous Fuels
+    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    #
+    # # special input srs for common attributes
+    # # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+    # # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+    # input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    #                 target_schema, ogr_db_string, input_srs)
+    # hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
+    # hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
+    # remove_wildfire_non_treatment(pg_conn, target_schema, insert_table)
+    #
+    #
+    # # FACTS Common Attributes
+    # common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    #
+    # # NFPORS
+    # update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
+    # nfpors_insert(pg_conn, target_schema, insert_table)
+    # nfpors_fund_code(pg_conn, target_schema, insert_table)
+    # nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
 
     # IFPRS processing and insert
     update_ifprs(pg_conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
