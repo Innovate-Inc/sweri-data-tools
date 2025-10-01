@@ -37,7 +37,7 @@ def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
 
     destination_table = 'ifprs'
 
-    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
+    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 100)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
