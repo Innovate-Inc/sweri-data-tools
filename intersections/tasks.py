@@ -1,7 +1,7 @@
-from intersections.utils import create_db_conn_from_envs, insert_feature_into_db
+from intersections.utils import  insert_feature_into_db
 from sweri_utils.download import get_ids, get_all_features
 from sweri_utils.sweri_logging import log_this
-from sweri_utils.sql import delete_from_table, copy_table_across_servers, insert_from_db
+from sweri_utils.sql import delete_from_table, insert_from_db, create_db_conn_from_envs
 from worker import app
 import logging
 # import watchtower
@@ -35,7 +35,6 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
             query =f"""
                     WITH intersection_data AS (
                         SELECT
-                            sde.next_rowid('{schema}', '{insert_table}') AS objectid,
                             ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 AS acre_overlap,
                             a.unique_id AS id_1,
                             a.feat_source AS id_1_source,
@@ -44,13 +43,16 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
                         WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     )
-                    INSERT INTO {schema}.{insert_table} (objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source)
-                    SELECT objectid, acre_overlap, id_1, id_1_source, id_2, id_2_source
+                    INSERT INTO {schema}.{insert_table} ( acre_overlap, id_1, id_1_source, id_2, id_2_source)
+                    SELECT  acre_overlap, id_1, id_1_source, id_2, id_2_source
                     FROM intersection_data
                     WHERE acre_overlap > 0;
-                   """
+                    """
             cursor.execute(query)
-            logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
+        del cursor
+    conn.close()
+    del conn
+    logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
 
 @app.task(time_limit=1440000)
 def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, insert_table):
@@ -64,7 +66,6 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
                 insert_feature_into_db(docker_conn, insert_table, f, key, value['id'], docker_schema, wkid)
     elif value['source_type'] == 'db_table':
         logger.info(f'copying data from rds db for {value["source"]}')
-        # this will copy the current table from the production server and use that data for intersections, and remove the older source
         insert_from_db(
             docker_conn,
             docker_schema,
@@ -75,15 +76,6 @@ def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, inse
             'shape',
             'shape',
             wkid )
-        # copy_table_across_servers(
-        #     rds_conn,
-        #     rds_schema,
-        #     value['source'],
-        #     docker_conn,
-        #     docker_schema,
-        #     insert_table,
-        #     [value['id'], f"'{key}' as feat_source", f'ST_MakeValid(ST_TRANSFORM(shape, {wkid}))'],
-        #     ['unique_id', 'feat_source', 'shape'])
     else:
         raise ValueError('invalid source type: {}'.format(value['source_type']))
 

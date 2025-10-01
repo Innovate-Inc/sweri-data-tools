@@ -9,7 +9,6 @@ services:
       - "../.env"
     environment:
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
-    command: python treatment_index.py 
     depends_on:
       - celery
       - redis

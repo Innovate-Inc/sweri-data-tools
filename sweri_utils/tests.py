@@ -397,6 +397,14 @@ class ConversionTests(TestCase):
 
 
 class SqlTests(TestCase):
+
+    def setUp(self):
+        self.conn = MagicMock()
+        self.cursor = MagicMock()
+        self.conn.cursor.return_value = self.cursor
+        self.transaction = MagicMock()
+        self.conn.transaction.return_value.__enter__.return_value = self.transaction
+
     @patch('psycopg.connection')
     def test_rename_postgres_table(self, mock_connection):
         # Mock the connection and cursor
@@ -686,6 +694,50 @@ class SqlTests(TestCase):
         table = "test_table"
         fields = ["field1", "field2"]
         spatial = True
+
+    def test_truncate_and_insert(self):
+        sql.truncate_and_insert('myschema', 'src', 'dst', self.conn, ['field1', 'field2'])
+        self.cursor.execute.assert_has_calls([
+            call("TRUNCATE TABLE myschema.dst;"),
+            call("INSERT INTO myschema.dst (objectid,field1, field2) SELECT sde.next_rowid('myschema', 'dst') AS objectid, field1, field2 FROM myschema.src;")
+        ])
+
+    def test_switch_autovacuum_and_triggers_enable(self):
+        sql.switch_autovacuum_and_triggers(True, self.conn, 'myschema', ['t1', 't2'])
+        self.cursor.execute.assert_has_calls([
+            call("ALTER TABLE myschema.t1 SET (autovacuum_enabled = true);"),
+            call("ALTER TABLE myschema.t1 ENABLE TRIGGER ALL;"),
+            call("ALTER TABLE myschema.t2 SET (autovacuum_enabled = true);"),
+            call("ALTER TABLE myschema.t2 ENABLE TRIGGER ALL;"),
+        ])
+
+    def test_switch_autovacuum_and_triggers_disable(self):
+
+        sql.switch_autovacuum_and_triggers(False, self.conn, 'myschema', ['t1'])
+        self.cursor.execute.assert_has_calls([
+            call("ALTER TABLE myschema.t1 SET (autovacuum_enabled = false);"),
+            call("ALTER TABLE myschema.t1 DISABLE TRIGGER ALL;"),
+        ])
+
+    def test_delete_duplicate_records(self):
+
+        sql.delete_duplicate_records('myschema', 'mytable', self.conn, ['f1', 'f2'], 'oid')
+        expected_query = '''
+            delete from myschema.mytable
+            where ctid in (
+                select ctid
+                from (
+                    select ctid,
+                           row_number() over (
+                               partition by f1, f2
+                               order by oid
+                           ) as rn
+                    from myschema.mytable
+                ) t
+                where t.rn > 1
+            );
+        '''
+        self.cursor.execute.assert_called_with(expected_query)
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):

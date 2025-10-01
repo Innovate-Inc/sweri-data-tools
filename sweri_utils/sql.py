@@ -383,7 +383,6 @@ def extract_geometry_collections(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
-
             UPDATE {schema}.{table}
             SET shape = ST_CollectionExtract(shape, 3) --3 is type polygon
             WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
@@ -397,3 +396,74 @@ def create_db_conn_from_envs():
     docker_db_user = os.getenv('DB_USER')
     docker_db_password = os.getenv('DB_PASSWORD')
     return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
+
+
+def truncate_and_insert(schema, source_table,  destination_table, conn, common_fields ):
+    """
+    Truncates the destination table and inserts data from the source table for the specified common fields.
+
+    :param schema: The schema where the tables are located.
+    :param source_table: The name of the source table to copy data from.
+    :param destination_table: The name of the destination table to insert data into.
+    :param conn: The database connection object.
+    :param common_fields: A list of field names common to both tables to be copied.
+    :return: None
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"TRUNCATE TABLE {schema}.{destination_table};")
+        fields = ', '.join(common_fields)
+        cursor.execute(
+            f"INSERT INTO {schema}.{destination_table} (objectid,{fields}) SELECT sde.next_rowid('{schema}', '{destination_table}') AS objectid, {fields} FROM {schema}.{source_table};"
+        )
+
+
+def switch_autovacuum_and_triggers(enable: bool, conn: psycopg.Connection, schema: str, tables: list) -> None:
+    """
+    Enables or disables autovacuum and triggers on a specified table in a PostgreSQL database.
+
+
+    :param enable: If True, enables autovacuum and triggers; if False, disables them.
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param tables: string list of table names to modify.
+    :return: None
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        for t in tables:
+            cursor.execute(f"ALTER TABLE {schema}.{t} SET (autovacuum_enabled = {'true' if enable else 'false'});")
+            cursor.execute(f"ALTER TABLE {schema}.{t} {'ENABLE' if enable else 'DISABLE'} TRIGGER ALL;")
+
+
+
+def delete_duplicate_records(schema, table, conn, compare_fields, order_by_field):
+    """
+    Deletes duplicate records from a specified table in a PostgreSQL database based on unique and comparison fields.
+
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to delete duplicates from.
+    :param conn: The database connection object.
+    :param uid_field: The field name that uniquely identifies each record.
+    :param compare_fields: A list of field names to compare for identifying duplicates.
+    :return: None
+    """
+    f = ', '.join(compare_fields)
+    query = f'''
+            delete from {schema}.{table}
+            where ctid in (
+                select ctid
+                from (
+                    select ctid,
+                           row_number() over (
+                               partition by {f}
+                               order by {order_by_field}
+                           ) as rn
+                    from {schema}.{table}
+                ) t
+                where t.rn > 1
+            );
+        '''
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(query)
