@@ -869,223 +869,223 @@ class SwizzleTests(TestCase):
 
         with self.assertRaises(TypeError):
             swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
-#
-#
-# class HostedTests(TestCase):
-#
-#     @patch('sweri_utils.hosted.FeatureLayerCollection')
-#     def test_get_view_data_source_id_single_source(self, mock_flc):
-#         mock_view = MagicMock()
-#         mock_manager = MagicMock()
-#         # Simulate a single source
-#         mock_manager.properties.get.return_value.get.return_value = [{'serviceItemId': 'abc123'}]
-#         mock_flc.fromitem.return_value.manager = mock_manager
-#         result = hosted.get_view_data_source_id(mock_view)
-#         self.assertEqual(result, 'abc123')
-#
-#     @patch('sweri_utils.hosted.FeatureLayerCollection')
-#     def test_get_view_data_source_id_multiple_sources_raises(self, mock_flc):
-#         mock_view = MagicMock()
-#         mock_manager = MagicMock()
-#         # Set to a list of two dicts to simulate multiple sources
-#         mock_manager.properties.get.return_value.get.return_value = [{'serviceItemId': 'a'}, {'serviceItemId': 'b'}]
-#         mock_flc.fromitem.return_value.manager = mock_manager
-#         with self.assertRaises(ValueError):
-#             hosted.get_view_data_source_id(mock_view)
-#
-#     @patch('sweri_utils.hosted.GeoAccessor')
-#     def test_gdf_to_features_with_shape(self, mock_geo):
-#         df = MagicMock()
-#         mock_sdf = MagicMock()
-#         mock_featureset = MagicMock()
-#         mock_featureset.features = ['f1', 'f2']
-#         mock_sdf.spatial.to_featureset.return_value = mock_featureset
-#         mock_geo.from_geodataframe.return_value = mock_sdf
-#         result = hosted.gdf_to_features(df, has_shape=True)
-#         self.assertEqual(result, ['f1', 'f2'])
-#
-#     def test_gdf_to_features_without_shape(self):
-#         df = MagicMock()
-#         df.spatial.to_featureset.return_value.features = ['f1', 'f2']
-#         result = hosted.gdf_to_features(df, has_shape=False)
-#         self.assertEqual(result, ['f1', 'f2'])
-#
-#     def test_build_postgis_chunk_query(self):
-#         q = hosted.build_postgis_chunk_query('myschema', 'mytable', [1, 2, 3])
-#         self.assertIn('objectid IN (1, 2, 3)', q)
-#         self.assertIn('SELECT * FROM myschema.mytable', q)
-#
-#     @patch('sweri_utils.hosted.geopandas.read_postgis')
-#     @patch('sweri_utils.hosted.pd.read_sql')
-#     def test_postgis_query_to_gdf_with_geom(self, mock_read_sql, mock_read_postgis):
-#         sql_engine = MagicMock()
-#         mock_df = MagicMock()
-#         mock_df.empty = False
-#         mock_read_postgis.return_value = mock_df
-#         result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field='shape')
-#         mock_read_postgis.assert_called_once()
-#         self.assertEqual(result, mock_df)
-#
-#     @patch('sweri_utils.hosted.geopandas.read_postgis')
-#     @patch('sweri_utils.hosted.pd.read_sql')
-#     def test_postgis_query_to_gdf_without_geom(self, mock_read_sql, mock_read_postgis):
-#         sql_engine = MagicMock()
-#         mock_df = MagicMock()
-#         mock_df.empty = False
-#         mock_read_sql.return_value = mock_df
-#         result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field=None)
-#         mock_read_sql.assert_called_once()
-#         self.assertEqual(result, mock_df)
-#
-#     def test_postgis_query_to_gdf_empty(self):
-#         sql_engine = MagicMock()
-#         with patch('sweri_utils.hosted.geopandas.read_postgis',
-#                    return_value=MagicMock(empty=True)) as mock_read_postgis:
-#             result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field='shape')
-#             self.assertTrue(result.empty)
-#
-#     def test_retry_upload_chunk_greater_than_1(self):
-#         func = Mock(return_value='ok')
-#         result = hosted.retry_upload(func, 1, 2, 4, 8)
-#         func.assert_called()
-#         self.assertEqual(result, 'ok')
-#
-#     @patch('sweri_utils.hosted.GIS')
-#     def test_refresh_gis(self, mock_gis):
-#         result = hosted.refresh_gis('url', 'user', 'pw')
-#         mock_gis.assert_called_once_with('url', 'user', 'pw')
-#         self.assertEqual(result, mock_gis.return_value)
-#
-#     @patch('sweri_utils.hosted.get_object_ids')
-#     def test_get_object_id_chunks_chunk_size_1(self, mock_get_ids):
-#         mock_get_ids.return_value = [1, 2, 3]
-#         conn = MagicMock()
-#         result = list(hosted.get_object_id_chunks(conn, 'myschema', 'mytable', '1=1', chunk_size=1))
-#         self.assertEqual(result, [[1], [2], [3]])
-#
-#     @patch('sweri_utils.hosted.get_object_ids')
-#     def test_get_object_id_chunks_chunk_size_gt_1(self, mock_get_ids):
-#         mock_get_ids.return_value = [1, 2, 3, 4, 5]
-#         conn = MagicMock()
-#         result = list(hosted.get_object_id_chunks(conn, 'myschema', 'mytable', '1=1', chunk_size=2))
-#         self.assertEqual(result, [[1, 2], [3, 4], [5]])
-#
-#     @patch('sweri_utils.hosted.refresh_gis')
-#     @patch('sweri_utils.hosted.get_view_data_source_id')
-#     @patch('sweri_utils.hosted.get_feature_layer_from_item')
-#     @patch('sweri_utils.hosted.create_db_conn_from_envs')
-#     @patch('sweri_utils.hosted.get_object_id_chunks')
-#     @patch('sweri_utils.hosted.upload_chunk_to_feature_layer')
-#     @patch('sweri_utils.hosted.group')
-#     @patch('sweri_utils.hosted.swizzle_service')
-#     def test_hosted_upload_and_swizzle(self, mock_swizzle, mock_group, mock_upload, mock_chunks, mock_dbconn,
-#                                        mock_getfl, mock_getdsid, mock_refresh):
-#         mock_gis = MagicMock()
-#         mock_refresh.return_value = mock_gis
-#
-#         # Create mock items with .name attribute
-#         view_item = MagicMock()
-#         view_item.name = 'viewname'
-#         new_source_item = MagicMock()
-#         new_source_item.name = 'newname'
-#
-#         # Provide enough items for all .get() calls
-#         mock_gis.content.get.side_effect = [view_item, new_source_item, view_item, new_source_item]
-#
-#         mock_gis.session.auth.token = 'token'
-#         mock_getdsid.return_value = 'oldid'
-#         mock_chunks.side_effect = [[[1]], [[2]], [[3]]]
-#         mock_upload.s.return_value = 'task'
-#         mock_group.return_value = MagicMock(get=Mock())
-#
-#         hosted.hosted_upload_and_swizzle('url', 'user', 'pw', 'viewid', ['oldid', 'newid'], 'schema', 'table', 10, 2)
-#
-#         self.assertTrue(mock_swizzle.called)
-#         self.assertTrue(mock_group.called)
-#
-#     @patch('sweri_utils.hosted.refresh_gis')
-#     def test_get_feature_layer_from_item_layer(self, mock_refresh):
-#         mock_gis = MagicMock()
-#         mock_refresh.return_value = mock_gis
-#         mock_item = MagicMock()
-#         mock_item.layers = [MagicMock()]
-#         mock_item.tables = []
-#         mock_gis.content.get.return_value = mock_item
-#         result = hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
-#         self.assertEqual(result, mock_item.layers[0])
-#
-#     @patch('sweri_utils.hosted.refresh_gis')
-#     def test_get_feature_layer_from_item_table(self, mock_refresh):
-#         mock_gis = MagicMock()
-#         mock_refresh.return_value = mock_gis
-#         mock_item = MagicMock()
-#         mock_item.layers = []
-#         mock_item.tables = [MagicMock()]
-#         mock_gis.content.get.return_value = mock_item
-#         result = hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
-#         self.assertEqual(result, mock_item.tables[0])
-#
-#     @patch('sweri_utils.hosted.refresh_gis')
-#     def test_get_feature_layer_from_item_raises(self, mock_refresh):
-#         mock_gis = MagicMock()
-#         mock_refresh.return_value = mock_gis
-#         mock_item = MagicMock()
-#         mock_item.layers = []
-#         mock_item.tables = []
-#         mock_gis.content.get.return_value = mock_item
-#         with self.assertRaises(ValueError):
-#             hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
-#
-#     def test_get_object_ids_success(self):
-#         conn = MagicMock()
-#         cursor = MagicMock()
-#         conn.cursor.return_value = cursor
-#         conn.transaction.return_value.__enter__.return_value = None
-#         cursor.fetchall.return_value = [(1,), (2,), (3,)]
-#         result = hosted.get_object_ids(conn, 'myschema', 'mytable', '1=1')
-#         self.assertEqual(result, [1, 2, 3])
-#
-#     def test_get_object_ids_error(self):
-#         conn = MagicMock()
-#         cursor = MagicMock()
-#         conn.cursor.return_value = cursor
-#         conn.transaction.side_effect = Exception('fail')
-#         with self.assertRaises(Exception):
-#             hosted.get_object_ids(conn, 'myschema', 'mytable', '1=1')
-#
-#     @patch('sweri_utils.hosted.get_feature_layer_from_item')
-#     @patch('sweri_utils.hosted.create_db_conn_from_envs')
-#     @patch('sweri_utils.hosted.create_engine')
-#     @patch('sweri_utils.hosted.build_postgis_chunk_query')
-#     @patch('sweri_utils.hosted.postgis_query_to_gdf')
-#     @patch('sweri_utils.hosted.gdf_to_features')
-#     def test_upload_chunk_to_feature_layer_success(self, mock_gdf_to_features, mock_postgis_to_gdf, mock_build_query,
-#                                                    mock_create_engine, mock_create_db, mock_get_fl):
-#         mock_feature_layer = MagicMock()
-#         mock_get_fl.return_value = mock_feature_layer
-#         mock_conn = MagicMock()
-#         mock_create_db.return_value = mock_conn
-#         mock_engine = MagicMock()
-#         mock_create_engine.return_value = mock_engine
-#         mock_build_query.return_value = 'SELECT ...'
-#         mock_gdf = MagicMock()
-#         mock_postgis_to_gdf.return_value = mock_gdf
-#         mock_gdf_to_features.return_value = [MagicMock(attributes={'a': float('nan'), 'b': 2})]
-#         mock_feature_layer.edit_features.return_value = {'addResults': [{'success': False}]}
-#         with patch('sweri_utils.hosted.logging') as mock_logging:
-#             hosted.upload_chunk_to_feature_layer('url', 'user', 'pw', 'id', 'schema', 'table', [1], True, ['objectid'])
-#             self.assertTrue(mock_feature_layer.edit_features.called)
-#             self.assertTrue(mock_logging.warning.called)
-#
-#     @patch('sweri_utils.hosted.get_feature_layer_from_item')
-#     @patch('sweri_utils.hosted.create_db_conn_from_envs')
-#     @patch('sweri_utils.hosted.create_engine')
-#     @patch('sweri_utils.hosted.build_postgis_chunk_query')
-#     @patch('sweri_utils.hosted.postgis_query_to_gdf')
-#     @patch('sweri_utils.hosted.gdf_to_features')
-#     def test_upload_chunk_to_feature_layer_exception(self, mock_gdf_to_features, mock_postgis_to_gdf, mock_build_query,
-#                                                      mock_create_engine, mock_create_db, mock_get_fl):
-#         mock_get_fl.side_effect = Exception('fail')
-#         with patch('sweri_utils.hosted.logging') as mock_logging:
-#             hosted.upload_chunk_to_feature_layer('url', 'user', 'pw', 'id', 'schema', 'table', [1], True, ['objectid'])
-#             self.assertTrue(mock_logging.error.called)
+
+
+class HostedTests(TestCase):
+
+    @patch('sweri_utils.hosted.FeatureLayerCollection')
+    def test_get_view_data_source_id_single_source(self, mock_flc):
+        mock_view = MagicMock()
+        mock_manager = MagicMock()
+        # Simulate a single source
+        mock_manager.properties.get.return_value.get.return_value = [{'serviceItemId': 'abc123'}]
+        mock_flc.fromitem.return_value.manager = mock_manager
+        result = hosted.get_view_data_source_id(mock_view)
+        self.assertEqual(result, 'abc123')
+
+    @patch('sweri_utils.hosted.FeatureLayerCollection')
+    def test_get_view_data_source_id_multiple_sources_raises(self, mock_flc):
+        mock_view = MagicMock()
+        mock_manager = MagicMock()
+        # Set to a list of two dicts to simulate multiple sources
+        mock_manager.properties.get.return_value.get.return_value = [{'serviceItemId': 'a'}, {'serviceItemId': 'b'}]
+        mock_flc.fromitem.return_value.manager = mock_manager
+        with self.assertRaises(ValueError):
+            hosted.get_view_data_source_id(mock_view)
+
+    @patch('sweri_utils.hosted.GeoAccessor')
+    def test_gdf_to_features_with_shape(self, mock_geo):
+        df = MagicMock()
+        mock_sdf = MagicMock()
+        mock_featureset = MagicMock()
+        mock_featureset.features = ['f1', 'f2']
+        mock_sdf.spatial.to_featureset.return_value = mock_featureset
+        mock_geo.from_geodataframe.return_value = mock_sdf
+        result = hosted.gdf_to_features(df, has_shape=True)
+        self.assertEqual(result, ['f1', 'f2'])
+
+    def test_gdf_to_features_without_shape(self):
+        df = MagicMock()
+        df.spatial.to_featureset.return_value.features = ['f1', 'f2']
+        result = hosted.gdf_to_features(df, has_shape=False)
+        self.assertEqual(result, ['f1', 'f2'])
+
+    def test_build_postgis_chunk_query(self):
+        q = hosted.build_postgis_chunk_query('myschema', 'mytable', [1, 2, 3])
+        self.assertIn('objectid IN (1, 2, 3)', q)
+        self.assertIn('SELECT * FROM myschema.mytable', q)
+
+    @patch('sweri_utils.hosted.geopandas.read_postgis')
+    @patch('sweri_utils.hosted.pd.read_sql')
+    def test_postgis_query_to_gdf_with_geom(self, mock_read_sql, mock_read_postgis):
+        sql_engine = MagicMock()
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_read_postgis.return_value = mock_df
+        result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field='shape')
+        mock_read_postgis.assert_called_once()
+        self.assertEqual(result, mock_df)
+
+    @patch('sweri_utils.hosted.geopandas.read_postgis')
+    @patch('sweri_utils.hosted.pd.read_sql')
+    def test_postgis_query_to_gdf_without_geom(self, mock_read_sql, mock_read_postgis):
+        sql_engine = MagicMock()
+        mock_df = MagicMock()
+        mock_df.empty = False
+        mock_read_sql.return_value = mock_df
+        result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field=None)
+        mock_read_sql.assert_called_once()
+        self.assertEqual(result, mock_df)
+
+    def test_postgis_query_to_gdf_empty(self):
+        sql_engine = MagicMock()
+        with patch('sweri_utils.hosted.geopandas.read_postgis',
+                   return_value=MagicMock(empty=True)) as mock_read_postgis:
+            result = hosted.postgis_query_to_gdf('SELECT ...', sql_engine, geom_field='shape')
+            self.assertTrue(result.empty)
+
+    def test_retry_upload_chunk_greater_than_1(self):
+        func = Mock(return_value='ok')
+        result = hosted.retry_upload(func, 1, 2, 4, 8)
+        func.assert_called()
+        self.assertEqual(result, 'ok')
+
+    @patch('sweri_utils.hosted.GIS')
+    def test_refresh_gis(self, mock_gis):
+        result = hosted.refresh_gis('url', 'user', 'pw')
+        mock_gis.assert_called_once_with('url', 'user', 'pw')
+        self.assertEqual(result, mock_gis.return_value)
+
+    @patch('sweri_utils.hosted.get_object_ids')
+    def test_get_object_id_chunks_chunk_size_1(self, mock_get_ids):
+        mock_get_ids.return_value = [1, 2, 3]
+        conn = MagicMock()
+        result = list(hosted.get_object_id_chunks(conn, 'myschema', 'mytable', '1=1', chunk_size=1))
+        self.assertEqual(result, [[1], [2], [3]])
+
+    @patch('sweri_utils.hosted.get_object_ids')
+    def test_get_object_id_chunks_chunk_size_gt_1(self, mock_get_ids):
+        mock_get_ids.return_value = [1, 2, 3, 4, 5]
+        conn = MagicMock()
+        result = list(hosted.get_object_id_chunks(conn, 'myschema', 'mytable', '1=1', chunk_size=2))
+        self.assertEqual(result, [[1, 2], [3, 4], [5]])
+
+    @patch('sweri_utils.hosted.refresh_gis')
+    @patch('sweri_utils.hosted.get_view_data_source_id')
+    @patch('sweri_utils.hosted.get_feature_layer_from_item')
+    @patch('sweri_utils.hosted.create_db_conn_from_envs')
+    @patch('sweri_utils.hosted.get_object_id_chunks')
+    @patch('sweri_utils.hosted.upload_chunk_to_feature_layer')
+    @patch('sweri_utils.hosted.group')
+    @patch('sweri_utils.hosted.swizzle_service')
+    def test_hosted_upload_and_swizzle(self, mock_swizzle, mock_group, mock_upload, mock_chunks, mock_dbconn,
+                                       mock_getfl, mock_getdsid, mock_refresh):
+        mock_gis = MagicMock()
+        mock_refresh.return_value = mock_gis
+
+        # Create mock items with .name attribute
+        view_item = MagicMock()
+        view_item.name = 'viewname'
+        new_source_item = MagicMock()
+        new_source_item.name = 'newname'
+
+        # Provide enough items for all .get() calls
+        mock_gis.content.get.side_effect = [view_item, new_source_item, view_item, new_source_item]
+
+        mock_gis.session.auth.token = 'token'
+        mock_getdsid.return_value = 'oldid'
+        mock_chunks.side_effect = [[[1]], [[2]], [[3]]]
+        mock_upload.s.return_value = 'task'
+        mock_group.return_value = MagicMock(get=Mock())
+
+        hosted.hosted_upload_and_swizzle('url', 'user', 'pw', 'viewid', ['oldid', 'newid'], 'schema', 'table', 10, 2)
+
+        self.assertTrue(mock_swizzle.called)
+        self.assertTrue(mock_group.called)
+
+    @patch('sweri_utils.hosted.refresh_gis')
+    def test_get_feature_layer_from_item_layer(self, mock_refresh):
+        mock_gis = MagicMock()
+        mock_refresh.return_value = mock_gis
+        mock_item = MagicMock()
+        mock_item.layers = [MagicMock()]
+        mock_item.tables = []
+        mock_gis.content.get.return_value = mock_item
+        result = hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
+        self.assertEqual(result, mock_item.layers[0])
+
+    @patch('sweri_utils.hosted.refresh_gis')
+    def test_get_feature_layer_from_item_table(self, mock_refresh):
+        mock_gis = MagicMock()
+        mock_refresh.return_value = mock_gis
+        mock_item = MagicMock()
+        mock_item.layers = []
+        mock_item.tables = [MagicMock()]
+        mock_gis.content.get.return_value = mock_item
+        result = hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
+        self.assertEqual(result, mock_item.tables[0])
+
+    @patch('sweri_utils.hosted.refresh_gis')
+    def test_get_feature_layer_from_item_raises(self, mock_refresh):
+        mock_gis = MagicMock()
+        mock_refresh.return_value = mock_gis
+        mock_item = MagicMock()
+        mock_item.layers = []
+        mock_item.tables = []
+        mock_gis.content.get.return_value = mock_item
+        with self.assertRaises(ValueError):
+            hosted.get_feature_layer_from_item('url', 'user', 'pw', 'id')
+
+    def test_get_object_ids_success(self):
+        conn = MagicMock()
+        cursor = MagicMock()
+        conn.cursor.return_value = cursor
+        conn.transaction.return_value.__enter__.return_value = None
+        cursor.fetchall.return_value = [(1,), (2,), (3,)]
+        result = hosted.get_object_ids(conn, 'myschema', 'mytable', '1=1')
+        self.assertEqual(result, [1, 2, 3])
+
+    def test_get_object_ids_error(self):
+        conn = MagicMock()
+        cursor = MagicMock()
+        conn.cursor.return_value = cursor
+        conn.transaction.side_effect = Exception('fail')
+        with self.assertRaises(Exception):
+            hosted.get_object_ids(conn, 'myschema', 'mytable', '1=1')
+
+    @patch('sweri_utils.hosted.get_feature_layer_from_item')
+    @patch('sweri_utils.hosted.create_db_conn_from_envs')
+    @patch('sweri_utils.hosted.create_engine')
+    @patch('sweri_utils.hosted.build_postgis_chunk_query')
+    @patch('sweri_utils.hosted.postgis_query_to_gdf')
+    @patch('sweri_utils.hosted.gdf_to_features')
+    def test_upload_chunk_to_feature_layer_success(self, mock_gdf_to_features, mock_postgis_to_gdf, mock_build_query,
+                                                   mock_create_engine, mock_create_db, mock_get_fl):
+        mock_feature_layer = MagicMock()
+        mock_get_fl.return_value = mock_feature_layer
+        mock_conn = MagicMock()
+        mock_create_db.return_value = mock_conn
+        mock_engine = MagicMock()
+        mock_create_engine.return_value = mock_engine
+        mock_build_query.return_value = 'SELECT ...'
+        mock_gdf = MagicMock()
+        mock_postgis_to_gdf.return_value = mock_gdf
+        mock_gdf_to_features.return_value = [MagicMock(attributes={'a': float('nan'), 'b': 2})]
+        mock_feature_layer.edit_features.return_value = {'addResults': [{'success': False}]}
+        with patch('sweri_utils.hosted.logging') as mock_logging:
+            hosted.upload_chunk_to_feature_layer('url', 'user', 'pw', 'id', 'schema', 'table', [1], True, ['objectid'])
+            self.assertTrue(mock_feature_layer.edit_features.called)
+            self.assertTrue(mock_logging.warning.called)
+
+    @patch('sweri_utils.hosted.get_feature_layer_from_item')
+    @patch('sweri_utils.hosted.create_db_conn_from_envs')
+    @patch('sweri_utils.hosted.create_engine')
+    @patch('sweri_utils.hosted.build_postgis_chunk_query')
+    @patch('sweri_utils.hosted.postgis_query_to_gdf')
+    @patch('sweri_utils.hosted.gdf_to_features')
+    def test_upload_chunk_to_feature_layer_exception(self, mock_gdf_to_features, mock_postgis_to_gdf, mock_build_query,
+                                                     mock_create_engine, mock_create_db, mock_get_fl):
+        mock_get_fl.side_effect = Exception('fail')
+        with patch('sweri_utils.hosted.logging') as mock_logging:
+            hosted.upload_chunk_to_feature_layer('url', 'user', 'pw', 'id', 'schema', 'table', [1], True, ['objectid'])
+            self.assertTrue(mock_logging.error.called)
