@@ -9,3 +9,4 @@ celery[redis,sqs,dynamodb]
 sqlalchemy
 geopandas
 python-dotenv
+pandas
