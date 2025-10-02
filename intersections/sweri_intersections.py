@@ -41,7 +41,7 @@ def configure_intersection_sources(features, start):
             intersection_targets[att['id_source']] = s
         if att['last_run'] is not None and (start - datetime.fromtimestamp(att['last_run'] / 1000)).days < att[
             'frequency_days']:
-            logger.info(f'skipping {s["name"] if s["name"] else att["id_source"]}, last run less than frequency')
+            logging.info(f'skipping {s["name"] if s["name"] else att["id_source"]}, last run less than frequency')
             continue
 
         intersection_sources[att['id_source']] = s
@@ -178,7 +178,7 @@ def run_intersections(docker_conn, docker_schema,
     docker_conn.close()
 
 if __name__ == '__main__':
-    logger.info('starting intersection processing')
+    logging.info('starting intersection processing')
     load_dotenv('../.env')
     script_start = datetime.now()
     sr_wkid = 4326
@@ -207,7 +207,7 @@ if __name__ == '__main__':
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url,
                           portal_user,
                           portal_password, intersections_view_id, intersections_data_ids)
-        logger.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+        logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
-        logger.error(f'ERROR: error running intersections: {e}')
+        logging.error(f'ERROR: error running intersections: {e}')
         sys.exit(1)
