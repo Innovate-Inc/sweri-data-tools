@@ -11,8 +11,6 @@ services:
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
     depends_on:
       - celery
-      - redis
-      - rabbit
 #  app_console:
 #    extends:
 #      service:
@@ -28,6 +26,9 @@ services:
     volumes:
       - ../rabbitmq.conf:/etc/rabbitmq/conf.d/rabbitmq.conf
   celery:
+    depends_on:
+      - rabbit
+      - redis
     env_file:
       - "../.env"
     image: ${DOCKER_IMAGE_NAME}
