@@ -157,18 +157,18 @@ def run_intersections(docker_conn, docker_schema,
 
     ############## setting up intersection features ################
     ############## fetching features ################
-    # # get latest features based on source
-    # fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
-    # # refresh the spatial index
-    # refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
-    #
-    # # run VACUUM ANALYZE to increase performance after bulk updates
-    # run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
-    # # ############## calculate intersections ################
-    # calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
-    #                                      docker_schema, chunk_size)
-    #
-    # delete_duplicate_records(docker_schema, 'intersections', docker_conn, ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'], 'id_1')
+    # get latest features based on source
+    fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
+    # refresh the spatial index
+    refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
+
+    # run VACUUM ANALYZE to increase performance after bulk updates
+    run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
+    # ############## calculate intersections ################
+    calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
+                                         docker_schema, chunk_size)
+
+    delete_duplicate_records(docker_schema, 'intersections', docker_conn, ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'], 'id_1')
     # populate objectid field
     populate_sequence_field(docker_conn, docker_schema, 'intersections', 'objectid', 'intersection_objectid_seq')
     ############ hosted upload ################
