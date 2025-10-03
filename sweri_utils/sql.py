@@ -388,7 +388,7 @@ def extract_geometry_collections(conn, schema, table):
         cursor.execute(f'''
 
             UPDATE {schema}.{table}
-            SET shape = ST_CollectionExtract(shape, 3) --3 is type polygon
+            SET shape = ST_MakeValid(ST_CollectionExtract(shape, 3)) --3 is type polygon
             WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
 
         ''')
