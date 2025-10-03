@@ -87,6 +87,7 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
             if source_key not in source_ids:
                 source_ids[source_key] = fetch_object_ids(conn, schema, source_key)
             ids = source_ids[source_key]
+
             conn.close()
             del conn
             # get all object ids for the intersecting features

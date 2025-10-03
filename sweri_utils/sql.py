@@ -18,6 +18,7 @@ def rename_postgres_table(conn: psycopg.Connection, schema: str, old_table_name:
     with conn.transaction():
         cursor.execute(f'ALTER TABLE {schema}.{old_table_name} RENAME TO {new_table_name};')
 
+
 def postgres_create_index(conn, schema, table_name, column_to_index):
     """
     Creates an index on a specified column in a PostgreSQL table.
@@ -104,9 +105,9 @@ def pg_copy_to_csv(conn: psycopg.Connection, schema: str, table: str, filename: 
         cursor = conn.cursor()
         with conn.transaction():
             with cursor.copy(
-                f'COPY (SELECT row_number() OVER () AS objectid, {",".join(columns)} FROM {schema}.{table}) TO STDOUT WITH CSV HEADER') as copy:
-                    while data := copy.read():
-                        f.write(data.tobytes().decode('utf-8'))
+                    f'COPY (SELECT row_number() OVER () AS objectid, {",".join(columns)} FROM {schema}.{table}) TO STDOUT WITH CSV HEADER') as copy:
+                while data := copy.read():
+                    f.write(data.tobytes().decode('utf-8'))
     return f
 
 
@@ -146,7 +147,6 @@ def rotate_tables(conn: psycopg.Connection, schema: str, main_table_name: str, b
     :param drop_temp: If True, the temporary table will be dropped. If False, it will be renamed to the new table.
     :return: None
     """
-
 
     logging.info('Moving to PostgreSQL table updates')
     drop_temp_table(conn, schema, backup_table_name)
@@ -198,8 +198,10 @@ def fetch_and_order_columns(cursor: psycopg.Cursor, schema: str, table: str) -> 
     return columns
 
 
-def copy_table_across_servers(from_conn: psycopg.Connection, from_schema: str, from_table: str, to_conn: psycopg.Connection,
-                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str], delete_to_rows: bool = False, where=None) -> None:
+def copy_table_across_servers(from_conn: psycopg.Connection, from_schema: str, from_table: str,
+                              to_conn: psycopg.Connection,
+                              to_schema: str, to_table: str, from_columns: list[str], to_columns: list[str],
+                              delete_to_rows: bool = False, where=None) -> None:
     """
     Copies a table from one PostgreSQL server to another.
 
@@ -240,7 +242,8 @@ def copy_table_across_servers(from_conn: psycopg.Connection, from_schema: str, f
                     for data in out_copy:
                         in_copy.write(data)
 
-    logging.info(f'Copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
+    logging.info(
+        f'Copied {from_schema}.{from_table} ({to_columns}) from out cursor to {to_schema}.{to_table} via in-cursor')
 
 
 def delete_from_table(conn: psycopg.Connection, schema: str, table: str, where: str) -> None:
@@ -275,7 +278,8 @@ def run_vacuum_analyze(connection: psycopg.Connection, schema: str, table: str) 
     cursor.execute(f'VACUUM ANALYZE {schema}.{table};')
 
 
-def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str, fields: list[str], spatial = False) -> None:
+def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str, fields: list[str],
+                               spatial=False) -> None:
     """
     Calculates the index for specified fields in a PostgreSQL table.
 
@@ -292,6 +296,7 @@ def calculate_index_for_fields(conn: psycopg.Connection, schema: str, table: str
     if spatial:
         refresh_spatial_index(conn, schema, table)
 
+
 def add_column(conn: psycopg.Connection, schema: str, table: str, column_name: str, column_type: str) -> None:
     """
     Adds a new column to a specified table in a PostgreSQL database.
@@ -306,6 +311,7 @@ def add_column(conn: psycopg.Connection, schema: str, table: str, column_name: s
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'ALTER TABLE {schema}.{table} ADD COLUMN {column_name} {column_type};')
+
 
 def limit_update(conn, schema, table, update_command, limit=150000):
     """
@@ -358,6 +364,7 @@ def revert_multi_to_poly(conn, schema, table):
             WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
         """)
 
+
 def makevalid_shapes(conn, schema, table, shape_field):
     cursor = conn.cursor()
     with conn.transaction():
@@ -369,6 +376,7 @@ def makevalid_shapes(conn, schema, table, shape_field):
 
         ''')
 
+
 def remove_zero_area_polygons(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
@@ -378,6 +386,7 @@ def remove_zero_area_polygons(conn, schema, table):
             WHERE ST_Area(shape) = 0;
 
         ''')
+
 
 def extract_geometry_collections(conn, schema, table):
     cursor = conn.cursor()
@@ -389,6 +398,7 @@ def extract_geometry_collections(conn, schema, table):
 
         ''')
 
+
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))
@@ -398,7 +408,7 @@ def create_db_conn_from_envs():
     return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
 
 
-def truncate_and_insert(schema, source_table,  destination_table, conn, common_fields ):
+def truncate_and_insert(schema, source_table, destination_table, conn, common_fields):
     """
     Truncates the destination table and inserts data from the source table for the specified common fields.
 
@@ -436,7 +446,6 @@ def switch_autovacuum_and_triggers(enable: bool, conn: psycopg.Connection, schem
             cursor.execute(f"ALTER TABLE {schema}.{t} {'ENABLE' if enable else 'DISABLE'} TRIGGER ALL;")
 
 
-
 def delete_duplicate_records(schema, table, conn, compare_fields, order_by_field):
     """
     Deletes duplicate records from a specified table in a PostgreSQL database based on unique and comparison fields.
@@ -464,6 +473,29 @@ def delete_duplicate_records(schema, table, conn, compare_fields, order_by_field
                 where t.rn > 1
             );
         '''
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(query)
+
+
+def populate_sequence_field(conn, schema, table, id_field):
+    """
+    Overwrites the given id_field in the specified table with a new sequence (1, 2, 3, ...).
+    Args:
+        conn: psycopg2 connection object
+        table: table name (str)
+        id_field: field to populate (str)
+    """
+    query = f"""
+                    WITH numbered AS (
+                        SELECT ctid, ROW_NUMBER() OVER (ORDER BY ctid) AS seq
+                        FROM {schema}.{table}
+                    )
+                    UPDATE {schema}.{table} t
+                    SET {id_field} = n.seq
+                    FROM numbered n
+                    WHERE t.ctid = n.ctid;
+                """
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(query)
