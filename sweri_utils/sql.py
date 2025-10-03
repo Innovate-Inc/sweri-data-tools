@@ -478,24 +478,22 @@ def delete_duplicate_records(schema, table, conn, compare_fields, order_by_field
         cursor.execute(query)
 
 
-def populate_sequence_field(conn, schema, table, id_field):
+def populate_sequence_field(conn, schema, table, id_field, sequence_name):
     """
-    Overwrites the given id_field in the specified table with a new sequence (1, 2, 3, ...).
-    Args:
-        conn: psycopg2 connection object
-        table: table name (str)
-        id_field: field to populate (str)
-    """
+   Populates a specified ID field in a PostgreSQL table using a sequence.
+
+   :param conn: The database connection object.
+   :param schema: The schema where the table is located.
+   :param table: The name of the table to update.
+   :param id_field: The name of the ID field to populate.
+   :param sequence_name: The name of the sequence to use for populating the ID field.
+   :return: None
+   """
     query = f"""
-                    WITH numbered AS (
-                        SELECT ctid, ROW_NUMBER() OVER (ORDER BY ctid) AS seq
-                        FROM {schema}.{table}
-                    )
-                    UPDATE {schema}.{table} t
-                    SET {id_field} = n.seq
-                    FROM numbered n
-                    WHERE t.ctid = n.ctid;
-                """
+            DROP SEQUENCE IF EXISTS {sequence_name};
+            CREATE SEQUENCE {sequence_name} START 1;
+            UPDATE {schema}.{table} set {id_field} = nextval('{sequence_name}')
+            """
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(query)
