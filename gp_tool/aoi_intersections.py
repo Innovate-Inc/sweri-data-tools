@@ -47,21 +47,6 @@ def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_nam
     arcpy.management.CalculateField(intersect_result, 'id_2_source', "'{}'".format(fc_2_name), 'PYTHON3')
 
 
-# def fetch_domains(in_table):
-#     """
-#     fetches domains from a table
-#     :param sde_connection_file: sde connection file path
-#     :param in_table: table to fetch domains from
-#     :return: dictionary of domains
-#     """
-#     all_domains = {d.name: d for d in arcpy.da.ListDomains(os.path.join(in_table, '..'))}
-#     domain_dict = {
-#         fld.name: {k: v for k, v in all_domains[fld.domain].codedValues.items()}
-#         for fld in arcpy.ListFields(in_table) if fld.domain
-#     }
-#     return domain_dict
-
-
 def format_message(progress, buffer, label):
     data = {
         'progress': progress,
