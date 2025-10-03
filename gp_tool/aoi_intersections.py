@@ -25,14 +25,11 @@ def configure_intersection_sources(intersections_source_list):
     """
     intersect_sources = {}
     intersect_targets = {}
-    domains = fetch_domains(intersections_source_list)
     fields = ['source', 'id_source', 'uid_fields', 'use_as_target', 'source_type', 'name']
     with arcpy.da.SearchCursor(intersections_source_list,
                                field_names=fields, sql_clause=(None, "ORDER BY source_type ASC")) as source_cursor:
         for r in source_cursor:
-            s = {'source': r[0], 'id': r[2], 'source_type': r[4]}
-            if 'name' in domains and r[5] in domains['name']:
-                s['name'] = domains['name'][r[5]]
+            s = {'source': r[0], 'id': r[2], 'source_type': r[4], 'name': r[5]}
             intersect_sources[r[1]] = s
             if r[3] == 1:
                 intersect_targets[r[1]] = s
@@ -50,19 +47,19 @@ def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_nam
     arcpy.management.CalculateField(intersect_result, 'id_2_source', "'{}'".format(fc_2_name), 'PYTHON3')
 
 
-def fetch_domains(in_table):
-    """
-    fetches domains from a table
-    :param sde_connection_file: sde connection file path
-    :param in_table: table to fetch domains from
-    :return: dictionary of domains
-    """
-    all_domains = {d.name: d for d in arcpy.da.ListDomains(os.path.join(in_table, '..'))}
-    domain_dict = {
-        fld.name: {k: v for k, v in all_domains[fld.domain].codedValues.items()}
-        for fld in arcpy.ListFields(in_table) if fld.domain
-    }
-    return domain_dict
+# def fetch_domains(in_table):
+#     """
+#     fetches domains from a table
+#     :param sde_connection_file: sde connection file path
+#     :param in_table: table to fetch domains from
+#     :return: dictionary of domains
+#     """
+#     all_domains = {d.name: d for d in arcpy.da.ListDomains(os.path.join(in_table, '..'))}
+#     domain_dict = {
+#         fld.name: {k: v for k, v in all_domains[fld.domain].codedValues.items()}
+#         for fld in arcpy.ListFields(in_table) if fld.domain
+#     }
+#     return domain_dict
 
 
 def format_message(progress, buffer, label):
