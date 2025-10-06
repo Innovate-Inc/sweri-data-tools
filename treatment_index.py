@@ -906,7 +906,6 @@ if __name__ == "__main__":
 
     # treatment index
     ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-
                                insert_table, max_points_before_simplify, chunk)
 
     if additional_polygon_view_ids:
