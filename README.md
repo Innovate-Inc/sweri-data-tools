@@ -116,7 +116,7 @@ Contains python modules with helper utilities used by scripts throughout the swe
 ```
 ## analysis
 
-This directory contains the R scripts which the treatment index was origninally based off of.
+This directory contains the R scripts which the Common Attributes filtering origninally based off of.
 
 ## docker
 
@@ -191,4 +191,5 @@ Please [contact us](aidan-franko@nau.edu) for more information.
 
 SWERI Data Tools exist to facilitate open and reproducible science and reporting. Internal discussions regarding the
 appropriate license are ongoing. 
+
 
