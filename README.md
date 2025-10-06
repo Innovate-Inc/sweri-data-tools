@@ -39,6 +39,7 @@ see [TWIG Treatment Index Database Replica](#TWIG-Treatment-Index-Database-Repli
 Current source databases:
 
 - [NFPORS](https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0)
+- [IFPRS](https://gis.inform-fuel-post-fire.firenet.gov/server/rest/services/OpenData/IFPRS_Open_Data/FeatureServer/2)
 - [FACTS Hazardous Fuel Treatment Reduction: Polygon](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=Hazardous+Fuel+Treatment)
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
 
@@ -55,6 +56,8 @@ Current error codes are:
 - DUPLICATE-DROP : Record is a duplicate and should be dropped during analysis
 - HIGH-COST : Cost of treatment is greater than $10,000 per acre
 - CHECK_UOM : Unit of Measure is listed as a unit that may affect cost calculations (EACH, MILES)
+- SPATIAL : Geom of treatment is outside of the state listed in state field
+- SIMPLIFIED : Geom simplified with 1m tolerance
 
 ## intersections.py
 
@@ -188,3 +191,4 @@ Please [contact us](aidan-franko@nau.edu) for more information.
 
 SWERI Data Tools exist to facilitate open and reproducible science and reporting. Internal discussions regarding the
 appropriate license are ongoing. 
+
