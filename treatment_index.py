@@ -836,8 +836,8 @@ if __name__ == "__main__":
     additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    additional_point_view_ids = os.getenv('ADDITIONAL_POINT_VIEW_IDS')
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
     treatment_index_points_table = 'treatment_index_points'
 
