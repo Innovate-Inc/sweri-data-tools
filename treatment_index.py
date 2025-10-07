@@ -5,10 +5,10 @@ from dotenv import load_dotenv
 import re
 
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
-    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings
+    extract_geometry_collections, remove_zero_area_polygons
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
+from error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 
@@ -734,17 +734,6 @@ def facts_nfpors_twig_category(conn, schema):
         ''')
 
 @log_this
-def update_state_abbr(conn, schema, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-        UPDATE {schema}.{treatment_index} ti
-        SET state = s.stusps
-        FROM {schema}.states s
-        WHERE ti.state = s.name;
-        ''')
-
-@log_this
 def simplify_large_polygons(conn, schema, table, wkid, points_cutoff, tolerance):
     # Reprojects into 5070, simplifies, and projects back into original wkid. tolerance in meters
     cursor = conn.cursor()
@@ -782,7 +771,6 @@ if __name__ == "__main__":
     #This is the final table
     insert_table = 'treatment_index'
     points_table = 'treatment_index_points'
-    fields_to_clean = ['type', 'fund_source']
 
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                                  os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -845,21 +833,18 @@ if __name__ == "__main__":
 
     # Modify treatment index in place
     fund_source_updates(pg_conn, target_schema, insert_table)
-    remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
-    add_twig_category(pg_conn, target_schema)
-    update_state_abbr(pg_conn, target_schema, insert_table)
     flag_duplicate_ids(pg_conn, target_schema, insert_table)
     flag_high_cost(pg_conn, target_schema, insert_table)
     flag_duplicates(pg_conn, target_schema, insert_table)
     flag_uom_outliers(pg_conn, target_schema, insert_table)
+    add_twig_category(pg_conn, target_schema)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
     simplify_large_polygons(pg_conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
     makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
     extract_geometry_collections(pg_conn, target_schema, insert_table)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
-    flag_spatial_errors(pg_conn, target_schema, insert_table)
 
     # update treatment points
     update_treatment_points(pg_conn, target_schema, insert_table)
