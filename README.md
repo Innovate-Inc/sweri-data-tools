@@ -39,6 +39,7 @@ see [TWIG Treatment Index Database Replica](#TWIG-Treatment-Index-Database-Repli
 Current source databases:
 
 - [NFPORS](https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0)
+- [IFPRS](https://gis.inform-fuel-post-fire.firenet.gov/server/rest/services/OpenData/IFPRS_Open_Data/FeatureServer/2)
 - [FACTS Hazardous Fuel Treatment Reduction: Polygon](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=Hazardous+Fuel+Treatment)
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
 
@@ -55,6 +56,8 @@ Current error codes are:
 - DUPLICATE-DROP : Record is a duplicate and should be dropped during analysis
 - HIGH-COST : Cost of treatment is greater than $10,000 per acre
 - CHECK_UOM : Unit of Measure is listed as a unit that may affect cost calculations (EACH, MILES)
+- SPATIAL : Geom of treatment is outside of the state listed in state field
+- SIMPLIFIED : Geom simplified with 1m tolerance
 
 ## intersections
 
@@ -127,8 +130,7 @@ Contains python modules with helper utilities used by scripts throughout the swe
 
 ## analysis
 
-This directory contains the R scripts which the treatment index was origninally based off of.
-
+This directory contains the R scripts that Common Attributes filtering logic is based on.
 ## docker
 The docker directory contains files for running intersections in a docker container. The [Dockerfile](docker/Dockerfile) is used to create a Docker image for running the intersections script in a
 containerized environment.
