@@ -12,7 +12,7 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
-from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
+from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis, swizzle_view_data_source
 
 logger = logging.getLogger(__name__)
 
@@ -796,10 +796,10 @@ def simplify_large_polygons(conn, schema, table, wkid, points_cutoff, tolerance)
         ''')
 
 @log_this
-def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
+def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, source_feature_layer):
     gis_con = refresh_gis(esri_gis_url, esri_gis_user, esri_gis_password)
     token = gis_con.session.auth.token
-    swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
+    swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, source_feature_layer, token)
 
 if __name__ == "__main__":
     load_dotenv()
@@ -836,8 +836,8 @@ if __name__ == "__main__":
     additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    additional_point_view_ids = os.getenv('ADDITIONAL_POINT_VIEW_IDS')
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
     treatment_index_points_table = 'treatment_index_points'
 
@@ -905,20 +905,20 @@ if __name__ == "__main__":
     update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+    ti_new_data_source_id = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
                                insert_table, max_points_before_simplify, chunk)
 
     if additional_polygon_view_ids:
         for view_id in additional_polygon_view_ids:
-            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
+            swizzle_view_data_source(gis_url, gis_user, gis_password, view_id, ti_new_data_source_id)
 
 
-    ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+    ti_points_new_data_source_id = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
                               points_table, max_points_before_simplify, chunk)
 
     if additional_point_view_ids:
         for view_id in additional_point_view_ids:
-            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
+            swizzle_view_data_source(gis_url, gis_user, gis_password, view_id, ti_points_new_data_source_id)
 
 
     pg_conn.close()

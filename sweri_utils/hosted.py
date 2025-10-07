@@ -4,7 +4,6 @@ from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
 from .sql import create_db_conn_from_envs
-from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from arcgis.gis import GIS
 
@@ -106,14 +105,10 @@ def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id
 
     g = group(t)()
     g.get()
-    # refreshing old references before swizzle service
-    view_item = gis_con.content.get(view_id)
-    new_source_item = gis_con.content.get(new_data_source_id)
-    token = gis_con.session.auth.token
 
-    swizzle_service(root_url, view_item.name, new_source_item.name, token)
+    swizzle_view_data_source(gis_url, gis_user, gis_password, view_id, new_data_source_id)
 
-    return new_source_item.name
+    return new_data_source_id
 
 
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
@@ -141,6 +136,21 @@ def get_object_ids(conn, schema, table, where = '1=1'):
     return ids
 
 from worker import app
+
+@log_this
+def swizzle_view_data_source(gis_url, gis_user, gis_password, view_id, new_data_source_id):
+    try:
+        gis_con = refresh_gis(gis_url, gis_user, gis_password)
+        view_item = gis_con.content.get(view_id)
+        view_flc = FeatureLayerCollection.fromitem(view_item)
+        manager = view_flc.manager
+        new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
+
+        manager.swap_view(index=0, new_source=new_source_feature_layer)
+
+    except Exception as e:
+        logging.error(e)
+        raise e
 
 @app.task()
 def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids):
