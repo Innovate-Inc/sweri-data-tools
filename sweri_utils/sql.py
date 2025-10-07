@@ -2,7 +2,7 @@ import logging
 import os
 from typing import TextIO
 import psycopg
-
+from .sweri_logging import log_this
 
 def rename_postgres_table(conn: psycopg.Connection, schema: str, old_table_name: str, new_table_name: str) -> None:
     """
@@ -346,10 +346,10 @@ def limit_update(conn, schema, table, update_command, limit=150000):
             # pbar.update(limit)
 
 
+@log_this
 def revert_multi_to_poly(conn, schema, table):
     """
     Reverts a multi-part geometry to a single-part geometry in a PostgreSQL table where there is only one polygon.
-
     :param conn: The database connection object.
     :param schema: The schema where the table is located.
     :param table: The name of the table to revert geometries in.
@@ -364,7 +364,7 @@ def revert_multi_to_poly(conn, schema, table):
             WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
         """)
 
-
+@log_this
 def makevalid_shapes(conn, schema, table, shape_field):
     cursor = conn.cursor()
     with conn.transaction():
@@ -376,7 +376,7 @@ def makevalid_shapes(conn, schema, table, shape_field):
 
         ''')
 
-
+@log_this
 def remove_zero_area_polygons(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
@@ -387,18 +387,30 @@ def remove_zero_area_polygons(conn, schema, table):
 
         ''')
 
-
+@log_this
 def extract_geometry_collections(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{table}
-            SET shape = ST_CollectionExtract(shape, 3) --3 is type polygon
+            SET shape = ST_MakeValid(ST_CollectionExtract(shape, 3)) --3 is type polygon
             WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
 
         ''')
 
+@log_this
+def remove_blank_strings(conn, schema, treatment_index, fields_for_removal):
+    cursor = conn.cursor()
+    with conn.transaction():
+        for field in fields_for_removal:
+            cursor.execute(f'''
 
+                UPDATE {schema}.{treatment_index}
+                SET {field} = NULLIF({field}, '');
+
+            ''')
+
+@log_this
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))

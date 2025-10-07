@@ -180,7 +180,15 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
         try:
             # fetch features and update total
             r = fetch_features(url + '/query', params, return_full_response)
-            total += len(r) if not return_full_response else len(r['features'])
+            if not return_full_response:
+                if r and len(r):
+                    total += len(r)
+            else:
+                if isinstance(r, dict) and "features" in r and r["features"]:
+                    total += len(r["features"])
+                else:
+                    logging.warning(f"Unexpected response (no features): {r}")
+
             yield r
             logging.info(f'{total} of {len(ids)} fetched')
         except Exception as e:
@@ -188,7 +196,6 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
             raise e
     if total != len(ids):
         logging.warning(f'missing features: {total} of {len(ids)} collected')
-
 
 @retry(retries=2, on_failure=fetch_failure)
 def fetch_features(url, params, return_full_response=False):

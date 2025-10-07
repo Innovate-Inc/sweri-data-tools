@@ -229,9 +229,12 @@ class FilesTests(TestCase):
         zip_mock.assert_called()
         self.assertEqual(z, 'test.zip')
 
-    def test_export_gdb(self):
+    @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    def test_export_gdb(self, fgdb_mock):
+        fgdb_mock.return_value = 'new_gdb'
         g = files.export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
-        self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
+        fgdb_mock.assert_called()
+        self.assertEqual(g, 'new_gdb')
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):
@@ -747,6 +750,40 @@ class SqlTests(TestCase):
         actual_query = self.cursor.execute.call_args[0][0]
         self.assertEqual(normalize(actual_query), normalize(expected_query))
 
+
+    def test_remove_blank_strings(self):
+        # Arrange
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = 'public'
+        table = 'test_table'
+        fields = ['test1', 'test2']
+
+        # Act
+        sql.remove_blank_strings(mock_connection, schema, table, fields)
+
+        # Assert
+        expected_calls = [
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test1 = NULLIF(test1, '');
+
+            '''),
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test2 = NULLIF(test2, '');
+
+            ''')
+        ]
+
+        mock_cursor.execute.assert_has_calls(expected_calls)
+        mock_connection.transaction.assert_called_once()
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):

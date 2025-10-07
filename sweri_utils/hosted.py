@@ -89,7 +89,7 @@ def get_object_id_chunks(conn, schema, table, where, chunk_size=500):
 
 
 @log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data']):
+def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data']):
     # setup new layer connection
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     view_item = gis_con.content.get(view_id)
@@ -123,7 +123,9 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
-    swizzle_service('https://gis.reshapewildfire.org/', view_item.name, new_source_item.name, token)
+    swizzle_service(root_url, view_item.name, new_source_item.name, token)
+
+    return new_source_item.name
 
 
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
