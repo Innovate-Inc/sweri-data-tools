@@ -227,9 +227,12 @@ class FilesTests(TestCase):
         zip_mock.assert_called()
         self.assertEqual(z, 'test.zip')
 
-    def test_export_gdb(self):
+    @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    def test_export_gdb(self, fgdb_mock):
+        fgdb_mock.return_value = 'new_gdb'
         g = files.export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
-        self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
+        fgdb_mock.assert_called()
+        self.assertEqual(g, 'new_gdb')
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):

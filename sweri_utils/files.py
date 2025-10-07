@@ -122,7 +122,7 @@ def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
             outfile = arcpy.conversion.ExportTable(fc_path, os.path.join(out_dir, out_name_ext))
         elif filetype == 'gdb':
             # just save directly to new out directory
-            outfile = os.path.join(out_dir, out_name_ext)
+            outfile = arcpy.conversion.FeatureClassToGeodatabase(fc_path, os.path.join(out_dir, out_name_ext))
         elif filetype == 'shapefile':
             outfile = arcpy.conversion.FeatureClassToShapefile(fc_path, out_dir)
         elif filetype == 'geojson':
