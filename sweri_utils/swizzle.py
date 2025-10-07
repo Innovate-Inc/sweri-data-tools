@@ -4,7 +4,7 @@ import requests
 import json
 from urllib.parse import urljoin
 
-from sweri_utils.sweri_logging import log_this
+from .sweri_logging import log_this
 
 
 def get_layer_definition(root_url, id, service_name, token):
