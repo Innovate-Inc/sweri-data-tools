@@ -4,6 +4,9 @@ import requests
 import json
 from urllib.parse import urljoin
 
+from .sweri_logging import log_this
+
+
 def get_layer_definition(root_url, id, service_name, token):
     url = f'{root_url}/{id}'
     x = requests.get(url, params={'f': 'json', 'token': token})
@@ -54,7 +57,7 @@ def add_to_definition(view_url, new_definition, token):
                       data={'f': 'json', 'token': token, 'addToDefinition': json.dumps(new_definition)})
     return r
 
-
+@log_this
 def swizzle_service(root_url, view_name, new_service_name, token):
     """
     Updates a hosted view service by clearing its current definition and adding

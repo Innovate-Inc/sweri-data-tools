@@ -38,7 +38,7 @@ class DownloadTests(TestCase):
         mock_post.return_value = mockresponse
         r = conversion.get_ids('http://test.url', '46=2')
         mock_post.assert_called_once_with('http://test.url/query',
-                         data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'})
+                                          data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json'})
         self.assertEqual(r, ["peach", "orange"])
 
     @patch('requests.post')
@@ -49,11 +49,12 @@ class DownloadTests(TestCase):
         mock_post.return_value = mockresponse
 
         r = conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
-        mock_post.assert_called_once_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
-                                                   'geometry': {'some': 'shape'},
-                                                   'geometryType': 'esriGeometryEnvelope',
-                                                   'spatialRel': 'esriSpatialRelIntersects'
-                                                   })
+        mock_post.assert_called_once_with('http://test.url/query',
+                                          data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+                                                'geometry': {'some': 'shape'},
+                                                'geometryType': 'esriGeometryEnvelope',
+                                                'spatialRel': 'esriSpatialRelIntersects'
+                                                })
         self.assertEqual(r, ["peach", "orange"])
 
     @patch('requests.post')
@@ -66,11 +67,12 @@ class DownloadTests(TestCase):
         try:
             conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
         except Exception:
-            mock_post.assert_called_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
-                                                   'geometry': {'some': 'shape'},
-                                                   'geometryType': 'esriGeometryEnvelope',
-                                                   'spatialRel': 'esriSpatialRelIntersects'
-                                                   })
+            mock_post.assert_called_with('http://test.url/query',
+                                         data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+                                               'geometry': {'some': 'shape'},
+                                               'geometryType': 'esriGeometryEnvelope',
+                                               'spatialRel': 'esriSpatialRelIntersects'
+                                               })
             self.assertTrue(True)
 
     @patch('requests.post')
@@ -83,11 +85,12 @@ class DownloadTests(TestCase):
         try:
             conversion.get_ids('http://test.url', '46=2', {'some': 'shape'}, 'extent')
         except Exception:
-            mock_post.assert_called_with('http://test.url/query', data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
-                                                   'geometry': {'some': 'shape'},
-                                                   'geometryType': 'esriGeometryEnvelope',
-                                                   'spatialRel': 'esriSpatialRelIntersects'
-                                                   })
+            mock_post.assert_called_with('http://test.url/query',
+                                         data={'where': '46=2', 'returnIdsOnly': 'true', 'f': 'json',
+                                               'geometry': {'some': 'shape'},
+                                               'geometryType': 'esriGeometryEnvelope',
+                                               'spatialRel': 'esriSpatialRelIntersects'
+                                               })
             self.assertTrue(True)
 
     @patch('osgeo.gdal.VectorTranslate')
@@ -101,13 +104,13 @@ class DownloadTests(TestCase):
         get_ids_mock.return_value = [1, 2, 3]
         get_feat_mock.return_value = yield {'features': [{'attributes': {'hello': 'there'}}, {
             'attributes': {'another': 'feature'}}],
-                                      'fields': []}
+                                            'fields': []}
         get_fields_mock.return_value = []
         mock_VectorTranslate.return_value = None
 
         conn = MagicMock()
         download.service_to_postgres(url, where, 4326, 'PG:', 'test', 'dest_tabl',
-                                conn, 1)
+                                     conn, 1)
 
         get_feat_mock.assert_called_once_with(url, where, 102100, None)
         get_ids_mock.assert_called_once_with(url, where, geom, 'polygon', )
@@ -162,7 +165,6 @@ class DownloadTests(TestCase):
         mock_post.return_value = mockresponse
         r = download.fetch_features('http://test.url/query', {'where': '1=1'})
         self.assertEqual(r, f)
-
 
     # def test_service_to_postgres(self):
     #     with patch('sweri_utils.download.get_ids') as get_ids_mock:
@@ -227,9 +229,12 @@ class FilesTests(TestCase):
         zip_mock.assert_called()
         self.assertEqual(z, 'test.zip')
 
-    def test_export_gdb(self):
+    @patch('arcpy.conversion.FeatureClassToGeodatabase')
+    def test_export_gdb(self, fgdb_mock):
+        fgdb_mock.return_value = 'new_gdb'
         g = files.export_file_by_type('test', 'gdb', 'out_dir', 'test', 'any')
-        self.assertEqual(g, os.path.join('out_dir', 'test.gdb'))
+        fgdb_mock.assert_called()
+        self.assertEqual(g, 'new_gdb')
 
     @patch('arcpy.conversion.ExportTable')
     def test_export_csv(self, table_mock):
@@ -397,6 +402,14 @@ class ConversionTests(TestCase):
 
 
 class SqlTests(TestCase):
+
+    def setUp(self):
+        self.conn = MagicMock()
+        self.cursor = MagicMock()
+        self.conn.cursor.return_value = self.cursor
+        self.transaction = MagicMock()
+        self.conn.transaction.return_value.__enter__.return_value = self.transaction
+
     @patch('psycopg.connection')
     def test_rename_postgres_table(self, mock_connection):
         # Mock the connection and cursor
@@ -584,8 +597,9 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
-                                  to_columns)
+        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema,
+                                      to_table, from_columns,
+                                      to_columns)
 
         from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
@@ -615,8 +629,9 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
-                                  to_columns, True)
+        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema,
+                                      to_table, from_columns,
+                                      to_columns, True)
 
         from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table}) TO STDOUT (FORMAT BINARY)")
@@ -646,8 +661,9 @@ class SqlTests(TestCase):
         from_columns = ['field1', 'field2']
         to_columns = ['field1', 'field2']
 
-        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema, to_table, from_columns,
-                                  to_columns, True, 'field1 = 1')
+        sql.copy_table_across_servers(from_mock_connection, from_schema, from_table, to_mock_connection, to_schema,
+                                      to_table, from_columns,
+                                      to_columns, True, 'field1 = 1')
 
         from_mock_cursor.copy.assert_called_once_with(
             f"COPY (SELECT field1,field2 FROM {from_schema}.{from_table} WHERE field1 = 1) TO STDOUT (FORMAT BINARY)")
@@ -687,6 +703,88 @@ class SqlTests(TestCase):
         fields = ["field1", "field2"]
         spatial = True
 
+    def test_truncate_and_insert(self):
+        sql.truncate_and_insert('myschema', 'src', 'dst', self.conn, ['field1', 'field2'])
+        self.cursor.execute.assert_has_calls([
+            call("TRUNCATE TABLE myschema.dst;"),
+            call(
+                "INSERT INTO myschema.dst (objectid,field1, field2) SELECT sde.next_rowid('myschema', 'dst') AS objectid, field1, field2 FROM myschema.src;")
+        ])
+
+    def test_switch_autovacuum_and_triggers_enable(self):
+        sql.switch_autovacuum_and_triggers(True, self.conn, 'myschema', ['t1', 't2'])
+        self.cursor.execute.assert_has_calls([
+            call("ALTER TABLE myschema.t1 SET (autovacuum_enabled = true);"),
+            call("ALTER TABLE myschema.t1 ENABLE TRIGGER ALL;"),
+            call("ALTER TABLE myschema.t2 SET (autovacuum_enabled = true);"),
+            call("ALTER TABLE myschema.t2 ENABLE TRIGGER ALL;"),
+        ])
+
+    def test_switch_autovacuum_and_triggers_disable(self):
+        sql.switch_autovacuum_and_triggers(False, self.conn, 'myschema', ['t1'])
+        self.cursor.execute.assert_has_calls([
+            call("ALTER TABLE myschema.t1 SET (autovacuum_enabled = false);"),
+            call("ALTER TABLE myschema.t1 DISABLE TRIGGER ALL;"),
+        ])
+
+    def test_delete_duplicate_records(self):
+        sql.delete_duplicate_records('myschema', 'mytable', self.conn, ['f1', 'f2'], 'oid')
+        expected_query = '''
+                         delete
+                         from myschema.mytable
+                         where ctid in (select ctid
+                                        from (select ctid,
+                                                     row_number() over (
+                               partition by f1, f2
+                               order by oid
+                           ) as rn
+                                              from myschema.mytable) t
+                                        where t.rn > 1); \
+                         '''
+
+        # Remove whitespace, newlines, and special characters for comparison
+        def normalize(s):
+            import re
+            return re.sub(r'[\s\\;]+', '', s.lower())
+
+        actual_query = self.cursor.execute.call_args[0][0]
+        self.assertEqual(normalize(actual_query), normalize(expected_query))
+
+
+    def test_remove_blank_strings(self):
+        # Arrange
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = 'public'
+        table = 'test_table'
+        fields = ['test1', 'test2']
+
+        # Act
+        sql.remove_blank_strings(mock_connection, schema, table, fields)
+
+        # Assert
+        expected_calls = [
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test1 = NULLIF(test1, '');
+
+            '''),
+            call(f'''
+
+                UPDATE {schema}.{table}
+                SET test2 = NULLIF(test2, '');
+
+            ''')
+        ]
+
+        mock_cursor.execute.assert_has_calls(expected_calls)
+        mock_connection.transaction.assert_called_once()
+
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
         # Mock connection, cursor, and trasaction context
@@ -706,7 +804,7 @@ class S3Tests(TestCase):
 
         # Call the function
         s3.import_s3_csv_to_postgres_table(mock_connection, db_schema, fields, destination_table, s3_bucket, csv_file,
-                                        aws_region)
+                                           aws_region)
 
         mock_cursor.execute.assert_has_calls(
             [

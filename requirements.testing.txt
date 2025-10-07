@@ -5,3 +5,8 @@ git+https://github.com/Innovate-Inc/fake-arcpy#egg=fake-arcpy
 psycopg
 boto3
 arcgis
+celery[redis,sqs,dynamodb]
+sqlalchemy
+geopandas
+python-dotenv
+pandas
