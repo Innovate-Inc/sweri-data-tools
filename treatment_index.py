@@ -1,5 +1,7 @@
 import os
 
+from sweri_utils.swizzle import swizzle_service
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 import re
@@ -10,7 +12,7 @@ from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
-from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,7 @@ def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
 
     destination_table = 'ifprs'
 
-    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 250)
+    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 100)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -61,7 +63,7 @@ def ifprs_insert(conn, schema, treatment_index):
     
             objectid, 
             name,  date_current, 
-            acres, type, category, fund_code, fund_source,
+            acres, type, category, fund_source,
             identifier_database, unique_id,
             state, status,
             total_cost, twig_category,
@@ -71,8 +73,8 @@ def ifprs_insert(conn, schema, treatment_index):
     
             sde.next_rowid('{schema}', '{treatment_index}'),
             name AS name, lastmodifieddate AS date_current,
-            calculatedarea AS acres, type AS type, category AS category, fundingsourcecategory as fund_code,
-            fundingsource as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
+            calculatedarea AS acres, type AS type, category AS category,
+            fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, status as status,
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
@@ -81,6 +83,7 @@ def ifprs_insert(conn, schema, treatment_index):
         WHERE {schema}.ifprs.shape IS NOT NULL;
         ''')
 
+@log_this
 def ifprs_treatment_date(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -113,6 +116,7 @@ def ifprs_treatment_date(conn, schema, treatment_index):
             AND i.createdondate IS NOT NULL;
         ''')
 
+@log_this
 def ifprs_status_consolidation(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -272,30 +276,56 @@ def nfpors_treatment_date_and_status(conn, schema,treatment_index):
 
 @log_this
 def fund_source_updates(conn, schema, treatment_index):
+    #IFPRS Processing is handled seperate since it does not have a fund code
     cursor = conn.cursor()
     with conn.transaction():
-        cursor.execute(f'''UPDATE {schema}.{treatment_index}
-                    SET fund_source = 'Multiple'
-                    WHERE position(',' in fund_code) > 0''')
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index}
+                SET fund_source = 'Multiple'
+                WHERE position(',' in fund_code) > 0;
+        ''')
 
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index}
                 SET fund_source = 'No Funding Code'
                 WHERE fund_code is null
+                AND
+                fund_source is null;
             ''')
 
-        cursor.execute(f'''UPDATE {schema}.{treatment_index} ti
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_code = lt.fund_code
-                AND ti.fund_source IS null
+                AND ti.fund_source IS null;
             ''')
+
+        # Fund source consolidation from IFPRS fundsourcecategory
+        # fund_source populated and overwritten since IFPRS has no fund_code
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
+                SET fund_source = lt.fund_source
+                FROM {schema}.fund_source_lookup lt
+                WHERE ti.fund_source = lt.fund_code
+                AND ti.identifier_database = 'IFPRS';
+            ''')
+        # Set IFPRS entries that didn't get consolidated to 'Other'
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index} ti
+                SET fund_source = 'Other'
+                WHERE ti.identifier_database = 'IFPRS'
+                AND ti.fund_source NOT IN 
+                (SELECT lt.fund_source
+                FROM {schema}.fund_source_lookup lt);
+            ''')
+
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index}
                 SET fund_source = 'Other'
                 WHERE fund_source IS null
                 AND
-                fund_code IS NOT null
+                fund_code IS NOT null;
             ''')
 
 @log_this
@@ -765,6 +795,12 @@ def simplify_large_polygons(conn, schema, table, wkid, points_cutoff, tolerance)
 
         ''')
 
+@log_this
+def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
+    gis_con = refresh_gis(esri_gis_url, esri_gis_user, esri_gis_password)
+    token = gis_con.session.auth.token
+    swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
+
 if __name__ == "__main__":
     load_dotenv()
 
@@ -790,15 +826,19 @@ if __name__ == "__main__":
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # Hosted upload variables
+    root_url = os.getenv('ESRI_ROOT_URL')
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
 
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    additional_point_view_ids = os.getenv('ADDITIONAL_POINT_VIEW_IDS')
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+
     treatment_index_points_table = 'treatment_index_points'
 
     chunk = 500
@@ -844,8 +884,8 @@ if __name__ == "__main__":
     ifprs_status_consolidation(pg_conn, target_schema, insert_table)
 
     # Modify treatment index in place
-    fund_source_updates(pg_conn, target_schema, insert_table)
     remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
+    fund_source_updates(pg_conn, target_schema, insert_table)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
     add_twig_category(pg_conn, target_schema)
@@ -865,11 +905,20 @@ if __name__ == "__main__":
     update_treatment_points(pg_conn, target_schema, insert_table)
 
     # treatment index
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+    ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
                                insert_table, max_points_before_simplify, chunk)
 
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+    if additional_polygon_view_ids:
+        for view_id in additional_polygon_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
+
+
+    ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
                               points_table, max_points_before_simplify, chunk)
+
+    if additional_point_view_ids:
+        for view_id in additional_point_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
 
 
     pg_conn.close()
