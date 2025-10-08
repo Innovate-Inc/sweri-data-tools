@@ -212,22 +212,24 @@ module.
 
 
 # Environment Variables
-Here are the environment variables used by the scripts in this repository. Create a `.env` file in the root directory
+Here are the environment variables used by the scripts in this repository. Create a `.env` file in the root directory.
+Links are as of 10/8/2025 and are subject to change without warning.
 ```text
 ESRI_USER
 ESRI_PW
-ESRI_PORTAL_URL
+ESRI_PORTAL_URL # ends in /arcgis
+ESRI_ROOT_URL
 SCRIPTS_DIR
-CURRENT_FIRES
-NFPORS_URL
-FACTS_GDB_UR
-EXCLUSION_IDS 
+CURRENT_FIRES=https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0
+NFPORS_URL=https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0
+FACTS_GDB_URL=https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_HazFuelTrt_PL.gdb.zip
+HAZARDOUS_FUELS_URL=https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15
+COMMON_ATTRIBUTES_URL=https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0
+EXCLUSION_IDS # IDs of problem polygons for exclusion from NFPORS
 INTERSECTION_SOURCES_URL # Feature service with write access for updating intersection sources and last run metrics
 INTERSECTION_SOURCES_VIEW_URL=https://gis.reshapewildfire.org/arcgis/rest/services/Hosted/Staging_Intersection_Sources_view/FeatureServer # readonly view with intersection sources
 
 AWS_DEFAULT_REGION # default AWS region for AWS services
-HAZARDOUS_FUELS_URL
-COMMON_ATTRIBUTES_URL
 DB_HOST
 DB_PORT
 DB_USER
