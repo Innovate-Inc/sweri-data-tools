@@ -18,6 +18,3 @@ COPY . .
 
 RUN pip install -r docker/requirements.txt --no-cache-dir
 
-#RUN #export PYTHONPATH=/code
-# Set the default command to run python
-#CMD ["python3", "intersections/sweri-intersections.py"]
