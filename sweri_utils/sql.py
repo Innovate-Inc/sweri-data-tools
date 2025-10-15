@@ -406,6 +406,18 @@ def remove_blank_strings(conn, schema, treatment_index, fields_for_removal):
             ''')
 
 @log_this
+def trim_whitespace(conn, schema, table, field):
+    # Some entries have spaces before or after that interfere with matching, this trims those spaces out
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''        
+
+            UPDATE {schema}.{table}
+            SET {field} = TRIM({field});
+
+        ''')
+
+@log_this
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))

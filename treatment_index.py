@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import re
 
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
-    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings
+    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
@@ -420,19 +420,6 @@ def exclude_by_acreage(conn, schema, table):
         ''')
 
 @log_this
-def trim_whitespace(conn, schema, table):
-    #Some entries have spaces before or after that interfere with matching, this trims those spaces out
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''              
-            UPDATE {schema}.{table}
-            SET
-            activity = TRIM(activity),
-            method = TRIM(method),
-            equipment = TRIM(equipment);
-        ''')
-
-@log_this
 def include_logging_activities(conn, schema, table):
     # Make sure the activity includes 'thin' or 'cut'
     # Checks the lookup table for method and equipment slated for inclusion
@@ -707,7 +694,9 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
         exclude_by_acreage(conn, schema, ca_table_name)
         exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
 
-        trim_whitespace(conn, schema, ca_table_name)
+        trim_whitespace(conn, schema, ca_table_name, 'activity')
+        trim_whitespace(conn, schema, ca_table_name, 'method')
+        trim_whitespace(conn, schema, ca_table_name, 'equipment')
 
         include_logging_activities(conn, schema, ca_table_name)
         include_fire_activites(conn, schema, ca_table_name)
@@ -885,6 +874,7 @@ if __name__ == "__main__":
 
     # Modify treatment index in place
     remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
+    trim_whitespace(pg_conn, target_schema, insert_table, 'agency')
     fund_source_updates(pg_conn, target_schema, insert_table)
     update_total_cost(pg_conn, target_schema, insert_table)
     correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
