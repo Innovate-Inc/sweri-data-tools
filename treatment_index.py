@@ -694,9 +694,10 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
         exclude_by_acreage(conn, schema, ca_table_name)
         exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
 
-        trim_whitespace(conn, schema, ca_table_name, 'activity')
-        trim_whitespace(conn, schema, ca_table_name, 'method')
-        trim_whitespace(conn, schema, ca_table_name, 'equipment')
+        fields_to_trim = ['activity',  'method', 'equipment']
+
+        for field in fields_to_trim:
+            trim_whitespace(conn, schema, ca_table_name, field)
 
         include_logging_activities(conn, schema, ca_table_name)
         include_fire_activites(conn, schema, ca_table_name)
