@@ -281,7 +281,5 @@ Please [contact us](aidan-franko@nau.edu) for more information.
 
 # Open Code & Reproducible Science
 
-SWERI Data Tools exist to facilitate open and reproducible science and reporting. Internal discussions regarding the
-appropriate license are ongoing. 
-
+SWERI Data Tools exist to facilitate open and reproducible science and reporting. This code is available for reuse or modification under the [GPL v3]([url](https://www.gnu.org/licenses/gpl-3.0.en.html)) license. 
 
