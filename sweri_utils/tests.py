@@ -724,6 +724,31 @@ class SqlTests(TestCase):
         mock_cursor.execute.assert_has_calls(expected_calls)
         mock_connection.transaction.assert_called_once()
 
+    def test_trim_whitespace(self):
+        # Arrange
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = 'public'
+        table = 'test_table'
+        field1 = 'test'
+
+        # Act
+        sql.trim_whitespace(mock_connection, schema, table, field1)
+
+        # Assert
+        expected_call = f'''        
+
+            UPDATE {schema}.{table}
+            SET {field1} = TRIM({field1});
+
+        '''
+
+        mock_cursor.execute.assert_called_once_with(expected_call)
+
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
         # Mock connection, cursor, and trasaction context
