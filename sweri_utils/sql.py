@@ -363,12 +363,32 @@ def makevalid_shapes(conn, schema, table, shape_field):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
+        
+            UPDATE {schema}.{table}
+            SET {shape_field} = ST_MakeValid({shape_field}), 'method=structure')
+            WHERE NOT ST_IsValid(({shape_field});
+            
+        ''')
+
+        # For shapes
+        cursor.execute(f'''
 
             UPDATE {schema}.{table}
-            SET {shape_field} = ST_MakeValid({shape_field})
-            WHERE NOT ST_IsValid({shape_field});
+            SET {shape_field} =
+                ST_ForcePolygonCW ( 
+                    ST_CollectionExtract( 
+                        ST_UnaryUnion( -- Dissolve
+                            ST_MakeValid( 
+                                ST_SnapToGrid({shape_field}, 0.000000001)  -- Snap to ESRI grid
+                            )
+                        ), 3  -- Extract polygons
+                    )
+                )
+            
+            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, 0.000000001)); 
 
         ''')
+
 
 @log_this
 def remove_zero_area_polygons(conn, schema, table):
@@ -388,8 +408,22 @@ def extract_geometry_collections(conn, schema, table):
         cursor.execute(f'''
 
             UPDATE {schema}.{table}
-            SET shape = ST_MakeValid(ST_CollectionExtract(shape, 3)) --3 is type polygon
-            WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
+            SET shape =
+              ST_ForcePolygonCW(
+                ST_MakeValid(
+                    ST_UnaryUnion(
+                      ST_Buffer(
+                        ST_SnapToGrid(
+                          ST_CollectionExtract(shape, 3),   
+                          0.000000001
+                        ),
+                        0
+                      )                                     
+                  ),
+                  'method=structure'
+                )
+              )
+            WHERE ST_GeometryType(shape) = 'ST_GeometryCollection';
 
         ''')
 
