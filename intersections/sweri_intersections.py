@@ -142,7 +142,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 
 @log_this
 def run_intersections(docker_conn, docker_schema,
-                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password,
+                      start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
                       intersection_view, intersection_data_ids, chunk_size=5000):
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_view}/0/query',
@@ -172,7 +172,7 @@ def run_intersections(docker_conn, docker_schema,
     # populate objectid field
     populate_sequence_field(docker_conn, docker_schema, 'intersections', 'objectid', 'intersection_objectid_seq')
     ############ hosted upload ################
-    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, docker_schema,
+    hosted_upload_and_swizzle(root_url, portal, user, password, intersection_view, intersection_data_ids, docker_schema,
                               'intersections', 0, 10000, False, [])
 
     # ############ update run info on intersection sources table ################
@@ -192,6 +192,7 @@ if __name__ == '__main__':
     # public view for fetching intersection sources
     intersection_src_view_url = os.getenv('INTERSECTION_SOURCES_VIEW_URL')
     # GIS user credentials
+    root_site_url = os.getenv('ESRI_ROOT_URL')
     portal_url = os.getenv('ESRI_PORTAL_URL')
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
@@ -207,7 +208,9 @@ if __name__ == '__main__':
     # function that runs everything for creating new intersections in docker
     try:
         run_intersections(pg_conn, db_schema,
-                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url, portal_url,
+                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
+                          root_site_url,
+                          portal_url,
                           portal_user,
                           portal_password, intersections_view_id, intersections_data_ids)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
