@@ -783,20 +783,14 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
         
             UPDATE {schema}.{table}
 			set shape = 
-              ST_ForcePolygonCW(
-                ST_MakeValid(
-                  ST_CollectionExtract(
                     ST_UnaryUnion(
-                      ST_Buffer(
+                      ST_MakeValid(
                         ST_SnapToGrid(
                           ST_SimplifyPreserveTopology(shape, {tolerance}),
                           {resolution}
-                        ), 0
+                        ), 'method=structure'
                       )
-                    ), 3
-                  ), 'method=structure'
-                )
-              ),
+                    ),
               error = CASE
                         WHEN error IS NULL THEN 'MODIFIED_SHAPE'
                         ELSE error || ';MODIFIED_SHAPE'
@@ -890,7 +884,7 @@ if __name__ == "__main__":
     # # IFPRS processing and insert
     # update_ifprs(pg_conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     # ifprs_insert(pg_conn, target_schema, insert_table)
-    # ifprs_treatment_date(pg_conn, target_schema, insert_table)
+    ifprs_treatment_date(pg_conn, target_schema, insert_table)
     # ifprs_status_consolidation(pg_conn, target_schema, insert_table)
     #
     # # Modify treatment index in place
