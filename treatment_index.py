@@ -780,9 +780,9 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
     Simplifies large polygon geometries in a PostGIS table while preserving topology.
 
     ST_SimplifyPreserveTopology : Simplifies shapes while preserving topology (shells and holes)
-    ST_SnapToGrid : Snaps shapes to the specified resolution (use 0 to disable)
+    ST_SnapToGrid : Emulates ESRI feature class resolution(use 0 resolution to disable)
     ST_MakeValid : Fixes invalid polygons and multipolygons, method structure
-    ST_UnaryUnion : Unions overlapping geometries into valid single shapes
+    ST_UnaryUnion : Unions overlapping geometries into single shapes
 
     :param conn: postgres connection object
     :param schema: postgres schema name
@@ -915,8 +915,8 @@ if __name__ == "__main__":
     flag_uom_outliers(pg_conn, target_schema, insert_table)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
     simplify_large_polygons(pg_conn, target_schema, insert_table, max_points_before_simplify, simplify_tolerance, fc_resolution)
-    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
-    extract_geometry_collections(pg_conn, target_schema, insert_table)
+    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape', fc_resolution)
+    extract_geometry_collections(pg_conn, target_schema, insert_table, fc_resolution)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
     flag_spatial_errors(pg_conn, target_schema, insert_table)
 
