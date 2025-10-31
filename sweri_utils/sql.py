@@ -353,9 +353,18 @@ def revert_multi_to_poly(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f"""
-            UPDATE {schema}.{table} as x
-            SET shape = (select (ST_Dump(shape)).geom::geometry(Polygon,4326) from {schema}.{table} where objectid = x.objectid)
-            WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
+            WITH polygons AS (
+              SELECT
+                objectid,
+                (ST_Dump(shape)).geom::geometry(Polygon,4326) AS geom
+              FROM {schema}.{table}
+              WHERE ST_NumGeometries(shape) = 1
+                AND ST_GeometryType(shape) = 'ST_MultiPolygon'
+            )
+            UPDATE {schema}.{table} AS t
+            SET shape = p.geom
+            FROM polygons AS p
+            WHERE t.objectid = p.objectid;
         """)
 
 @log_this
