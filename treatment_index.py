@@ -765,24 +765,42 @@ def update_state_abbr(conn, schema, treatment_index):
         ''')
 
 @log_this
-def simplify_large_polygons(conn, schema, table, wkid, points_cutoff, tolerance):
-    # Reprojects into 5070, simplifies, and projects back into original wkid. tolerance in meters
+def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resolution=0.000000001):
+    """
+    Simplifies large polygon geometries in a PostGIS table while preserving topology.
+
+    ST_SimplifyPreserveTopology : Simplifies shapes while preserving topology (shells and holes)
+    ST_SnapToGrid : Emulates ESRI feature class resolution(use 0 resolution to disable)
+    ST_MakeValid : Fixes invalid polygons and multipolygons, method structure
+    ST_UnaryUnion : Unions overlapping geometries into single shapes
+
+    :param conn: postgres connection object
+    :param schema: postgres schema name
+    :param table: postgres table name
+    :param points_cutoff: number of points above which shapes will be simplified
+    :param tolerance: simplification tolerance distance
+    :param resolution: grid snapping resolution (default 1e-9)
+    """
+
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
-
+        
             UPDATE {schema}.{table}
-            SET shape = 
-            ST_Transform(
-                ST_SimplifyPreserveTopology(ST_Transform(shape, 5070),{tolerance}),
-            {wkid}), 
-            error = 
-            CASE
-                WHEN error IS NULL THEN 'SIMPLIFIED'
-                ELSE error || ';SIMPLIFIED'
-            END
+			set shape = 
+                    ST_UnaryUnion(
+                      ST_MakeValid(
+                        ST_SnapToGrid(
+                          ST_SimplifyPreserveTopology(shape, {tolerance}),
+                          {resolution}
+                        ), 'method=structure'
+                      )
+                    ),
+              error = CASE
+                        WHEN error IS NULL THEN 'MODIFIED_SHAPE'
+                        ELSE error || ';MODIFIED_SHAPE'
+                      END
             WHERE ST_NPoints(shape) > {points_cutoff};
-
         ''')
 
 @log_this
@@ -833,7 +851,8 @@ if __name__ == "__main__":
 
     chunk = 500
     max_points_before_simplify = 10000
-    simplify_tolerance = 1  #meters
+    simplify_tolerance = 0.000009  # ESPG:4326 degrees
+    fc_resolution = 0.000000001 # ESPG:4326 degrees
     start_objectid = 0
 
     # Truncate the table before inserting new data
@@ -886,9 +905,9 @@ if __name__ == "__main__":
     flag_duplicates(pg_conn, target_schema, insert_table)
     flag_uom_outliers(pg_conn, target_schema, insert_table)
     revert_multi_to_poly(pg_conn, target_schema, insert_table)
-    simplify_large_polygons(pg_conn, target_schema, insert_table, out_wkid, max_points_before_simplify, simplify_tolerance)
-    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
-    extract_geometry_collections(pg_conn, target_schema, insert_table)
+    simplify_large_polygons(pg_conn, target_schema, insert_table, max_points_before_simplify, simplify_tolerance, fc_resolution)
+    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape', fc_resolution)
+    extract_geometry_collections(pg_conn, target_schema, insert_table, fc_resolution)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
     flag_spatial_errors(pg_conn, target_schema, insert_table)
 
@@ -904,6 +923,7 @@ if __name__ == "__main__":
             swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
 
 
+    # treatment index points
     ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
                               points_table, max_points_before_simplify, chunk)
 
