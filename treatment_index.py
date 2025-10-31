@@ -776,7 +776,22 @@ def update_state_abbr(conn, schema, treatment_index):
 
 @log_this
 def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resolution=0.000000001):
-    # Reprojects into 5070, simplifies, and projects back into original wkid. tolerance in meters
+    """
+    Simplifies large polygon geometries in a PostGIS table while preserving topology.
+
+    ST_SimplifyPreserveTopology : Simplifies shapes while preserving topology (shells and holes)
+    ST_SnapToGrid : Snaps shapes to the specified resolution (use 0 to disable)
+    ST_MakeValid : Fixes invalid polygons and multipolygons, method structure
+    ST_UnaryUnion : Unions overlapping geometries into valid single shapes
+
+    :param conn: postgres connection object
+    :param schema: postgres schema name
+    :param table: postgres table name
+    :param points_cutoff: number of points above which shapes will be simplified
+    :param tolerance: simplification tolerance distance
+    :param resolution: grid snapping resolution (default 1e-9)
+    """
+
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
@@ -846,8 +861,8 @@ if __name__ == "__main__":
 
     chunk = 500
     max_points_before_simplify = 10000
-    simplify_tolerance = 0.000009  #degrees
-    fc_resolution = 0.000000001 #degrees
+    simplify_tolerance = 0.000009  # ESPG:4326 degrees
+    fc_resolution = 0.000000001 # ESPG:4326 degrees
     start_objectid = 0
 
     # Truncate the table before inserting new data
@@ -903,26 +918,26 @@ if __name__ == "__main__":
     makevalid_shapes(pg_conn, target_schema, insert_table, 'shape')
     extract_geometry_collections(pg_conn, target_schema, insert_table)
     remove_zero_area_polygons(pg_conn, target_schema, insert_table)
-    # flag_spatial_errors(pg_conn, target_schema, insert_table)
-    #
-    # # update treatment points
-    # update_treatment_points(pg_conn, target_schema, insert_table)
+    flag_spatial_errors(pg_conn, target_schema, insert_table)
 
-    # treatment index
-    # ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-    #                            insert_table, max_points_before_simplify, chunk)
-    #
-    # if additional_polygon_view_ids:
-    #     for view_id in additional_polygon_view_ids:
-    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
-    #
-    #
-    # ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
-    #                           points_table, max_points_before_simplify, chunk)
-    #
-    # if additional_point_view_ids:
-    #     for view_id in additional_point_view_ids:
-    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
+    # update treatment points
+    update_treatment_points(pg_conn, target_schema, insert_table)
+
+    treatment index
+    ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+                               insert_table, max_points_before_simplify, chunk)
+
+    if additional_polygon_view_ids:
+        for view_id in additional_polygon_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
+
+
+    ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+                              points_table, max_points_before_simplify, chunk)
+
+    if additional_point_view_ids:
+        for view_id in additional_point_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
 
 
     pg_conn.close()
