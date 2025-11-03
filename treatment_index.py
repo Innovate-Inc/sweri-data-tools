@@ -777,7 +777,16 @@ def update_state_abbr(conn, schema, treatment_index):
 @log_this
 def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resolution=0.000000001):
     """
-    Simplifies large polygon geometries in a PostGIS table while preserving topology.
+    Ensures OGC-compliant geometries meet Esri geometry specifications by simplifying
+    and validating overly complex shapes. The purpose of this function is twofold:
+
+    1. To reduce vertex count and ensure successful upload to a hosted feature class
+    2. To ensure the output geometry is ESRI compliant, and does not fail ESRI repair geometry alogrithm
+
+    Highly complex OGC geometries (specifically those exceeding a defined vertex threshold)
+    can often fail to convert or upload successfully to Esri environments. This function
+    targets these oversized geometries and applies a sequence of PostGIS operations to
+    reduce their vertex count and enforce Esri-compliant topology and resolution.
 
     ST_SimplifyPreserveTopology : Simplifies shapes while preserving topology (shells and holes)
     ST_SnapToGrid : Emulates ESRI feature class resolution(use 0 resolution to disable)
@@ -798,19 +807,19 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
         
             UPDATE {schema}.{table}
 			set shape = 
-                    ST_UnaryUnion(
-                      ST_MakeValid(
-                        ST_SnapToGrid(
-                          ST_SimplifyPreserveTopology(shape, {tolerance}),
-                          {resolution}
-                        ), 'method=structure'
+                    ST_UnaryUnion(      -- combines overlapping or touching geometries into single shapes
+                      ST_MakeValid(     -- ensures shape validity for successful union
+                        ST_SnapToGrid(  -- snaps to grid to emulate ESRI resolutoin
+                          ST_SimplifyPreserveTopology(shape, {tolerance}), -- simplify, but preserve topology (holes, boundaries)
+                          {resolution}  -- set to resolution of feature class
+                        ), 'method=structure' -- stucture makevalid prevents overlaps from being interpreted as holes
                       )
                     ),
               error = CASE
                         WHEN error IS NULL THEN 'MODIFIED_SHAPE'
                         ELSE error || ';MODIFIED_SHAPE'
                       END
-            WHERE ST_NPoints(shape) > {points_cutoff};
+            WHERE ST_NPoints(shape) > {points_cutoff}; -- all shapes with more than points_cutoff points will be simplified
         ''')
 
 @log_this

@@ -373,7 +373,8 @@ def makevalid_shapes(conn, schema, table, shape_field, resolution=0.000000001):
      Makes shapes invalid to PostGIS valid using ST_MakeValid().
      After inital MakeValid, targets shapes valid to PostGIS but
      invalid to ESRI by snapping them to a fine grid to emulate
-     ESRI’s feature class resolution.
+     ESRI’s feature class resolution. These shapes are then repaired
+     on that same grid to attempt to make them valid to ESRI.
 
      :param conn: Database connection object.
      :param schema: Schema where the table is located.
@@ -385,9 +386,9 @@ def makevalid_shapes(conn, schema, table, shape_field, resolution=0.000000001):
     with conn.transaction():
         cursor.execute(f'''
         
-            UPDATE {schema}.{table}
-            SET {shape_field} = ST_MakeValid({shape_field}, 'method=structure')
-            WHERE NOT ST_IsValid({shape_field});
+            UPDATE {schema}.{table}    -- PostGIS repair, method structure ensures overlaps are not interpreted as holes
+            SET {shape_field} = ST_MakeValid({shape_field}, 'method=structure') 
+            WHERE NOT ST_IsValid({shape_field});                   
             
         ''')
 
@@ -395,11 +396,11 @@ def makevalid_shapes(conn, schema, table, shape_field, resolution=0.000000001):
 
             UPDATE {schema}.{table}
             SET {shape_field} =
-                            ST_MakeValid( 
-                                ST_SnapToGrid({shape_field}, {resolution})  -- Snap to ESRI grid
-                            , 'method=structure'
+                            ST_MakeValid(                                   -- Repair geometries after snapping to grid
+                                ST_SnapToGrid({shape_field}, {resolution})  -- Snap to ESRI feature class grid
+                            , 'method=structure'                            -- Ensures overlaps are not interpreted as holes
                             )
-            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, {resolution})); 
+            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, {resolution}));   -- Check validity using ESRI-like resolution
 
         ''')
 
@@ -434,10 +435,10 @@ def extract_geometry_collections(conn, schema, table,  resolution=0.000000001):
 
             UPDATE {schema}.{table}
             SET shape =
-                ST_MakeValid(
-                    ST_UnaryUnion(
-                        ST_SnapToGrid(
-                          ST_CollectionExtract(shape, 3),   
+                ST_MakeValid(            -- Repair geometries after snapping to grid and union
+                    ST_UnaryUnion(       -- Unions geoms to ensure makvalid does not revert back to geometry collection
+                        ST_SnapToGrid(                    -- Snap to ESRI feature class grid  
+                          ST_CollectionExtract(shape, 3), -- Extracts geometry collections to polygon
                           {resolution}
                         )                                    
                   ),
