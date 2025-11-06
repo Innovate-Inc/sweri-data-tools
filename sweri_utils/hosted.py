@@ -174,7 +174,7 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
 
         with global_engine.connect() as engine_conn:
-            features_gdf = postgis_query_to_gdf(sql_query, engine_conn, None if not has_shape else has_shape, drop_cols)
+            features_gdf = postgis_query_to_gdf(sql_query, engine_conn, None if not has_shape else 'shape', drop_cols)
 
         features = gdf_to_features(features_gdf, has_shape)
         for feature in features:
