@@ -5,12 +5,12 @@ import pandas as pd
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
-from .sql import create_db_conn_from_envs
+from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from arcgis.gis import GIS
 
-
+global_engine = None
 
 @log_this
 def get_view_data_source_id(view):
@@ -127,7 +127,6 @@ def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id
 
     return new_source_item.name
 
-
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     new_source_item = gis_con.content.get(new_data_source_id)
@@ -158,14 +157,18 @@ from worker import app
 
 @app.task()
 def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids, has_shape, drop_cols):
+
+    global global_engine
+    if global_engine is None:
+        global_engine = get_sql_alchemy_engine_from_envs()
+
     try:
         feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
-        conn = create_db_conn_from_envs()
-        sql_engine = create_engine("postgresql+psycopg://", creator=lambda: conn)
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
-        features_gdf = postgis_query_to_gdf(sql_query, sql_engine, None if not has_shape else has_shape, drop_cols)
-        sql_engine.dispose()
-        conn.close()
+
+        with global_engine.connect() as engine_conn:
+            features_gdf = postgis_query_to_gdf(sql_query, engine_conn, None if not has_shape else has_shape, drop_cols)
+
         features = gdf_to_features(features_gdf, has_shape)
         for feature in features:
             for key, value in feature.attributes.items():
