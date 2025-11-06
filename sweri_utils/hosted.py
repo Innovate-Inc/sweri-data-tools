@@ -5,7 +5,7 @@ import pandas as pd
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
-from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs
+from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from arcgis.gis import GIS
@@ -120,6 +120,15 @@ def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id
     view_item = gis_con.content.get(view_id)
     new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token
+
+    # check counts before swizzle
+    db_count = get_count(conn, schema, table)
+    fl_count = new_source_feature_layer.query(return_count_only=True)
+    diff = abs(db_count - fl_count)
+    percent_diff = diff / db_count
+    threshold = 0.01  # 1 percent difference allowed
+    if percent_diff > threshold:
+        raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
 
     swizzle_service(root_url, view_item.name, new_source_item.name, token)
 

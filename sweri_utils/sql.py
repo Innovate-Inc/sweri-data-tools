@@ -533,3 +533,20 @@ def populate_sequence_field(conn, schema, table, id_field, sequence_name):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(query)
+
+
+def get_count(conn, schema, table, where='1=1'):
+    """
+    Gets the count of records in a specified table in a PostgreSQL database based on a condition.
+
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to count records from.
+    :param where: The condition to specify which records to count.
+    :return: The count of records matching the condition.
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'SELECT COUNT(*) FROM {schema}.{table} WHERE {where};')
+        count = cursor.fetchone()[0]
+    return count
