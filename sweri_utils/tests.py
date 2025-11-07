@@ -913,7 +913,6 @@ class SqlTests(TestCase):
         resolution = 0.000000001
 
         sql_call = f"""
-
             UPDATE {schema}.{table}
             SET shape =
                 ST_MakeValid(            -- Repair geometries after snapping to grid and union
