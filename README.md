@@ -18,7 +18,7 @@ a project of [ReSHAPE](https://reshapewildfire.org/home).
 ├── _init_.py                  # Use directory as python package
 ├── daily_progression.py       # Build daily fire progression polygons  
 ├── error_flagging.py          # Identify and flag potential errors
-├── intersections.py           # Calculate treatment intersections
+├── intersections              # Intersection processing
 ├── package_list.txt           # Create conda environment
 ├── requirements.testing.txt   # Testing utilities
 ├── treatment_index.py         # Create the treatment index
@@ -33,12 +33,13 @@ The scripts SWERI data tools are:
 
 ## treatment_index.py
 
-Queries source databases and crosswalks attributes from each source into a common schema. To run treatment_index.py, 
+Queries source databases and crosswalks attributes from each source into a common schema. To run treatment_index.py,
 see [TWIG Treatment Index Database Replica](#TWIG-Treatment-Index-Database-Replica) below.
 
 Current source databases:
 
 - [NFPORS](https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0)
+- [IFPRS](https://gis.inform-fuel-post-fire.firenet.gov/server/rest/services/OpenData/IFPRS_Open_Data/FeatureServer/2)
 - [FACTS Hazardous Fuel Treatment Reduction: Polygon](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=Hazardous+Fuel+Treatment)
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
 
@@ -55,11 +56,23 @@ Current error codes are:
 - DUPLICATE-DROP : Record is a duplicate and should be dropped during analysis
 - HIGH-COST : Cost of treatment is greater than $10,000 per acre
 - CHECK_UOM : Unit of Measure is listed as a unit that may affect cost calculations (EACH, MILES)
+- SPATIAL : Geom of treatment is outside of the state listed in state field
+- SIMPLIFIED : Geom simplified with 1m tolerance
 
-## intersections.py
+## intersections
+
+```
+.
+└── intersections                 # intersections package
+    ├── sweri_intersections.py    # main script for running intersections
+    ├── tasks.py                  # celery tasks for running intersections
+    └── utilss.py                 # intersection specific utilities
+```
 
 Determines the geographic intersection between treatments and other layers of interest and calculates the geodesic area
-of the overlap in acres.
+of the overlap in acres. It uses celery to parallelize the processing of large numbers of intersections between each of
+the source layers, listed below.
+
 Current layers intersected:
 
 1. [TWIG Treatment Index](https://gis.reshapewildfire.org/arcgis/home/item.html?id=3d8263f3ee89400fb9da5f5fb5bbf7f1)
@@ -103,36 +116,68 @@ Contains python modules with helper utilities used by scripts throughout the swe
 
 ```
 .
-└── sweri_utils         # Utilities package
-    ├── conversion.py   # Data conversion utilities
-    ├── download.py     # Data download utilities
-    ├── files.py        # File creation and management utilities
-    ├── s3.py           # AWS s3 utilities
-    ├── sql.py          # SQL utilities
-    └── tests.py        # Unit tests for utilities
+└── sweri_utils          # Utilities package
+    ├── conversion.py    # Data conversion utilities
+    ├── download.py      # Data download utilities
+    ├── files.py         # File creation and management utilities
+    ├── hosted.py        # utilities for working with hosted feature services
+    ├── s3.py            # AWS s3 utilities
+    ├── sql.py           # SQL utilities
+    ├── sweri_logging.py # general logging utilities
+    ├── swizzle.py       # Data transformation utilities for hosted views
+    └── tests.py         # Unit tests for utilities
 ```
+
 ## analysis
 
-This directory contains the R scripts which the treatment index was origninally based off of.
-
+This directory contains the R scripts that Common Attributes filtering logic is based on.
 ## docker
+The docker directory contains files for running intersections in a docker container. The [Dockerfile](docker/Dockerfile) is used to create a Docker image for running the intersections script in a
+containerized environment.
 
-The docker directory contains files for running intersections in a docker container.
-The [docker-compose.yml](/docker/docker-compose.yml) file defines the services required to run the application in a
-Docker environment and a named volume postgres_data to persist PostgreSQL data
-. It includes the following services:
+There are four docker-compose files in the docker directory:
 
-- **pgadmin**: Runs the pgAdmin4 web interface for managing PostgreSQL databases. It uses environment variables for
-  configuration and maps a host directory to store pgAdmin data.
-- **db**: Runs a PostgreSQL database with PostGIS extensions. It uses environment variables for configuration, maps a
-  host
-  directory to store database data, and includes a health check to ensure the database is ready.
-- **app**: Builds and runs the [intersections script](intersections/sweri-intersections.py). It depends on the database service, uses
+- [docker-compose.yml](/docker/docker-compose.yml), this is the base docker compose file with the app, rabbitmq, redis,
+  and celery containers.
+- [docker-compose.dev.yml](/docker/docker-compose.dev.yml), this file is used for local development and includes a
+  volume mount for the app container to allow for live code changes, as well as services for pgadmin and a postgres
+  database (with PostGIS).
+- [docker-compose.staging.yml](/docker/docker-compose.staging.yml), this file is used for staging deployments and includes
+  an external docker network for accessing the postgres database.
+- [docker-compose.prod.yml](/docker/docker-compose.prod.yml), this file is used for production deployments and includes
+  an external docker network for accessing the postgres database.
+- 
+The services defined in the docker-compose files are:
+
+- **app**: Builds and runs the [intersections script](intersections/sweri_intersections.py). It depends on the database
+  service, uses
   environment variables for
   configuration, and mounts the project directory to the container.
+- **rabbitmq**: Runs a RabbitMQ message broker for handling task queues.
+- **redis**: Runs a Redis server for caching and message brokering.
+- **celery**: Runs a Celery worker that processes tasks from the RabbitMQ queue. It depends on the app and rabbitmq
+  services and uses environment variables for configuration.
+- **db**: (in dev only) Runs a Postgres database with PostGIS extension for local development and testing.
+- **pgadmin**: (in dev only) Runs pgAdmin for managing the Postgres database.
 
-The [Dockerfile](docker/Dockerfile) is used to create a Docker image for running the intersections script in a
-containerized environment.
+In staging and production environments, the app and celery services connect to an external Postgres database.
+### Docker environment Variables
+```text 
+PGADMIN_DEFAULT_EMAIL # default postgres user email
+PGADMIN_DEFAULT_PASSWORD # default postgres user password
+HOST_PGADMIN_DATA_PATH # host path to persist pgadmin data, for dev only
+AWS_DEFAULT_REGION # default AWS region for watchtower, s3
+DOCKER_IMAGE_NAME # docker image name to pull
+COMPOSE_FILE # compose files to use, like docker-compose.yml:docker-compose.dev.yml
+
+DB_USER # default user for the database
+DB_PASSWORD # default password for DB_USER
+DB_NAME # database name, usually sweri
+
+DB_HOST # docker internal host or external host for staging/production
+DB_PORT # port for the database, usually 5432
+SCHEMA # schema for the treatment index, usually staging or sweri
+```
 
 ## gp_tool
 
@@ -165,16 +210,66 @@ the [.github/workflows](.github/workflows) directory contains
 a [GitHub Actions workflow file](.github/workflows/unit-test.yml) that runs unit tests on the [sweri_utils](sweri_utils)
 module.
 
+
+# Environment Variables
+Here are the environment variables used by the scripts in this repository. Create a `.env` file in the root directory.
+Links are as of 10/8/2025 and are subject to change without warning.
+```text
+ESRI_USER
+ESRI_PW
+ESRI_PORTAL_URL # ends in /arcgis
+ESRI_ROOT_URL
+SCRIPTS_DIR
+CURRENT_FIRES=https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/WFIGS_Interagency_Perimeters_Current/FeatureServer/0
+NFPORS_URL=https://usgs.nfpors.gov/arcgis/rest/services/treatmentPoly/FeatureServer/0
+FACTS_GDB_URL=https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_HazFuelTrt_PL.gdb.zip
+HAZARDOUS_FUELS_URL=https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_HazardousFuelsTreatments_01/MapServer/15
+COMMON_ATTRIBUTES_URL=https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_ActivityFactsCommonAttributes_01/MapServer/0
+EXCLUSION_IDS # IDs of problem polygons for exclusion from NFPORS
+INTERSECTION_SOURCES_URL # Feature service with write access for updating intersection sources and last run metrics
+INTERSECTION_SOURCES_VIEW_URL=https://gis.reshapewildfire.org/arcgis/rest/services/Hosted/Staging_Intersection_Sources_view/FeatureServer # readonly view with intersection sources
+
+AWS_DEFAULT_REGION # default AWS region for AWS services
+DB_HOST
+DB_PORT
+DB_USER
+DB_PASSWORD
+DB_NAME
+SCHEMA
+#CELERY_BROKER_AWS_ACCESS_KEY_ID # optional if using AWS SQS as the broker
+#CELERY_BROKER_AWS_SECRET_ACCESS_KEY # optional if using AWS SQS as the broker
+#CELERY_BROKER_TRANSPORT_OPTIONS # optional if using AWS SQS as the broker
+#CELERY_RESULT_BACKEND # optional if using AWS Redis cache for result backend
+POSTGRES_DB
+POSTGRES_PASSWORD
+POSTGRES_USER
+INTERSECTIONS_DATA_ID_1 # hosted feature service item id for intersections output
+INTERSECTIONS_DATA_ID_2 # hosted feature service item id for intersections output
+INTERSECTIONS_VIEW_ID # hosted feature service item id for intersections output view
+
+
+TREATMENT_INDEX_DATA_ID_1
+TREATMENT_INDEX_DATA_ID_2
+TREATMENT_INDEX_VIEW_ID
+TREATMENT_INDEX_POINTS_DATA_ID_1
+TREATMENT_INDEX_POINTS_DATA_ID_2
+TREATMENT_INDEX_POINTS_VIEW_ID
+```
 # TWIG Treatment Index Database Replica
+
 Download a replica:
+
 - [Full TWIG Treatment Index Copy](https://sweri-treament-index.s3.us-west-2.amazonaws.com/treatment_index.zip)
 
 Create a replica using [treatment_index.py](#treatment_indexpy):
+
 - [Lookup Tables and Treatment Index Schema](https://sweri-treament-index.s3.us-west-2.amazonaws.com/database_scaffolding.zip)
 
-The Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run treatment_index.py
-on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema. After the initial setup, treatment_index.py
-can target that schema and populate the treatment_index feature class. 
+The Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run
+treatment_index.py
+on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema. After the
+initial setup, treatment_index.py
+can target that schema and populate the treatment_index feature class.
 
 # Citing the Treatment Index
 
