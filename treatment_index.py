@@ -75,7 +75,8 @@ def ifprs_insert(conn, schema, treatment_index):
             name AS name, lastmodifieddate AS date_current,
             calculatedarea AS acres, type AS type, category AS category,
             fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
-            state AS state, status as status,
+            state AS state, 
+            CASE WHEN class = 'Estimated Treatment' AND status IS NULL THEN 'Planned' ELSE status END AS status, 
             estimatedtotalcost as total_cost, category as twig_category, 
             agency as agency, shape as shape
     
@@ -85,6 +86,7 @@ def ifprs_insert(conn, schema, treatment_index):
 
 @log_this
 def ifprs_treatment_date(conn, schema, treatment_index):
+
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
