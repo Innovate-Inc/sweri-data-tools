@@ -85,6 +85,15 @@ def get_object_id_chunks(conn, schema, table, where, chunk_size=500):
     for i in range(0, len(ids), chunk_size):
         yield ids[i:i + chunk_size]
 
+def verify_feature_count(conn,schema, table, new_source_feature_layer):
+    # check counts before swizzle
+    db_count = get_count(conn, schema, table)
+    fl_count = new_source_feature_layer.query(return_count_only=True)
+    diff = abs(db_count - fl_count)
+    percent_diff = diff / db_count
+    threshold = 0.01  # 1 percent difference allowed
+    if percent_diff > threshold:
+        raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
 
 @log_this
 def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data']):
@@ -121,14 +130,7 @@ def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id
     new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
-    # check counts before swizzle
-    db_count = get_count(conn, schema, table)
-    fl_count = new_source_feature_layer.query(return_count_only=True)
-    diff = abs(db_count - fl_count)
-    percent_diff = diff / db_count
-    threshold = 0.01  # 1 percent difference allowed
-    if percent_diff > threshold:
-        raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
+    verify_feature_count(conn, schema, table, new_source_feature_layer)
 
     swizzle_service(root_url, view_item.name, new_source_item.name, token)
 
