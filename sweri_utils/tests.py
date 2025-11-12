@@ -6,8 +6,6 @@ from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
-from .hosted import verify_feature_count
-
 
 class DownloadTests(TestCase):
     def setUp(self):
@@ -1064,6 +1062,7 @@ class HostedTests(TestCase):
     @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
     @patch('sweri_utils.hosted.get_count')
     def test_verify_feature_same_count(self, mock_get_count):
+        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
@@ -1075,6 +1074,7 @@ class HostedTests(TestCase):
     @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
     @patch('sweri_utils.hosted.get_count')
     def test_verify_feature_mismatched_count(self, mock_get_count):
+        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
