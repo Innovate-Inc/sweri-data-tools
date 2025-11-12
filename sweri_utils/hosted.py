@@ -7,7 +7,8 @@ from celery import group
 from sqlalchemy import create_engine
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
-# from .sweri_logging import log_this, logging
+from .sweri_logging import log_this, logging
+from worker import app
 from arcgis.gis import GIS
 
 global_engine = None
@@ -158,11 +159,10 @@ def get_object_ids(conn, schema, table, where = '1=1'):
             ids = [r[0] for r in results]
 
     except Exception as err:
-        # logging.error(f'error getting objectids: {err}, {q}')
+        logging.error(f'error getting objectids: {err}, {q}')
         raise err
     return ids
 
-from worker import app
 
 @app.task()
 def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids, has_shape, drop_cols):
@@ -190,11 +190,8 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
             att = features[index].attributes
 
             if not feature.get("success", False):
-                print('test')
-                # logging.warning(f"This feature could not be inserted: attributes={att}")
+                logging.warning(f"This feature could not be inserted: attributes={att}")
 
 
     except Exception as e:
-        print('test')
-
-        # logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
+        logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
