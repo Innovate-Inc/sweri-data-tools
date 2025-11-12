@@ -7,12 +7,12 @@ from celery import group
 from sqlalchemy import create_engine
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
-from .sweri_logging import log_this, logging
+# from .sweri_logging import log_this, logging
 from arcgis.gis import GIS
 
 global_engine = None
 
-@log_this
+# @log_this
 def get_view_data_source_id(view):
     view_flc = FeatureLayerCollection.fromitem(view)
 
@@ -58,7 +58,7 @@ def postgis_query_to_gdf(pg_query, conn, geom_field='shape', drop_cols=['objecti
     return df
 
 
-@log_this
+# @log_this
 def retry_upload(func, *args, **kwargs):
     chunk = args[3]
     if chunk > 1:
@@ -95,7 +95,7 @@ def verify_feature_count(conn,schema, table, new_source_feature_layer):
     if percent_diff > threshold:
         raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
 
-@log_this
+# @log_this
 def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data']):
     # setup new layer connection
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
@@ -158,7 +158,7 @@ def get_object_ids(conn, schema, table, where = '1=1'):
             ids = [r[0] for r in results]
 
     except Exception as err:
-        logging.error(f'error getting objectids: {err}, {q}')
+        # logging.error(f'error getting objectids: {err}, {q}')
         raise err
     return ids
 
@@ -190,8 +190,8 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
             att = features[index].attributes
 
             if not feature.get("success", False):
-                logging.warning(f"This feature could not be inserted: attributes={att}")
+                # logging.warning(f"This feature could not be inserted: attributes={att}")
 
 
     except Exception as e:
-        logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
+        # logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
