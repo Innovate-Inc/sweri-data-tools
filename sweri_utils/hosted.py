@@ -8,11 +8,8 @@ from sqlalchemy import create_engine
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
+from worker import app
 from arcgis.gis import GIS
-try:
-    from worker import app
-except ModuleNotFoundError:
-    app = None
 
 global_engine = None
 

@@ -1,10 +1,12 @@
 import os
+import sys
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql
 from .hosted import verify_feature_count
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
+sys.modules['worker'] = Mock(app=Mock())
 
 
 class DownloadTests(TestCase):
