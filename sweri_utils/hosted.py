@@ -190,8 +190,11 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
             att = features[index].attributes
 
             if not feature.get("success", False):
+                print('test')
                 # logging.warning(f"This feature could not be inserted: attributes={att}")
 
 
     except Exception as e:
+        print('test')
+
         # logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
