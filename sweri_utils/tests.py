@@ -1060,7 +1060,7 @@ class HostedTests(TestCase):
     @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
     @patch('sweri_utils.hosted.get_count')
     def test_verify_feature_same_count(self, mock_get_count):
-        from .hosted import verify_feature_count
+        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
@@ -1072,7 +1072,7 @@ class HostedTests(TestCase):
     @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
     @patch('sweri_utils.hosted.get_count')
     def test_verify_feature_mismatched_count(self, mock_get_count):
-        from .hosted import verify_feature_count
+        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
