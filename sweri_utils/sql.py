@@ -359,20 +359,54 @@ def revert_multi_to_poly(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f"""
-            UPDATE {schema}.{table} as x
-            SET shape = (select (ST_Dump(shape)).geom::geometry(Polygon,4326) from {schema}.{table} where objectid = x.objectid)
-            WHERE ST_NumGeometries(shape) = 1 and ST_GeometryType(shape) = 'ST_MultiPolygon'
+            WITH polygons AS (
+              SELECT
+                objectid,
+                (ST_Dump(shape)).geom::geometry(Polygon,4326) AS geom
+              FROM {schema}.{table}
+              WHERE ST_NumGeometries(shape) = 1
+                AND ST_GeometryType(shape) = 'ST_MultiPolygon'
+            )
+            UPDATE {schema}.{table} AS t
+            SET shape = p.geom
+            FROM polygons AS p
+            WHERE t.objectid = p.objectid;
         """)
 
 @log_this
-def makevalid_shapes(conn, schema, table, shape_field):
+def makevalid_shapes(conn, schema, table, shape_field, resolution=0.000000001):
+    """
+     Makes shapes invalid to PostGIS valid using ST_MakeValid().
+     After inital MakeValid, targets shapes valid to PostGIS but
+     invalid to ESRI by snapping them to a fine grid to emulate
+     ESRI’s feature class resolution. These shapes are then repaired
+     on that same grid to attempt to make them valid to ESRI.
+
+     :param conn: Database connection object.
+     :param schema: Schema where the table is located.
+     :param table: Name of the table to fix geometries in.
+     :param shape_field: Name of the geometry field to fix.
+     :param resolution: Grid snapping resolution (default 1e-9).
+     """
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
+        
+            UPDATE {schema}.{table}    -- PostGIS repair, method structure ensures overlaps are not interpreted as holes
+            SET {shape_field} = ST_MakeValid({shape_field}, 'method=structure') 
+            WHERE NOT ST_IsValid({shape_field});                   
+            
+        ''')
+
+        cursor.execute(f'''
 
             UPDATE {schema}.{table}
-            SET {shape_field} = ST_MakeValid({shape_field})
-            WHERE NOT ST_IsValid({shape_field});
+            SET {shape_field} =
+                            ST_MakeValid(                                   -- Repair geometries after snapping to grid
+                                ST_SnapToGrid({shape_field}, {resolution})  -- Snap to ESRI feature class grid
+                            , 'method=structure'                            -- Ensures overlaps are not interpreted as holes
+                            )
+            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, {resolution}));   -- Check validity using ESRI-like resolution
 
         ''')
 
@@ -388,13 +422,34 @@ def remove_zero_area_polygons(conn, schema, table):
         ''')
 
 @log_this
-def extract_geometry_collections(conn, schema, table):
+def extract_geometry_collections(conn, schema, table,  resolution=0.000000001):
+    """
+    Extracts geometry collections from a PostGIS table.
+    ST_CollectionExtract : Extracts geometry collections to polygon
+    ST_SnapToGrid : Emulates ESRI feature class resolution(use 0 resolution to disable)
+    ST_UnaryUnion : Dissolves geometry preventing MakeValid turning the geometry back into a geometry collection
+    ST_MakeValid : ensures geometry validity
+
+     :param conn: Database connection object.
+     :param schema: Schema where the table is located.
+     :param table: Name of the table to fix geometries in.
+     :param resolution: Grid snapping resolution (default 1e-9).
+    """
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.{table}
-            SET shape = ST_MakeValid(ST_CollectionExtract(shape, 3)) --3 is type polygon
-            WHERE ST_GeometryType(shape) =  'ST_GeometryCollection';
+            SET shape =
+                ST_MakeValid(            -- Repair geometries after snapping to grid and union
+                    ST_UnaryUnion(       -- Unions geoms to ensure makvalid does not revert back to geometry collection
+                        ST_SnapToGrid(                    -- Snap to ESRI feature class grid  
+                          ST_CollectionExtract(shape, 3), -- Extracts geometry collections to polygon
+                          {resolution}
+                        )                                    
+                  ),
+                  'method=structure'
+                )
+            WHERE ST_GeometryType(shape) = 'ST_GeometryCollection';
 
         ''')
 

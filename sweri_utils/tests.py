@@ -785,7 +785,7 @@ class SqlTests(TestCase):
         mock_cursor.execute.assert_has_calls(expected_calls)
         mock_connection.transaction.assert_called_once()
 
-    def test_trim_whitespace(self):
+    def test_simplify_large_polygons(self):
         # Arrange
         mock_connection = MagicMock()
         mock_cursor = MagicMock()
@@ -795,20 +795,145 @@ class SqlTests(TestCase):
 
         schema = 'public'
         table = 'test_table'
-        field1 = 'test'
+        resolution = 0.000000001
+        points_cutoff = 10000
+        tolerance = .0000009
+
+        expected_sql = f"""
+        
+            UPDATE {schema}.{table}
+			set shape = 
+                    ST_UnaryUnion(      -- combines overlapping or touching geometries into single shapes
+                      ST_MakeValid(     -- ensures shape validity for successful union
+                        ST_SnapToGrid(  -- snaps to grid to emulate ESRI resolutoin
+                          ST_SimplifyPreserveTopology(shape, {tolerance}), -- simplify, but preserve topology (holes, boundaries)
+                          {resolution}  -- set to resolution of feature class
+                        ), 'method=structure' -- stucture makevalid prevents overlaps from being interpreted as holes
+                      )
+                    ),
+              error = CASE
+                        WHEN error IS NULL THEN 'MODIFIED_SHAPE'
+                        ELSE error || ';MODIFIED_SHAPE'
+                      END
+            WHERE ST_NPoints(shape) > {points_cutoff}; -- all shapes with more than points_cutoff points will be simplified
+        """
 
         # Act
-        sql.trim_whitespace(mock_connection, schema, table, field1)
+        sql.simplify_large_polygons(mock_connection, schema, table)
 
         # Assert
-        expected_call = f'''        
+        mock_connection.transaction.assert_called_once()
+        mock_cursor.execute.assert_called_once_with(expected_sql)
+
+    def test_simplify_large_polygons(self):
+        # Arrange
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+        mock_connection.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_connection.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = 'public'
+        table = 'test_table'
+
+        expected_sql = f"""
+            WITH polygons AS (
+              SELECT
+                objectid,
+                (ST_Dump(shape)).geom::geometry(Polygon,4326) AS geom
+              FROM {schema}.{table}
+              WHERE ST_NumGeometries(shape) = 1
+                AND ST_GeometryType(shape) = 'ST_MultiPolygon'
+            )
+            UPDATE {schema}.{table} AS t
+            SET shape = p.geom
+            FROM polygons AS p
+            WHERE t.objectid = p.objectid;
+        """
+
+        # Act
+        sql.revert_multi_to_poly(mock_connection, schema, table)
+
+        # Assert
+        mock_connection.transaction.assert_called_once()
+        mock_cursor.execute.assert_called_once_with(expected_sql)
+
+    def test_makevalid_shapes(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_conn.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = "public"
+        table = "test_table"
+        shape_field = "shape"
+        resolution = 0.000000001
+
+        sql_call_one = f"""
+        
+            UPDATE {schema}.{table}    -- PostGIS repair, method structure ensures overlaps are not interpreted as holes
+            SET {shape_field} = ST_MakeValid({shape_field}, 'method=structure') 
+            WHERE NOT ST_IsValid({shape_field});                   
+            
+        """
+
+        sql_call_two = f"""
 
             UPDATE {schema}.{table}
-            SET {field1} = TRIM({field1});
+            SET {shape_field} =
+                            ST_MakeValid(                                   -- Repair geometries after snapping to grid
+                                ST_SnapToGrid({shape_field}, {resolution})  -- Snap to ESRI feature class grid
+                            , 'method=structure'                            -- Ensures overlaps are not interpreted as holes
+                            )
+            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, {resolution}));   -- Check validity using ESRI-like resolution
 
-        '''
+        """
 
-        mock_cursor.execute.assert_called_once_with(expected_call)
+        # Act
+        sql.makevalid_shapes(mock_conn, schema, table, shape_field, resolution)
+
+        # Assert
+        mock_conn.transaction.assert_called_once_with()
+        assert mock_cursor.execute.call_count == 2
+        mock_cursor.execute.assert_any_call(sql_call_one)
+        mock_cursor.execute.assert_any_call(sql_call_two)
+
+    def test_extract_geometry_collections(self):
+        # Arrange
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_conn.cursor.return_value = mock_cursor
+        mock_transaction = MagicMock()
+        mock_conn.transaction.return_value.__enter__.return_value = mock_transaction
+
+        schema = "public"
+        table = "test_table"
+        resolution = 0.000000001
+
+        sql_call = f"""
+            UPDATE {schema}.{table}
+            SET shape =
+                ST_MakeValid(            -- Repair geometries after snapping to grid and union
+                    ST_UnaryUnion(       -- Unions geoms to ensure makvalid does not revert back to geometry collection
+                        ST_SnapToGrid(                    -- Snap to ESRI feature class grid  
+                          ST_CollectionExtract(shape, 3), -- Extracts geometry collections to polygon
+                          {resolution}
+                        )                                    
+                  ),
+                  'method=structure'
+                )
+            WHERE ST_GeometryType(shape) = 'ST_GeometryCollection';
+
+        """
+
+
+        sql.extract_geometry_collections(mock_conn, schema, table)
+
+        # Assert
+        mock_conn.transaction.assert_called_once()
+        mock_cursor.execute.assert_called_once_with(sql_call)
 
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
