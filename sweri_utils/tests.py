@@ -1,10 +1,11 @@
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
-
 
 class DownloadTests(TestCase):
     def setUp(self):
@@ -1056,3 +1057,29 @@ class SwizzleTests(TestCase):
 
         with self.assertRaises(TypeError):
             swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
+
+class HostedTests(TestCase):
+    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
+    @patch('sweri_utils.hosted.get_count')
+    def test_verify_feature_same_count(self, mock_get_count):
+        from sweri_utils.hosted  import verify_feature_count
+
+        mock_conn = MagicMock()
+        mock_fl = MagicMock()
+        mock_get_count.return_value = 1400000
+        mock_fl.query.return_value = 1400000
+
+        verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+
+    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
+    @patch('sweri_utils.hosted.get_count')
+    def test_verify_feature_mismatched_count(self, mock_get_count):
+        from sweri_utils.hosted  import verify_feature_count
+
+        mock_conn = MagicMock()
+        mock_fl = MagicMock()
+        mock_get_count.return_value = 1400000
+        mock_fl.query.return_value = 1000000
+
+        with self.assertRaises(ValueError):
+            verify_feature_count(mock_conn, 'schema', 'table', mock_fl)

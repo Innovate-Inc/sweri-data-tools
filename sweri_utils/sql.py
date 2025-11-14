@@ -2,6 +2,8 @@ import logging
 import os
 from typing import TextIO
 import psycopg
+from sqlalchemy import create_engine
+
 from .sweri_logging import log_this
 
 def rename_postgres_table(conn: psycopg.Connection, schema: str, old_table_name: str, new_table_name: str) -> None:
@@ -486,6 +488,16 @@ def create_db_conn_from_envs():
     docker_db_password = os.getenv('DB_PASSWORD')
     return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
 
+@log_this
+def get_sql_alchemy_engine_from_envs():
+    docker_db_host = os.getenv('DB_HOST')
+    docker_db_port = int(os.getenv('DB_PORT'))
+    docker_db_name = os.getenv('DB_NAME')
+    docker_db_user = os.getenv('DB_USER')
+    docker_db_password = os.getenv('DB_PASSWORD')
+
+    db_conn_string = f'postgresql+psycopg://{docker_db_user}:{docker_db_password}@{docker_db_host}:{docker_db_port}/{docker_db_name}'
+    return create_engine(db_conn_string, pool_size=10, max_overflow=20, pool_recycle=300)
 
 def truncate_and_insert(schema, source_table, destination_table, conn, common_fields):
     """
@@ -576,3 +588,20 @@ def populate_sequence_field(conn, schema, table, id_field, sequence_name):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(query)
+
+
+def get_count(conn, schema, table, where='1=1'):
+    """
+    Gets the count of records in a specified table in a PostgreSQL database based on a condition.
+
+    :param conn: The database connection object.
+    :param schema: The schema where the table is located.
+    :param table: The name of the table to count records from.
+    :param where: The condition to specify which records to count.
+    :return: The count of records matching the condition.
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'SELECT COUNT(*) FROM {schema}.{table} WHERE {where};')
+        count = cursor.fetchone()[0]
+    return count
