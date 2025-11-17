@@ -872,24 +872,24 @@ if __name__ == "__main__":
         pg_cursor.execute(f'''TRUNCATE TABLE {target_schema}.{insert_table}''')
         pg_cursor.execute('COMMIT;')
 
-    # FACTS Hazardous Fuels
-    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
-
-    # special input srs for common attributes
-    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
-    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    target_schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
-    hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
-    remove_wildfire_non_treatment(pg_conn, target_schema, insert_table)
-
-
-    # FACTS Common Attributes
-    common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
+    # # FACTS Hazardous Fuels
+    # hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
+    # download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
+    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
+    #
+    # # special input srs for common attributes
+    # # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+    # # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+    # input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+    # gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    #                 target_schema, ogr_db_string, input_srs)
+    # hazardous_fuels_date_filtering(pg_conn, target_schema, hazardous_fuels_table)
+    # hazardous_fuels_insert(pg_conn, target_schema, insert_table, hazardous_fuels_table)
+    # remove_wildfire_non_treatment(pg_conn, target_schema, insert_table)
+    #
+    #
+    # # FACTS Common Attributes
+    # common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
 
     # NFPORS
     update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
@@ -902,45 +902,45 @@ if __name__ == "__main__":
     ifprs_insert(pg_conn, target_schema, insert_table)
     ifprs_treatment_date(pg_conn, target_schema, insert_table)
     ifprs_status_consolidation(pg_conn, target_schema, insert_table)
-
-    # Modify treatment index in place
-    remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
-    trim_whitespace(pg_conn, target_schema, insert_table, 'agency')
-    fund_source_updates(pg_conn, target_schema, insert_table)
-    update_total_cost(pg_conn, target_schema, insert_table)
-    correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
-    add_twig_category(pg_conn, target_schema)
-    update_state_abbr(pg_conn, target_schema, insert_table)
-    flag_duplicate_ids(pg_conn, target_schema, insert_table)
-    flag_high_cost(pg_conn, target_schema, insert_table)
-    flag_duplicates(pg_conn, target_schema, insert_table)
-    flag_uom_outliers(pg_conn, target_schema, insert_table)
-    revert_multi_to_poly(pg_conn, target_schema, insert_table)
-    simplify_large_polygons(pg_conn, target_schema, insert_table, max_points_before_simplify, simplify_tolerance, fc_resolution)
-    makevalid_shapes(pg_conn, target_schema, insert_table, 'shape', fc_resolution)
-    extract_geometry_collections(pg_conn, target_schema, insert_table, fc_resolution)
-    remove_zero_area_polygons(pg_conn, target_schema, insert_table)
-    flag_spatial_errors(pg_conn, target_schema, insert_table)
-
-    # update treatment points
-    update_treatment_points(pg_conn, target_schema, insert_table)
-
-    # treatment index
-    ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-                               insert_table, max_points_before_simplify, chunk)
-
-    if additional_polygon_view_ids:
-        for view_id in additional_polygon_view_ids:
-            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
-
-
-    # treatment index points
-    ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
-                              points_table, max_points_before_simplify, chunk)
-
-    if additional_point_view_ids:
-        for view_id in additional_point_view_ids:
-            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
-
-
-    pg_conn.close()
+    #
+    # # Modify treatment index in place
+    # remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
+    # trim_whitespace(pg_conn, target_schema, insert_table, 'agency')
+    # fund_source_updates(pg_conn, target_schema, insert_table)
+    # update_total_cost(pg_conn, target_schema, insert_table)
+    # correct_biomass_removal_typo(pg_conn, target_schema, insert_table)
+    # add_twig_category(pg_conn, target_schema)
+    # update_state_abbr(pg_conn, target_schema, insert_table)
+    # flag_duplicate_ids(pg_conn, target_schema, insert_table)
+    # flag_high_cost(pg_conn, target_schema, insert_table)
+    # flag_duplicates(pg_conn, target_schema, insert_table)
+    # flag_uom_outliers(pg_conn, target_schema, insert_table)
+    # revert_multi_to_poly(pg_conn, target_schema, insert_table)
+    # simplify_large_polygons(pg_conn, target_schema, insert_table, max_points_before_simplify, simplify_tolerance, fc_resolution)
+    # makevalid_shapes(pg_conn, target_schema, insert_table, 'shape', fc_resolution)
+    # extract_geometry_collections(pg_conn, target_schema, insert_table, fc_resolution)
+    # remove_zero_area_polygons(pg_conn, target_schema, insert_table)
+    # flag_spatial_errors(pg_conn, target_schema, insert_table)
+    #
+    # # update treatment points
+    # update_treatment_points(pg_conn, target_schema, insert_table)
+    #
+    # # treatment index
+    # ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+    #                            insert_table, max_points_before_simplify, chunk)
+    #
+    # if additional_polygon_view_ids:
+    #     for view_id in additional_polygon_view_ids:
+    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
+    #
+    #
+    # # treatment index points
+    # ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+    #                           points_table, max_points_before_simplify, chunk)
+    #
+    # if additional_point_view_ids:
+    #     for view_id in additional_point_view_ids:
+    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
+    #
+    #
+    # pg_conn.close()

@@ -5,6 +5,7 @@ from time import sleep
 import requests
 from datetime import datetime
 
+from .celery_helpers import download_and_insert_service
 from .sql import create_db_conn_from_envs
 from .sweri_logging import log_this
 
@@ -135,6 +136,15 @@ def get_ids(service_url, where='1=1', geometry=None, geometry_type=None):
         raise Exception('objectIds are missing from request')
     return data.get('objectIds')
 
+def get_id_chunks(ids, chunk_size=500):
+    if chunk_size == 1:
+        for id in ids:
+            yield [id]
+        return
+
+    for i in range(0, len(ids), chunk_size):
+        yield ids[i:i + chunk_size]
+
 
 def get_query_params_chunk(ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json'):
     """
@@ -261,16 +271,7 @@ def service_to_postgres(service_url, where_clause, wkid, ogr_db_string, schema, 
     #fetches all ids that will be added
     ids = get_ids(service_url, where=where_clause)
 
-    for r in get_all_features(service_url, ids, wkid, out_fields=['*'], chunk_size=chunk_size, format='json', return_full_response=True):
-
-        options = VectorTranslateOptions(format='PostgreSQL',
-                                         accessMode='append',
-                                         geometryType=['POLYGON', 'PROMOTE_TO_MULTI'],
-                                         layerName=f'{schema}.{destination_table}_buffer')
-        # commit chunks to database in
-        _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
-        del _
-
+    download_and_insert_service(ids, service_url, wkid, chunk_size, schema, destination_table, ogr_db_string, out_fields=['*'])
     # copy data from buffer table to destination table
     with conn.transaction():
         cursor.execute(f'''TRUNCATE {schema}.{destination_table};''')
