@@ -611,7 +611,7 @@ if __name__ == "__main__":
     common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
 
     # NFPORS
-    update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
+    # update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
     nfpors_insert(pg_conn, target_schema, insert_table)
     nfpors_fund_code(pg_conn, target_schema, insert_table)
     nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
