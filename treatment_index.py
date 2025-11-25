@@ -644,22 +644,22 @@ if __name__ == "__main__":
     # update treatment points
     update_treatment_points(pg_conn, target_schema, insert_table)
 
-    # # treatment index
-    # ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
-    #                            insert_table, max_points_before_simplify, chunk)
-    #
-    # if additional_polygon_view_ids:
-    #     for view_id in additional_polygon_view_ids:
-    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
-    #
-    #
-    # # treatment index points
-    # ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
-    #                           points_table, max_points_before_simplify, chunk)
-    #
-    # if additional_point_view_ids:
-    #     for view_id in additional_point_view_ids:
-    #         swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
-    #
-    #
-    # pg_conn.close()
+    # treatment index
+    ti_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_view_id, treatment_index_data_ids, target_schema,
+                               insert_table, max_points_before_simplify, chunk)
+
+    if additional_polygon_view_ids:
+        for view_id in additional_polygon_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_data_source)
+
+
+    # treatment index points
+    ti_points_data_source = hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, treatment_index_points_view_id, treatment_index_points_data_ids, target_schema,
+                              points_table, max_points_before_simplify, chunk)
+
+    if additional_point_view_ids:
+        for view_id in additional_point_view_ids:
+            swizzle_view(root_url, gis_url, gis_user, gis_password, view_id, ti_points_data_source)
+
+
+    pg_conn.close()
