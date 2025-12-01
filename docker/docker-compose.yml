@@ -14,6 +14,7 @@ services:
         condition: service_healthy
       celery:
         condition: service_healthy
+#    command: sh -c "python main.py"
 #  app_console:
 #      service:
 #    extends:
@@ -66,7 +67,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     shm_size: 1gb

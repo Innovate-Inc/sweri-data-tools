@@ -9,6 +9,9 @@ services:
   celery:
     volumes:
       - ..:/src
+  db:
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
   pgadmin:
     image: dpage/pgadmin4:latest
     env_file:
