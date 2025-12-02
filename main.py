@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
-
+from sweri_utils.sweri_logging import log_this
 
 if __name__ == "__main__":
     logging.info('starting data processing')
@@ -35,12 +35,17 @@ if __name__ == "__main__":
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     ############## processing in docker ################
+    @log_this
+    def test():
+        print('start')
+        time.sleep(10)
+        print('sleeepy time over')
     try:
         # TODO: add treatment index processing here
         # add read / write to text file with index date run here
-        time.sleep(10)
-        print('sleeepy time over')
 
+
+        test()
         # run_intersections(pg_conn, db_schema,
         #                   script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
         #                   root_site_url,
