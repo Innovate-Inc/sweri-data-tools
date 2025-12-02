@@ -6,7 +6,3 @@ services:
   celery: 
     volumes:
       - ..:/src
-networks:
-    default:
-        name: docker-postgres_default
-        external: true    
