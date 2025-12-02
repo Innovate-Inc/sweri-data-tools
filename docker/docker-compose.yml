@@ -14,7 +14,7 @@ services:
         condition: service_healthy
       celery:
         condition: service_healthy
-#    command: sh -c "python main.py"
+    command: sh -c "python main.py"
 #  app_console:
 #      service:
 #    extends:
