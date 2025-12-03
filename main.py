@@ -35,23 +35,14 @@ if __name__ == "__main__":
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     ############## processing in docker ################
-    @log_this
-    def test():
-        print('start')
-        time.sleep(10)
-        print('sleeepy time over')
     try:
         # TODO: add treatment index processing here
-        # add read / write to text file with index date run here
-
-
-        test()
-        # run_intersections(pg_conn, db_schema,
-        #                   script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
-        #                   root_site_url,
-        #                   portal_url,
-        #                   portal_user,
-        #                   portal_password, intersections_view_id, intersections_data_ids)
+        run_intersections(pg_conn, db_schema,
+                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
+                          root_site_url,
+                          portal_url,
+                          portal_user,
+                          portal_password, intersections_view_id, intersections_data_ids)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
