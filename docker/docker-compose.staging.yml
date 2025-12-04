@@ -1,12 +1,1 @@
 name: SWERI Processing Staging
-services:
-  app:
-    volumes:
-      - ..:/src
-  celery: 
-    volumes:
-      - ..:/src
-networks:
-    default:
-        name: docker-postgres_default
-        external: true    
