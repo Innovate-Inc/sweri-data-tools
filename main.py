@@ -17,12 +17,6 @@ if __name__ == "__main__":
     script_start = datetime.now()
     sr_wkid = 4326
 
-
-
-
-
-
-
     # GIS user credentials
     root_site_url = os.getenv('ESRI_ROOT_URL')
     portal_url = os.getenv('ESRI_PORTAL_URL')
@@ -87,5 +81,3 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
         sys.exit(1)
-
-
