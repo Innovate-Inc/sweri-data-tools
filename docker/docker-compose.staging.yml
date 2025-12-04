@@ -1,8 +1,1 @@
 name: SWERI Processing Staging
-services:
-  app:
-    volumes:
-      - ..:/src
-  celery: 
-    volumes:
-      - ..:/src
