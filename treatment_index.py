@@ -958,5 +958,4 @@ if __name__ == "__main__":
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                        additional_point_view_ids,
-                        treatment_index_points_data_ids)
+                        treatment_index_points_data_ids, additional_point_view_ids)
