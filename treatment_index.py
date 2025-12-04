@@ -592,6 +592,7 @@ if __name__ == "__main__":
         pg_cursor.execute('COMMIT;')
 
     # FACTS Hazardous Fuels
+    # todo: put this into a task
     hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
     download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
     extract_and_remove_zip_file(hazardous_fuels_zip_file)
@@ -608,19 +609,24 @@ if __name__ == "__main__":
 
 
     # FACTS Common Attributes
+    #todo: put this into a task
     common_attributes_download_and_insert(out_wkid, pg_conn, ogr_db_string, target_schema, insert_table, hazardous_fuels_table)
 
     # NFPORS
+    # todo: put this into a task
     # update_nfpors(nfpors_url, pg_conn, target_schema, out_wkid, ogr_db_string)
     nfpors_insert(pg_conn, target_schema, insert_table)
     nfpors_fund_code(pg_conn, target_schema, insert_table)
     nfpors_treatment_date_and_status(pg_conn, target_schema, insert_table)
 
     # IFPRS processing and insert
+    # todo: put these methods into a task
     update_ifprs(pg_conn, target_schema, out_wkid, ifprs_url, ogr_db_string)
     ifprs_insert(pg_conn, target_schema, insert_table)
     ifprs_treatment_date(pg_conn, target_schema, insert_table)
     ifprs_status_consolidation(pg_conn, target_schema, insert_table)
+
+    # todd: wait for ifprs, nfpors, haz_fuls, and common attribute tasks to complete
 
     # Modify treatment index in place
     remove_blank_strings(pg_conn, target_schema, insert_table, fields_to_clean)
