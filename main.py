@@ -59,12 +59,11 @@ if __name__ == "__main__":
 
     try:
         # Get current day and env run day for treatment index
-        ti_run_day = os.getenv('TI_RUN_DAY')
-        current_datetime = datetime.now()
-        today_string = current_datetime.strftime('%A')
+        ti_run_day_index = int(os.getenv('TI_RUN_DAY_INDEX'))
+        day_of_week_index = datetime.now().weekday()
 
         # If today is run day
-        if ti_run_day == today_string:
+        if ti_run_day_index == day_of_week_index:
             run_treatment_index(pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
                                 nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id,
