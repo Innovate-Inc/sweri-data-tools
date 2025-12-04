@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.sweri_logging import log_this
+from treatment_index import run_treatment_index
 
 if __name__ == "__main__":
     logging.info('starting data processing')
@@ -16,27 +17,66 @@ if __name__ == "__main__":
     script_start = datetime.now()
     sr_wkid = 4326
 
+
+
+
+
+
+
     # GIS user credentials
     root_site_url = os.getenv('ESRI_ROOT_URL')
     portal_url = os.getenv('ESRI_PORTAL_URL')
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
 
+    # treatment index specific environment variables
+    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    ifprs_url = os.getenv('IFPRS_URL')
+    nfpors_url = os.getenv('NFPORS_URL')
+
     #intersection specific environment variables
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
     intersection_src_view_url = os.getenv('INTERSECTION_SOURCES_VIEW_URL')
-    # views
+
+    # views and data sources
     intersections_view_id = os.getenv('INTERSECTIONS_VIEW_ID')
     intersections_data_ids = [os.getenv('INTERSECTIONS_DATA_ID_1'), os.getenv('INTERSECTIONS_DATA_ID_2')]
+
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'),
+                                   os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
+
+    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),
+                                 os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
+                                       os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
     pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+    insert_table = 'treatment_index'
+    treatment_index_points_table = 'treatment_index_points'
     ############## processing in docker ################
+
     try:
-        # TODO: add treatment index processing here
+        # Get current day and env run day for treatment index
+        ti_run_day = os.getenv('TI_RUN_DAY')
+        current_datetime = datetime.now()
+        today_string = current_datetime.strftime('%A')
+
+        # If today is run day
+        if ti_run_day == today_string:
+            run_treatment_index(pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
+                                nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
+                                treatment_index_view_id,
+                                treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
+                                treatment_index_points_data_ids, additional_point_view_ids)
+
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
                           root_site_url,
@@ -47,3 +87,5 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
         sys.exit(1)
+
+
