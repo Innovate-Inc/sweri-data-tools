@@ -1,5 +1,7 @@
 import os
 import zipfile
+
+import geopandas
 import requests
 import logging
 import shutil
@@ -144,3 +146,35 @@ def create_gdb(out_name, out_dir):
     out_name_ext = f'{out_name}.gdb'
     arcpy.management.CreateFileGDB(out_dir, out_name_ext)
     return os.path.join(out_dir, out_name_ext)
+
+def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid, input_srs=None, work_dir=None, query=None, geom_col="shape"):
+
+    if not work_dir:
+        work_dir = os.getcwd()
+
+    gdb_path = os.path.join(work_dir, f"{fc_name}.gdb")
+    if os.path.exists(gdb_path):
+        shutil.rmtree(gdb_path)
+
+    opts = {
+        "format": "OpenFileGDB",
+        "makeValid": True,
+        "dstSRS": f"EPSG:{wkid}",
+        "layerName": fc_name,
+    }
+
+    if input_srs:
+        opts["srcSRS"] = input_srs
+
+    if query:
+        opts["SQLStatement"] = query
+
+    else:
+        opts["SQLStatement"] = f'SELECT * FROM {schema}.{table} WHERE {geom_col} IS NOT NULL'
+
+    options = VectorTranslateOptions(**opts)
+
+    VectorTranslate(destNameOrDestDS=gdb_path, srcDS=ogr_db_string, options=options)
+    logging.info(f"{gdb_path} written")
+
+    return gdb_path
