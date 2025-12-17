@@ -36,6 +36,7 @@ def get_disclaimer(out_dir, url, file_name='disclaimer.html'):
     except requests.exceptions.RequestException as e:
         return None
 
+@log_this
 def create_zip(zip_dir, name, out_dir=None):
     """
     creates a zip file from files in the zip_dir directory
@@ -147,8 +148,9 @@ def create_gdb(out_name, out_dir):
     arcpy.management.CreateFileGDB(out_dir, out_name_ext)
     return os.path.join(out_dir, out_name_ext)
 
-def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid, input_srs=None, work_dir=None, query=None, geom_col="shape"):
-
+@log_this
+def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
+                    input_srs=None, work_dir=None, query=None, geom_col="shape"):
     if not work_dir:
         work_dir = os.getcwd()
 
@@ -160,21 +162,21 @@ def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid, input_srs=None,
         "format": "OpenFileGDB",
         "makeValid": True,
         "dstSRS": f"EPSG:{wkid}",
+        "geometryType": ["PROMOTE_TO_MULTI", "MULTIPOLYGON"],
         "layerName": fc_name,
     }
 
     if input_srs:
         opts["srcSRS"] = input_srs
 
-    if query:
-        opts["SQLStatement"] = query
-
-    else:
-        opts["SQLStatement"] = f'SELECT * FROM {schema}.{table} WHERE {geom_col} IS NOT NULL'
+    opts["SQLStatement"] = query or f"SELECT * FROM {schema}.{table} WHERE {geom_col} IS NOT NULL"
 
     options = VectorTranslateOptions(**opts)
 
-    VectorTranslate(destNameOrDestDS=gdb_path, srcDS=ogr_db_string, options=options)
-    logging.info(f"{gdb_path} written")
+    out_ds = VectorTranslate(destNameOrDestDS=gdb_path, srcDS=ogr_db_string, options=options)
+    if out_ds is None:
+        raise RuntimeError("nothing written")
+    out_ds = None
 
+    logging.info(f"{gdb_path} written")
     return gdb_path

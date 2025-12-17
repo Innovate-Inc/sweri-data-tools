@@ -49,7 +49,7 @@ if __name__ == "__main__":
 
     # s3 details
     s3_bucket = os.getenv('S3_BUCKET')
-    s3_obj_name = os.getenv('S3_OBJECT_NAME')
+    s3_obj_name = os.getenv('S3_OBJ_NAME')
 
     ############### database connections ################
     # local docker db environment variables
