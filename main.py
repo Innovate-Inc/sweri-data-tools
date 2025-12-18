@@ -47,6 +47,10 @@ if __name__ == "__main__":
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
+    # s3 details
+    s3_bucket = os.getenv('S3_BUCKET')
+    s3_obj_name = os.getenv('S3_OBJ_NAME')
+
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -68,7 +72,7 @@ if __name__ == "__main__":
                                 nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id,
                                 treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                                treatment_index_points_data_ids, additional_point_view_ids)
+                                treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
 
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
