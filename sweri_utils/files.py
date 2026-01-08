@@ -104,6 +104,27 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
             logging.error(f'Error deleting {gdb_path}: {e}')
 
 
+def geoparquet_to_postgres(file_name, projection: int, postgres_table_name, schema, ogr_db_string, where, input_srs=None):
+    options_inputs = {
+        "format": 'PostgreSQL',
+        "dstSRS": f'EPSG:{projection}',
+        "accessMode": 'overwrite',
+        "layerName": f"{schema}.{postgres_table_name}",
+        "where": where
+    }
+
+    if input_srs:
+        options_inputs['srcSRS'] = input_srs
+
+    options = VectorTranslateOptions(**options_inputs)
+
+    file_name = os.path.join(os.getcwd(), file_name)
+
+    # Upload fc to postgres
+    _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=file_name, options=options)
+    del _
+    logging.info(f'{postgres_table_name} now in geodatabase')
+
 ########################### arcpy required for below functions ###########################
 def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):
     """

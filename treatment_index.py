@@ -9,7 +9,7 @@ import re
 from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
     extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
 from sweri_utils.download import service_to_postgres, get_ids
-from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
+from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file, geoparquet_to_postgres
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
@@ -40,12 +40,13 @@ def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 100)
 
 @log_this
-def update_state_data(conn, schema, wkid, service_url, ogr_db_string):
-    where = "DataCategory = 'state'"
+def update_state_data(parquet_file, schema, wkid, ogr_db_string):
+    where = "DataCategory = 'State'"
 
     destination_table = 'state_data'
+    geoparquet_to_postgres(parquet_file, wkid, destination_table, schema, ogr_db_string, where)
+    # service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
 
-    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -230,10 +231,10 @@ def state_data_insert(conn, schema, treatment_index):
             treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
             treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
             treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
-            federalfundingamount as total_cost, 'Completed' as status, shape
+            federalfundingamount as total_cost, 'Completed' as status, geometry
 
         FROM {schema}.state_data
-        WHERE {schema}.state_data.shape IS NOT NULL
+        WHERE {schema}.state_data.geometry IS NOT NULL
         and
         {schema}.state_data.actualcompletiondate IS NOT NULL;
 
@@ -886,7 +887,7 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
 
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
-                        ifprs_service_url, state_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                        ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
@@ -931,7 +932,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     ifprs_status_consolidation(conn, schema, table)
 
     # State Data
-    update_state_data(conn, schema, wkid, state_service_url, ogr_db_conn_string)
+    download_file_from_url(state_data_url, 'state_data.parquet')
+    update_state_data(conn, schema, wkid, ogr_db_conn_string)
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn, schema, table)
 
