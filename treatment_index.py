@@ -39,6 +39,14 @@ def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
 
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 100)
 
+@log_this
+def update_state_data(conn, schema, wkid, service_url, ogr_db_string):
+    where = "DataCategory = 'state'"
+
+    destination_table = 'state_data'
+
+    service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
+
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
     exclusion_ids = os.getenv('EXCLUSION_IDS')
@@ -203,6 +211,48 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
         WHERE {schema}.{facts_haz_table}.shape IS NOT NULL;
         
         ''')
+
+def state_data_insert(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+        INSERT INTO {schema}.{treatment_index} (
+
+            objectid, name, treatment_date, date_current,
+            acres, fund_code, identifier_database, 
+            category, unique_id, state, agency,
+            total_cost, status, shape
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'),
+            treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
+            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
+            treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
+            federalfundingamount as total_cost, 'Completed' as status, shape
+
+        FROM {schema}.state_data
+        WHERE {schema}.state_data.shape IS NOT NULL
+        and
+        {schema}.state_data.actualcompletiondate IS NOT NULL;
+
+        ''')
+
+def null_missing_state_categories(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET category = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (category = 'VALUE NOT GIVEN'
+            OR category = 'VALUE NOT MAPPED');
+
+        ''')
+
 
 def remove_wildfire_non_treatment(conn, schema, treatment_index):
     cursor = conn.cursor()
@@ -717,6 +767,7 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
 def add_twig_category(conn, schema):
     common_attributes_twig_category(conn, schema)
     facts_nfpors_twig_category(conn, schema)
+    state_data_twig_category(conn, schema)
 
 @log_this
 def common_attributes_twig_category(conn, schema):
@@ -753,6 +804,19 @@ def facts_nfpors_twig_category(conn, schema):
                 )     
             AND
             ti.type = tc.type;
+        ''')
+
+def state_data_twig_category(conn, schema):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.treatment_index ti
+            SET twig_category = tc.twig_category
+            FROM
+            {schema}.twig_category_lookup tc
+            WHERE ti.identifier_database = 'NASF'
+            AND
+            ti.category = tc.category;
         ''')
 
 @log_this
@@ -822,7 +886,7 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
 
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
-                        ifprs_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                        ifprs_service_url, state_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
@@ -866,6 +930,11 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     ifprs_treatment_date(conn, schema, table)
     ifprs_status_consolidation(conn, schema, table)
 
+    # State Data
+    update_state_data(conn, schema, wkid, state_service_url, ogr_db_conn_string)
+    state_data_insert(conn, schema, table)
+    null_missing_state_categories(conn, schema, table)
+
     # Modify treatment index in place
     remove_blank_strings(conn, schema, table, fields_for_cleanup)
     trim_whitespace(conn, schema, table, 'agency')
@@ -887,25 +956,25 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-
-    # treatment index
-    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-                                               ti_data_ids, schema,
-                                               table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_poly_view_ids:
-        for polygon_view_id in additional_poly_view_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-
-    # treatment index points
-    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-                                                      ti_points_view_id, ti_points_data_ids,
-                                                      schema,
-                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_point_views_ids:
-        for point_view_id in additional_point_views_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+    #
+    # # treatment index
+    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+    #                                            ti_data_ids, schema,
+    #                                            table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_poly_view_ids:
+    #     for polygon_view_id in additional_poly_view_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+    #
+    # # treatment index points
+    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+    #                                                   ti_points_view_id, ti_points_data_ids,
+    #                                                   schema,
+    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_point_views_ids:
+    #     for point_view_id in additional_point_views_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
     conn.close()
 
@@ -922,6 +991,7 @@ if __name__ == "__main__":
     facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
     nfpors_url = os.getenv('NFPORS_URL')
+    state_data_url = os.getenv('STATE_DATA_URL')
 
     #This is the final table
     insert_table = 'treatment_index'
@@ -956,6 +1026,6 @@ if __name__ == "__main__":
     start_objectid = 0
 
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
-                        ifprs_url, root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
+                        ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids)
