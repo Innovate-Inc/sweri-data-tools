@@ -27,6 +27,8 @@ if __name__ == "__main__":
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
+    state_data_url = os.getenv('STATE_DATA_URL')
+
 
     #intersection specific environment variables
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
@@ -65,17 +67,17 @@ if __name__ == "__main__":
         # If today is run day
         if ti_run_day_index == day_of_week_index:
             run_treatment_index(pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
-                                nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
-                                treatment_index_view_id,
+                                nfpors_url, ifprs_url, state_data_url, root_site_url, portal_url,
+                                portal_user, portal_password, treatment_index_view_id,
                                 treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                                 treatment_index_points_data_ids, additional_point_view_ids)
 
-        run_intersections(pg_conn, db_schema,
-                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
-                          root_site_url,
-                          portal_url,
-                          portal_user,
-                          portal_password, intersections_view_id, intersections_data_ids)
+        # run_intersections(pg_conn, db_schema,
+        #                   script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
+        #                   root_site_url,
+        #                   portal_url,
+        #                   portal_user,
+        #                   portal_password, intersections_view_id, intersections_data_ids)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
