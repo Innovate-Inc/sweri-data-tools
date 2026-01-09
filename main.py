@@ -72,12 +72,12 @@ if __name__ == "__main__":
                                 treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                                 treatment_index_points_data_ids, additional_point_view_ids)
 
-        # run_intersections(pg_conn, db_schema,
-        #                   script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
-        #                   root_site_url,
-        #                   portal_url,
-        #                   portal_user,
-        #                   portal_password, intersections_view_id, intersections_data_ids)
+        run_intersections(pg_conn, db_schema,
+                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
+                          root_site_url,
+                          portal_url,
+                          portal_user,
+                          portal_password, intersections_view_id, intersections_data_ids)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
