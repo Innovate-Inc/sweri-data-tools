@@ -14,7 +14,7 @@ from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column,
     extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file, \
-    pg_table_to_gdb, create_zip
+    pg_table_to_gdb, create_zip, geoparquet_to_postgres, get_wkid_from_geoparquet
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
@@ -43,6 +43,16 @@ def update_ifprs(conn, schema, wkid, service_url, ogr_db_string):
     destination_table = 'ifprs'
 
     service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 100)
+
+@log_this
+def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
+    where = "DataCategory = 'State'"
+
+    in_wkid = get_wkid_from_geoparquet(parquet_file)
+
+    destination_table = 'state_data'
+    geoparquet_to_postgres(parquet_file, out_wkid, destination_table, schema, ogr_db_string, where, in_wkid)
+    # service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
 
 def create_nfpors_where_clause():
     #some ids break download, those will be excluded
@@ -207,6 +217,60 @@ def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
         FROM {schema}.{facts_haz_table}
         WHERE {schema}.{facts_haz_table}.shape IS NOT NULL;
         
+        ''')
+
+def state_data_insert(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+        INSERT INTO {schema}.{treatment_index} (
+
+            objectid, name, treatment_date, date_current,
+            acres, fund_code, identifier_database, 
+            category, unique_id, state, agency,
+            total_cost, status, shape
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'),
+            treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
+            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
+            treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
+            federalfundingamount as total_cost, 'Completed' as status, geometry as shape
+        FROM {schema}.state_data
+        WHERE {schema}.state_data.geometry IS NOT NULL
+        and
+        {schema}.state_data.actualcompletiondate IS NOT NULL;
+
+        ''')
+
+def null_missing_state_categories(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET category = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (category = 'VALUE NOT GIVEN'
+            OR category = 'VALUE NOT MAPPED');
+
+        ''')
+
+def null_missing_state_fund_codes(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET fund_code = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (fund_code = 'VALUE NOT GIVEN'
+            OR fund_code = 'VALUE NOT MAPPED');
+
         ''')
 
 def remove_wildfire_non_treatment(conn, schema, treatment_index):
@@ -722,6 +786,7 @@ def common_attributes_download_and_insert(projection, conn, ogr_db_string, schem
 def add_twig_category(conn, schema):
     common_attributes_twig_category(conn, schema)
     facts_nfpors_twig_category(conn, schema)
+    state_data_twig_category(conn, schema)
 
 @log_this
 def common_attributes_twig_category(conn, schema):
@@ -758,6 +823,19 @@ def facts_nfpors_twig_category(conn, schema):
                 )     
             AND
             ti.type = tc.type;
+        ''')
+
+def state_data_twig_category(conn, schema):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.treatment_index ti
+            SET twig_category = tc.twig_category
+            FROM
+            {schema}.twig_category_lookup tc
+            WHERE ti.identifier_database = 'NASF'
+            AND
+            ti.category = tc.category;
         ''')
 
 @log_this
@@ -837,7 +915,7 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, 
         os.remove(zip_path)
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
-                        ifprs_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                        ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids,bucket, s3_obj_name, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
@@ -880,6 +958,13 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     ifprs_insert(conn, schema, table)
     ifprs_treatment_date(conn, schema, table)
     ifprs_status_consolidation(conn, schema, table)
+
+    # State Data
+    download_file_from_url(state_data_url, 'state_data.parquet')
+    update_state_data('state_data.parquet', wkid, schema, ogr_db_conn_string)
+    state_data_insert(conn, schema, table)
+    null_missing_state_categories(conn, schema, table)
+    null_missing_state_fund_codes(conn, schema, table)
 
     # Modify treatment index in place
     remove_blank_strings(conn, schema, table, fields_for_cleanup)
@@ -938,6 +1023,7 @@ if __name__ == "__main__":
     facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
     nfpors_url = os.getenv('NFPORS_URL')
+    state_data_url = os.getenv('STATE_DATA_URL')
 
     #This is the final table
     insert_table = 'treatment_index'
@@ -975,6 +1061,6 @@ if __name__ == "__main__":
     s3_obj_name = os.getenv('S3_OBJECT_NAME')
 
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
-                        ifprs_url, root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
+                        ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
