@@ -3,9 +3,6 @@ services:
   app:
     volumes:
       - ..:/src
-    depends_on:
-      db:
-        condition: service_healthy
   celery:
     volumes:
       - ..:/src

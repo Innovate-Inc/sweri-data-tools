@@ -1,5 +1,9 @@
 import os
+import shutil
 
+import geopandas
+
+from sweri_utils.s3 import upload_to_s3
 from sweri_utils.swizzle import swizzle_service
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
@@ -898,11 +902,21 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     token = gis_con.session.auth.token
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
+@log_this
+def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, query=None, work_dir=None, geom_col='shape'):
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid)
+    zip_path = create_zip(gdb_path, table, out_dir=work_dir)
+    upload_to_s3(bucket, zip_path, obj_name)
+
+    if gdb_path and os.path.exists(gdb_path):
+        shutil.rmtree(gdb_path)
+    if zip_path and os.path.exists(zip_path):
+        os.remove(zip_path)
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
                         ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
-                        additional_point_views_ids, ti_points_table='treatment_index_points',
+                        additional_point_views_ids,bucket, s3_obj_name, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
                         fields_for_cleanup=['type', 'fund_source'], max_poly_size_before_simplify=10000,
                         simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
@@ -972,7 +986,6 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-
     # treatment index
     treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                                                ti_data_ids, schema,
@@ -991,6 +1004,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     if additional_point_views_ids:
         for point_view_id in additional_point_views_ids:
             swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+
+    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
 
     conn.close()
 
@@ -1041,7 +1056,10 @@ if __name__ == "__main__":
     fc_resolution = 0.000000001 # ESPG:4326 degrees
     start_objectid = 0
 
+    s3_bucket = os.getenv('S3_BUCKET')
+    s3_obj_name = os.getenv('S3_OBJECT_NAME')
+
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                        treatment_index_points_data_ids, additional_point_view_ids)
+                        treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
