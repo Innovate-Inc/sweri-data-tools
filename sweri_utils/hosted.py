@@ -13,7 +13,7 @@ from arcgis.gis import GIS
 
 global_engine = None
 
-# @log_this
+@log_this
 def get_view_data_source_id(view):
     view_flc = FeatureLayerCollection.fromitem(view)
 
@@ -70,7 +70,6 @@ def retry_upload(func, *args, **kwargs):
     else:
         raise Exception('Upload Tries Exceeded')
 
-
 def refresh_gis(gis_url, gis_user, gis_password):
     gis = GIS(gis_url,gis_user, gis_password)
     return gis
@@ -86,6 +85,7 @@ def get_object_id_chunks(conn, schema, table, where, chunk_size=500):
     for i in range(0, len(ids), chunk_size):
         yield ids[i:i + chunk_size]
 
+@log_this
 def verify_feature_count(conn,schema, table, new_source_feature_layer):
     # check counts before swizzle
     db_count = get_count(conn, schema, table)

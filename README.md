@@ -44,7 +44,9 @@ Current source databases:
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
 
 FACTS Common attributes records are a subset of the database determined to be treatments based on a process detailed in
-the _Data Descriptor_ paper
+the _Data Descriptor_ paper. Each run a .gdb file of the full treatment index is created and uploaded to s3. 
+
+- [Full TWIG Treatment Index Copy](https://sweri-treament-index.s3.us-west-2.amazonaws.com/treatment_index.zip)
 
 ## error_flagging.py
 
@@ -230,6 +232,8 @@ INTERSECTION_SOURCES_URL # Feature service with write access for updating inters
 INTERSECTION_SOURCES_VIEW_URL=https://gis.reshapewildfire.org/arcgis/rest/services/Hosted/Staging_Intersection_Sources_view/FeatureServer # readonly view with intersection sources
 
 AWS_DEFAULT_REGION # default AWS region for AWS services
+S3_BUCKET  # s3 bucket for treatment_index gdb upload
+S3_OBJ_NAME # name of the output file for s3 upload, .zip file
 DB_HOST
 DB_PORT
 DB_USER
