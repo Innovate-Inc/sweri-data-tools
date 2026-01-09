@@ -54,13 +54,11 @@ if __name__ == "__main__":
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
-    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                               os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     insert_table = 'treatment_index'
     treatment_index_points_table = 'treatment_index_points'
     ############## processing in docker ################
-
     try:
         # Get current day and env run day for treatment index
         ti_run_day_index = int(os.getenv('TI_RUN_DAY_INDEX'))
@@ -68,15 +66,17 @@ if __name__ == "__main__":
 
         # If today is run day
         if ti_run_day_index == day_of_week_index:
-            run_treatment_index(pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
+            treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                               os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+            run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
                                 nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id,
                                 treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                                 treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
-        pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+        intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-        run_intersections(pg_conn, db_schema,
+        run_intersections(intersections_pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
                           root_site_url,
                           portal_url,
