@@ -254,6 +254,19 @@ def null_missing_state_categories(conn, schema, table):
 
         ''')
 
+def null_missing_state_fund_codes(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET fund_code = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (fund_code = 'VALUE NOT GIVEN'
+            OR fund_code = 'VALUE NOT MAPPED');
+
+        ''')
 
 def remove_wildfire_non_treatment(conn, schema, treatment_index):
     cursor = conn.cursor()
@@ -900,83 +913,84 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
         pg_cursor.execute(f'''TRUNCATE TABLE {schema}.{table}''')
         pg_cursor.execute('COMMIT;')
 
-    # # FACTS Hazardous Fuels
-    # hazardous_fuels_zip_file = f'{haz_fuels_table}.zip'
-    # download_file_from_url(facts_haz_fuels_gdb_url, hazardous_fuels_zip_file)
-    # extract_and_remove_zip_file(hazardous_fuels_zip_file)
-    #
-    # # special input srs for common attributes
-    # # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
-    # # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    # input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    # gdb_to_postgres(facts_haz_fuels_gdb_url, wkid, facts_haz_fuels_fc_name, haz_fuels_table,
-    #                 schema, ogr_db_conn_string, input_srs)
-    # hazardous_fuels_date_filtering(conn, schema, haz_fuels_table)
-    # hazardous_fuels_insert(conn, schema, table, haz_fuels_table)
-    # remove_wildfire_non_treatment(conn, schema, table)
-    #
-    # # FACTS Common Attributes
-    # common_attributes_download_and_insert(wkid, conn, ogr_db_conn_string, schema, table,
-    #                                       haz_fuels_table)
-    #
-    # # NFPORS
-    # update_nfpors(nfpors_service_url, conn, schema, wkid, ogr_db_conn_string)
-    # nfpors_insert(conn, schema, table)
-    # nfpors_fund_code(conn, schema, table)
-    # nfpors_treatment_date_and_status(conn, schema, table)
-    #
-    # # IFPRS processing and insert
-    # update_ifprs(conn, schema, wkid, ifprs_service_url, ogr_db_conn_string)
-    # ifprs_insert(conn, schema, table)
-    # ifprs_treatment_date(conn, schema, table)
-    # ifprs_status_consolidation(conn, schema, table)
+    # FACTS Hazardous Fuels
+    hazardous_fuels_zip_file = f'{haz_fuels_table}.zip'
+    download_file_from_url(facts_haz_fuels_gdb_url, hazardous_fuels_zip_file)
+    extract_and_remove_zip_file(hazardous_fuels_zip_file)
+
+    # special input srs for common attributes
+    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
+    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
+    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
+    gdb_to_postgres(facts_haz_fuels_gdb_url, wkid, facts_haz_fuels_fc_name, haz_fuels_table,
+                    schema, ogr_db_conn_string, input_srs)
+    hazardous_fuels_date_filtering(conn, schema, haz_fuels_table)
+    hazardous_fuels_insert(conn, schema, table, haz_fuels_table)
+    remove_wildfire_non_treatment(conn, schema, table)
+
+    # FACTS Common Attributes
+    common_attributes_download_and_insert(wkid, conn, ogr_db_conn_string, schema, table,
+                                          haz_fuels_table)
+
+    # NFPORS
+    update_nfpors(nfpors_service_url, conn, schema, wkid, ogr_db_conn_string)
+    nfpors_insert(conn, schema, table)
+    nfpors_fund_code(conn, schema, table)
+    nfpors_treatment_date_and_status(conn, schema, table)
+
+    # IFPRS processing and insert
+    update_ifprs(conn, schema, wkid, ifprs_service_url, ogr_db_conn_string)
+    ifprs_insert(conn, schema, table)
+    ifprs_treatment_date(conn, schema, table)
+    ifprs_status_consolidation(conn, schema, table)
 
     # State Data
     download_file_from_url(state_data_url, 'state_data.parquet')
     update_state_data('state_data.parquet', wkid, schema, ogr_db_conn_string)
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn, schema, table)
+    null_missing_state_fund_codes(conn, schema, table)
 
-    # # Modify treatment index in place
-    # remove_blank_strings(conn, schema, table, fields_for_cleanup)
-    # trim_whitespace(conn, schema, table, 'agency')
-    # fund_source_updates(conn, schema, table)
-    # update_total_cost(conn, schema, table)
-    # correct_biomass_removal_typo(conn, schema, table)
-    # add_twig_category(conn, schema)
-    # update_state_abbr(conn, schema, table)
-    # flag_duplicate_ids(conn, schema, table)
-    # flag_high_cost(conn, schema, table)
-    # flag_duplicates(conn, schema, table)
-    # flag_uom_outliers(conn, schema, table)
-    # revert_multi_to_poly(conn, schema, table)
-    # simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
-    # makevalid_shapes(conn, schema, table, 'shape', fc_res)
-    # extract_geometry_collections(conn, schema, table, fc_res)
-    # remove_zero_area_polygons(conn, schema, table)
-    # flag_spatial_errors(conn, schema, table)
-    #
-    # # update treatment points
-    # update_treatment_points(conn, schema, table)
-    #
-    # # treatment index
-    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-    #                                            ti_data_ids, schema,
-    #                                            table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_poly_view_ids:
-    #     for polygon_view_id in additional_poly_view_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-    #
-    # # treatment index points
-    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-    #                                                   ti_points_view_id, ti_points_data_ids,
-    #                                                   schema,
-    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_point_views_ids:
-    #     for point_view_id in additional_point_views_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+    # Modify treatment index in place
+    remove_blank_strings(conn, schema, table, fields_for_cleanup)
+    trim_whitespace(conn, schema, table, 'agency')
+    fund_source_updates(conn, schema, table)
+    update_total_cost(conn, schema, table)
+    correct_biomass_removal_typo(conn, schema, table)
+    add_twig_category(conn, schema)
+    update_state_abbr(conn, schema, table)
+    flag_duplicate_ids(conn, schema, table)
+    flag_high_cost(conn, schema, table)
+    flag_duplicates(conn, schema, table)
+    flag_uom_outliers(conn, schema, table)
+    revert_multi_to_poly(conn, schema, table)
+    simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
+    makevalid_shapes(conn, schema, table, 'shape', fc_res)
+    extract_geometry_collections(conn, schema, table, fc_res)
+    remove_zero_area_polygons(conn, schema, table)
+    flag_spatial_errors(conn, schema, table)
+
+    # update treatment points
+    update_treatment_points(conn, schema, table)
+
+    # treatment index
+    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                                               ti_data_ids, schema,
+                                               table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_poly_view_ids:
+        for polygon_view_id in additional_poly_view_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+
+    # treatment index points
+    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+                                                      ti_points_view_id, ti_points_data_ids,
+                                                      schema,
+                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_point_views_ids:
+        for point_view_id in additional_point_views_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
     conn.close()
 
