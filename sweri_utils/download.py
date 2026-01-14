@@ -343,7 +343,7 @@ def prep_buffer_table(schema, destination_table):
                ''')
 
 @log_this
-def swap_buffer_table(schema, destination_table):
+def patswap_buffer_table(schema, destination_table):
     conn = create_db_conn_from_envs()
     cursor = conn.cursor()
     # copy data from buffer table to destination table

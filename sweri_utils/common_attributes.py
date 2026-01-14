@@ -213,23 +213,6 @@ def include_other_activites(conn, schema, table):
 
         ''')
 
-
-@log_this
-def common_attributes_type_filter(conn, schema, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''           
-            DELETE from {schema}.{treatment_index} 
-            WHERE
-            type IN (
-                SELECT value from {schema}.common_attributes_lookup
-                WHERE filter = 'type'
-                AND include = 'FALSE')
-            AND
-            identifier_database = 'FACTS Common Attributes';
-        ''')
-
-
 @log_this
 def set_included(conn, schema, table):
     # set included to yes when r5 passes or
@@ -282,3 +265,242 @@ def common_attributes_insert(conn, schema, common_attributes_table, treatment_in
         {schema}.{common_attributes_table}.shape IS NOT NULL;
 
         ''')
+
+
+def nfpors_insert(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+        INSERT INTO {schema}.{treatment_index} (
+
+            objectid, 
+            name,  date_current,
+            acres, type, category, fund_code, 
+            identifier_database, unique_id,
+            state, agency, shape
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'),
+            trt_nm AS name, modifiedon AS date_current,
+            gis_acres AS acres, type_name AS type, cat_nm AS category, isbil as fund_code,
+            'NFPORS' AS identifier_database, CONCAT(nfporsfid,'-',trt_id) AS unique_id,
+            st_abbr AS state, agency as agency, shape
+
+        FROM {schema}.nfpors
+        WHERE {schema}.nfpors.shape IS NOT NULL;
+        ''')
+
+@log_this
+def nfpors_fund_code(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''   
+            UPDATE {schema}.{treatment_index}
+            SET fund_code = null
+            WHERE fund_code = 'No';        
+        ''')
+
+        cursor.execute(f'''   
+            UPDATE {schema}.{treatment_index}
+            SET fund_code = 'BIL'
+            WHERE fund_code = 'Yes';
+        ''')
+
+@log_this
+def nfpors_treatment_date_and_status(conn, schema,treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = n.act_comp_dt,
+            status = 'Completed'
+            FROM {schema}.nfpors n
+            WHERE t.identifier_database = 'NFPORS'
+            AND t.treatment_date IS NULL
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.act_comp_dt IS NOT NULL;
+        ''')
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = n.plan_int_dt,
+            status = 'Planned'
+            FROM {schema}.nfpors n
+            WHERE t.identifier_database = 'NFPORS'
+            AND t.treatment_date is null
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.plan_int_dt IS NOT NULL;
+        ''')
+
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = n.col_date,
+            status = 'Other'
+            FROM {schema}.nfpors n
+            WHERE t.identifier_database = 'NFPORS'
+            AND t.treatment_date is null
+            AND t.unique_id = CONCAT(n.nfporsfid,'-',n.trt_id)
+            AND n.col_date IS NOT NULL;
+        ''')
+
+def create_nfpors_where_clause():
+    #some ids break download, those will be excluded
+    exclusion_ids = os.getenv('EXCLUSION_IDS')
+    exlusion_ids_tuple = tuple(exclusion_ids.split(",")) if len(exclusion_ids) > 0 else tuple()
+
+    where_clause = f'''
+        (act_comp_dt > DATE '1984-01-01' 
+        OR (act_comp_dt IS NULL AND plan_int_dt > DATE '1984-01-01') 
+        OR (act_comp_dt IS NULL AND plan_int_dt IS NULL AND col_date > DATE '1984-01-01'))
+    '''
+    if len(exlusion_ids_tuple) > 0:
+        where_clause += f' and objectid not in ({",".join(exlusion_ids_tuple)})'
+
+    return where_clause
+
+
+@log_this
+def ifprs_insert(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+        INSERT INTO {schema}.{treatment_index} (
+
+            objectid, 
+            name,  date_current, 
+            acres, type, category, fund_source,
+            identifier_database, unique_id,
+            state, status,
+            total_cost, twig_category,
+            agency, shape
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'),
+            name AS name, lastmodifieddate AS date_current,
+            calculatedarea AS acres, type AS type, category AS category,
+            fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
+            state AS state, 
+            CASE WHEN class = 'Estimated Treatment' AND status IS NULL THEN 'Planned' ELSE status END AS status, 
+            estimatedtotalcost as total_cost, category as twig_category, 
+            agency as agency, shape as shape
+
+        FROM {schema}.ifprs
+        WHERE {schema}.ifprs.shape IS NOT NULL;
+        ''')
+
+
+@log_this
+def ifprs_treatment_date(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.completiondate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text
+            AND i.completiondate IS NOT NULL;
+        ''')
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.originalinitiationdate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text
+            AND i.originalinitiationdate IS NOT NULL;
+        ''')
+
+        cursor.execute(f'''
+            UPDATE {schema}.{treatment_index} t
+            SET treatment_date = i.createdondate
+            FROM {schema}.ifprs i
+            WHERE t.identifier_database = 'IFPRS'
+            AND t.treatment_date is null
+            AND t.unique_id = i.id::text
+            AND i.createdondate IS NOT NULL;
+        ''')
+
+
+@log_this
+def ifprs_status_consolidation(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{treatment_index}
+            SET status =
+                CASE 
+                    WHEN status IN (
+                        'Draft',
+                        'Approved (Local)',
+                        'Approved (Regional)',
+                        'Ready for Approval',
+                        'Approved (Department)',
+                        'Approved (Agency)',
+                        'Approved',
+                        'Not Started'
+                    ) THEN 'Planned'
+                    WHEN status IN ('UnApproval Requested', 'Cancelled') THEN 'Other'
+                    ELSE status
+                END
+            WHERE identifier_database = 'IFPRS';
+
+                  ''')
+
+@log_this
+def hazardous_fuels_insert(conn, schema, treatment_index, facts_haz_table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+        INSERT INTO {schema}.{treatment_index}(
+
+            objectid, name, 
+            date_current, acres,    
+            type, category, fund_code, cost_per_uom,
+            identifier_database, unique_id,
+            uom, state, activity, activity_code, treatment_date,
+            status, method, equipment, agency,
+            shape
+
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'), activity_sub_unit_name AS name,
+            etl_modified_date_haz AS date_current, gis_acres AS acres,
+            treatment_type AS type, cat_nm AS category, fund_code AS fund_code, cost_per_uom AS cost_per_uom,
+            'FACTS Hazardous Fuels' AS identifier_database, activity_cn AS unique_id,
+            uom AS uom, state_abbr AS state, activity AS activity, activity_code as activity_code, 
+            CASE WHEN date_completed IS NULL THEN date_planned ELSE date_completed END AS treatment_date,
+            CASE WHEN date_completed IS NULL THEN 'Planned' ELSE 'Completed' END AS status, 
+            method AS method, equipment AS equipment,
+            'USFS' AS agency, shape
+
+        FROM {schema}.{facts_haz_table}
+        WHERE {schema}.{facts_haz_table}.shape IS NOT NULL;
+
+        ''')
+
+def remove_wildfire_non_treatment(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''             
+            DELETE FROM {schema}.{treatment_index} 
+            WHERE category = 'Wildfire Non-Treatment';
+        ''')
+
+@log_this
+def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''             
+            DELETE FROM {schema}.{facts_haz_table} WHERE
+            date_completed < '1984-1-1'::date
+            OR
+            (date_completed is null AND date_planned < '1984-1-1'::date);
+        ''')
+
