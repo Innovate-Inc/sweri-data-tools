@@ -1,5 +1,1 @@
 name: SWERI Processing prod
-networks:
-    default:
-        name: docker-postgres_default
-        external: true

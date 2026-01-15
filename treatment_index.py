@@ -1,5 +1,9 @@
 import os
+import shutil
 
+import geopandas
+
+from sweri_utils.s3 import upload_to_s3
 from sweri_utils.swizzle import swizzle_service
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
@@ -12,6 +16,9 @@ from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column,
 from sweri_utils.download import service_to_postgres, get_ids, prep_buffer_table, get_query_params_chunk, \
     swap_buffer_table
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
+from sweri_utils.download import service_to_postgres, get_ids
+from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file, \
+    pg_table_to_gdb, create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
@@ -231,51 +238,24 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     token = gis_con.session.auth.token
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
-if __name__ == "__main__":
-    load_dotenv()
+@log_this
+def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, query=None, work_dir=None, geom_col='shape'):
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid)
+    zip_path = create_zip(gdb_path, table, out_dir=work_dir)
+    upload_to_s3(bucket, zip_path, obj_name)
 
-    out_wkid = 4326
+    if gdb_path and os.path.exists(gdb_path):
+        shutil.rmtree(gdb_path)
+    if zip_path and os.path.exists(zip_path):
+        os.remove(zip_path)
 
-    target_schema = os.getenv('SCHEMA')
-    exluded_ids = os.getenv('EXCLUSION_IDS')
-    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
-    ifprs_url = os.getenv('IFPRS_URL')
-    facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
-    facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
-    hazardous_fuels_table = 'facts_hazardous_fuels'
-    nfpors_url = os.getenv('NFPORS_URL')
-
-    #This is the final table
-    insert_table = 'treatment_index'
-    points_table = 'treatment_index_points'
-    fields_to_clean = ['type', 'fund_source']
-
-    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
-                                 os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-
-    # Hosted upload variables
-    root_url = os.getenv('ESRI_ROOT_URL')
-    gis_url = os.getenv("ESRI_PORTAL_URL")
-    gis_user = os.getenv("ESRI_USER")
-    gis_password = os.getenv("ESRI_PW")
-
-    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
-    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
-
-    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
-
-    treatment_index_points_table = 'treatment_index_points'
-
-    chunk = 500
-    max_points_before_simplify = 10000
-    simplify_tolerance = 0.000009  # ESPG:4326 degrees
-    fc_resolution = 0.000000001 # ESPG:4326 degrees
-    start_objectid = 0
+def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
+                        ifprs_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                        ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
+                        additional_point_views_ids,bucket, s3_obj_name, ti_points_table='treatment_index_points',
+                        facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
+                        fields_for_cleanup=['type', 'fund_source'], max_poly_size_before_simplify=10000,
+                        simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
 
     # Truncate the table before inserting new data
     pg_cursor = pg_conn.cursor()
@@ -336,3 +316,56 @@ if __name__ == "__main__":
     #
 
     pg_conn.close()
+if __name__ == "__main__":
+    load_dotenv()
+
+    out_wkid = 4326
+
+    target_schema = os.getenv('SCHEMA')
+    exluded_ids = os.getenv('EXCLUSION_IDS')
+    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    ifprs_url = os.getenv('IFPRS_URL')
+    facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
+    facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
+    hazardous_fuels_table = 'facts_hazardous_fuels'
+    nfpors_url = os.getenv('NFPORS_URL')
+
+    #This is the final table
+    insert_table = 'treatment_index'
+    points_table = 'treatment_index_points'
+    fields_to_clean = ['type', 'fund_source']
+
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+                                 os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+
+    # Hosted upload variables
+    root_url = os.getenv('ESRI_ROOT_URL')
+    gis_url = os.getenv("ESRI_PORTAL_URL")
+    gis_user = os.getenv("ESRI_USER")
+    gis_password = os.getenv("ESRI_PW")
+
+    treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
+
+    treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+
+    treatment_index_points_table = 'treatment_index_points'
+
+    chunk = 500
+    max_points_before_simplify = 10000
+    simplify_tolerance = 0.000009  # ESPG:4326 degrees
+    fc_resolution = 0.000000001 # ESPG:4326 degrees
+    start_objectid = 0
+
+    s3_bucket = os.getenv('S3_BUCKET')
+    s3_obj_name = os.getenv('S3_OBJECT_NAME')
+
+    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
+                        ifprs_url, root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
+                        treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
+                        treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)

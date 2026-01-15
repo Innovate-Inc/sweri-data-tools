@@ -2,6 +2,10 @@ import logging
 import boto3
 from botocore.exceptions import ClientError
 
+from sweri_utils.sweri_logging import log_this
+
+
+@log_this
 def upload_to_s3(bucket, file_name, obj_name):
     s3 = boto3.client('s3')
     try:
