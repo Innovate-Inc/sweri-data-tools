@@ -27,6 +27,8 @@ if __name__ == "__main__":
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
+    state_data_url = os.getenv('STATE_DATA_URL')
+
 
     #intersection specific environment variables
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
@@ -69,10 +71,10 @@ if __name__ == "__main__":
             treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
             run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
-                                nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
-                                treatment_index_view_id,
-                                treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                                treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
+                                nfpors_url, ifprs_url, state_data_url, root_site_url, portal_url, portal_user, portal_password,
+                                treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
+                                treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
+                                s3_bucket, s3_obj_name)
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
         intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
