@@ -47,6 +47,12 @@ if __name__ == "__main__":
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
+    # cache info for treatment index
+    response_cache_info = {os.getenv('RESPONSE_CACHE_BUCKET_NAME'): [
+        os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
+        os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
+    ]}
+
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -68,7 +74,7 @@ if __name__ == "__main__":
                                 nfpors_url, ifprs_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id,
                                 treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                                treatment_index_points_data_ids, additional_point_view_ids)
+                                treatment_index_points_data_ids, additional_point_view_ids, response_cache_info=response_cache_info)
 
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,

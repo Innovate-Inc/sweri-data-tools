@@ -13,6 +13,7 @@ from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_a
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
+from sweri_utils.s3 import delete_bucket_contents
 
 logger = logging.getLogger(__name__)
 
@@ -820,6 +821,13 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     token = gis_con.session.auth.token
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
+@log_this
+def clear_response_cache(cache_info):
+    # clear cached responses in s3 bucket
+    for bucket_name, prefixes in cache_info.items():
+        for prefix in prefixes:
+            delete_bucket_contents(bucket_name, prefix)
+
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
                         ifprs_service_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
@@ -827,7 +835,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
                         additional_point_views_ids, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
                         fields_for_cleanup=['type', 'fund_source'], max_poly_size_before_simplify=10000,
-                        simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
+                        simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500, response_cache_info={}):
 
     # Truncate the table before inserting new data
     pg_cursor = conn.cursor()
@@ -909,6 +917,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     conn.close()
 
+    clear_response_cache(response_cache_info)
+
 if __name__ == "__main__":
     load_dotenv()
 
@@ -949,6 +959,11 @@ if __name__ == "__main__":
 
     treatment_index_points_table = 'treatment_index_points'
 
+    response_cache_info = {os.getenv('RESPONSE_CACHE_BUCKET_NAME'): [
+        os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
+        os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
+    ]}
+
     chunk = 500
     max_points_before_simplify = 10000
     simplify_tolerance = 0.000009  # ESPG:4326 degrees
@@ -958,4 +973,4 @@ if __name__ == "__main__":
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                        treatment_index_points_data_ids, additional_point_view_ids)
+                        treatment_index_points_data_ids, additional_point_view_ids, response_cache_info=response_cache_info)

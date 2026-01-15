@@ -479,7 +479,7 @@ def trim_whitespace(conn, schema, table, field):
 
         ''')
 
-@log_this
+# @log_this
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))
@@ -488,7 +488,7 @@ def create_db_conn_from_envs():
     docker_db_password = os.getenv('DB_PASSWORD')
     return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
 
-@log_this
+# @log_this
 def get_sql_alchemy_engine_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))

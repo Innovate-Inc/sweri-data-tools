@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from . import download, files, conversion, s3, sql
+from . import download, files, conversion, s3, sql, hosted
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 
@@ -985,6 +985,17 @@ class S3Tests(TestCase):
             mock_boto_client.assert_called_once_with('s3')
             mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
 
+    def test_prevent_delete_s3_with_no_prefix(self):
+        bucket = 'test_bucket'
+
+        with patch('sweri_utils.s3.get_s3_resource') as mock_boto_resource:
+            mock_s3 = mock_boto_resource.return_value
+
+            with self.assertRaises(ValueError) as context:
+                s3.delete_bucket_contents(bucket, None)
+
+            self.assertEqual(str(context.exception), 'Deleting test_bucket without a prefix is not allowed.')
+            mock_boto_resource.assert_not_called()
 
 class SwizzleTests(TestCase):
     @patch('requests.get')
@@ -1059,22 +1070,18 @@ class SwizzleTests(TestCase):
             swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
 
 class HostedTests(TestCase):
-    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
-    @patch('sweri_utils.hosted.get_count')
+    @patch.object(hosted, 'get_count')
     def test_verify_feature_same_count(self, mock_get_count):
-        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
         mock_get_count.return_value = 1400000
         mock_fl.query.return_value = 1400000
 
-        verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+        hosted.verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
 
-    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
-    @patch('sweri_utils.hosted.get_count')
+    @patch.object(hosted, 'get_count')
     def test_verify_feature_mismatched_count(self, mock_get_count):
-        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
@@ -1082,4 +1089,4 @@ class HostedTests(TestCase):
         mock_fl.query.return_value = 1000000
 
         with self.assertRaises(ValueError):
-            verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+            hosted.verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
