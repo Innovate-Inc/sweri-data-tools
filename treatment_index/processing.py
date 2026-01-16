@@ -1,4 +1,5 @@
 # BEGIN Common Attributes Functions
+from sweri_utils.files import get_wkid_from_geoparquet, geoparquet_to_postgres
 from sweri_utils.sql import add_column
 from sweri_utils.sweri_logging import log_this
 
@@ -504,3 +505,66 @@ def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
             (date_completed is null AND date_planned < '1984-1-1'::date);
         ''')
 
+@log_this
+def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
+    where = "DataCategory = 'State'"
+
+    in_wkid = get_wkid_from_geoparquet(parquet_file)
+
+    destination_table = 'state_data'
+    geoparquet_to_postgres(parquet_file, out_wkid, destination_table, schema, ogr_db_string, where, in_wkid)
+    # service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
+
+def state_data_insert(conn, schema, treatment_index):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+        INSERT INTO {schema}.{treatment_index} (
+
+            objectid, name, treatment_date, date_current,
+            acres, fund_code, identifier_database, 
+            category, unique_id, state, agency,
+            total_cost, status, shape
+        )
+        SELECT
+
+            sde.next_rowid('{schema}', '{treatment_index}'),
+            treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
+            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
+            treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
+            federalfundingamount as total_cost, 'Completed' as status, geometry as shape
+        FROM {schema}.state_data
+        WHERE {schema}.state_data.geometry IS NOT NULL
+        and
+        {schema}.state_data.actualcompletiondate IS NOT NULL;
+
+        ''')
+
+def null_missing_state_fund_codes(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET fund_code = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (fund_code = 'VALUE NOT GIVEN'
+            OR fund_code = 'VALUE NOT MAPPED');
+
+        ''')
+
+def null_missing_state_categories(conn, schema, table):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+
+            UPDATE {schema}.{table} 
+            SET category = null 
+            WHERE identifier_database = 'NASF' 
+            AND
+            (category = 'VALUE NOT GIVEN'
+            OR category = 'VALUE NOT MAPPED');
+
+        ''')

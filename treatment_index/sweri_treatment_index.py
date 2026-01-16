@@ -1,95 +1,24 @@
 import os
 import shutil
 
-import geopandas
-
 from sweri_utils.s3 import upload_to_s3
 from sweri_utils.swizzle import swizzle_service
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
-import re
 from celery import group
 
-from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column, revert_multi_to_poly, makevalid_shapes, \
+from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_shapes, \
     extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
-from sweri_utils.download import service_to_postgres, get_ids, prep_buffer_table, get_query_params_chunk, \
-    swap_buffer_table
-from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file
-from sweri_utils.download import service_to_postgres, get_ids
-from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file, \
-    pg_table_to_gdb, create_zip, geoparquet_to_postgres, get_wkid_from_geoparquet
+from sweri_utils.files import pg_table_to_gdb, create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
-from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
-from sweri_utils.tasks import service_chunk_to_postgres, common_attributes_processing, nfpors_download_and_insert, \
-    ifprs_download_and_insert, common_attributes_download_and_insert, hazardous_fuels_download_and_insert
+from sweri_utils.hosted import refresh_gis
+from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
+    hazardous_fuels_download_and_insert, nfpors_download_and_insert, state_data_download_and_insert
 
 logger = logging.getLogger(__name__)
 
-@log_this
-def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
-    where = "DataCategory = 'State'"
-
-    in_wkid = get_wkid_from_geoparquet(parquet_file)
-
-    destination_table = 'state_data'
-    geoparquet_to_postgres(parquet_file, out_wkid, destination_table, schema, ogr_db_string, where, in_wkid)
-    # service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
-
-def state_data_insert(conn, schema, treatment_index):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-
-        INSERT INTO {schema}.{treatment_index} (
-
-            objectid, name, treatment_date, date_current,
-            acres, fund_code, identifier_database, 
-            category, unique_id, state, agency,
-            total_cost, status, shape
-        )
-        SELECT
-
-            sde.next_rowid('{schema}', '{treatment_index}'),
-            treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
-            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
-            treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
-            federalfundingamount as total_cost, 'Completed' as status, geometry as shape
-        FROM {schema}.state_data
-        WHERE {schema}.state_data.geometry IS NOT NULL
-        and
-        {schema}.state_data.actualcompletiondate IS NOT NULL;
-
-        ''')
-
-def null_missing_state_categories(conn, schema, table):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-
-            UPDATE {schema}.{table} 
-            SET category = null 
-            WHERE identifier_database = 'NASF' 
-            AND
-            (category = 'VALUE NOT GIVEN'
-            OR category = 'VALUE NOT MAPPED');
-
-        ''')
-
-def null_missing_state_fund_codes(conn, schema, table):
-    cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(f'''
-
-            UPDATE {schema}.{table} 
-            SET fund_code = null 
-            WHERE identifier_database = 'NASF' 
-            AND
-            (fund_code = 'VALUE NOT GIVEN'
-            OR fund_code = 'VALUE NOT MAPPED');
-
-        ''')
 @log_this
 def fund_source_updates(conn, schema, treatment_index):
     #IFPRS Processing is handled seperate since it does not have a fund code
@@ -188,11 +117,6 @@ def update_treatment_points(conn, schema, treatment_index):
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
             from {schema}.{treatment_index}
         ''')
-
-
-
-
-
 
 @log_this
 def add_twig_category(conn, schema):
@@ -331,8 +255,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids,bucket, s3_obj_name, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
-                        fields_for_cleanup=['type', 'fund_source'], max_poly_size_before_simplify=10000,
-                        simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
+                        facts_haz_gdb_path='Actv_HazFuelTrt_PL.gdb', fields_for_cleanup=['type', 'fund_source'],
+                        max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
 
     # Truncate the table before inserting new data
     pg_cursor = conn.cursor()
@@ -342,22 +266,13 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # FACTS Common Attributes
     t = []
-    t.append(hazardous_fuels_download_and_insert.s(hazardous_fuels_table, facts_haz_gdb_url, facts_haz_gdb, out_wkid, facts_haz_fc_name, target_schema, insert_table, ogr_db_string))
-    t.append(common_attributes_download_and_insert.s(out_wkid, ogr_db_string, target_schema, insert_table, hazardous_fuels_table))
-    # t.append(nfpors_download_and_insert.s(nfpors_url, target_schema, insert_table, out_wkid, ogr_db_string))
-    t.append(ifprs_download_and_insert.s(target_schema, insert_table, out_wkid, ifprs_url, ogr_db_string))
-
+    t.append(hazardous_fuels_download_and_insert.s(haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid, facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string))
+    t.append(common_attributes_download_and_insert.s(wkid, ogr_db_conn_string, schema, table, haz_fuels_table))
+    t.append(nfpors_download_and_insert.s(schema, table))
+    t.append(ifprs_download_and_insert.s(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
+    t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
     g = group(t)()
     g.get()
-
-    # todd: wait for ifprs, nfpors, haz_fuls, and common attribute tasks to complete
-
-    # State Data
-    download_file_from_url(state_data_url, 'state_data.parquet')
-    update_state_data('state_data.parquet', wkid, schema, ogr_db_conn_string)
-    state_data_insert(conn, schema, table)
-    null_missing_state_categories(conn, schema, table)
-    null_missing_state_fund_codes(conn, schema, table)
 
     # Modify treatment index in place
     remove_blank_strings(conn, schema, table, fields_for_cleanup)
@@ -380,26 +295,26 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-    # treatment index
-    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-                                               ti_data_ids, schema,
-                                               table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_poly_view_ids:
-        for polygon_view_id in additional_poly_view_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-
-    # treatment index points
-    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-                                                      ti_points_view_id, ti_points_data_ids,
-                                                      schema,
-                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_point_views_ids:
-        for point_view_id in additional_point_views_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
-
-    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
+    # # treatment index
+    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+    #                                            ti_data_ids, schema,
+    #                                            table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_poly_view_ids:
+    #     for polygon_view_id in additional_poly_view_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+    #
+    # # treatment index points
+    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+    #                                                   ti_points_view_id, ti_points_data_ids,
+    #                                                   schema,
+    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_point_views_ids:
+    #     for point_view_id in additional_point_views_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+    #
+    # s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
 
     conn.close()
 

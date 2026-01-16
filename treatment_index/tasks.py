@@ -1,19 +1,22 @@
+import os
+
 from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 import json
 import logging
 import re
 
-from sweri_utils.common_attributes import add_fields_and_indexes, common_attributes_date_filtering, exclude_by_acreage, \
+from treatment_index.processing import add_fields_and_indexes, common_attributes_date_filtering, exclude_by_acreage, \
     exclude_facts_hazardous_fuels, include_logging_activities, include_fire_activites, include_fuel_activities, \
     activity_filter, include_other_activites, set_included, common_attributes_insert, nfpors_insert, nfpors_fund_code, \
     nfpors_treatment_date_and_status, ifprs_insert, ifprs_treatment_date, ifprs_status_consolidation, \
     hazardous_fuels_date_filtering, hazardous_fuels_insert, \
-    remove_wildfire_non_treatment, create_nfpors_where_clause
+    remove_wildfire_non_treatment, create_nfpors_where_clause, update_state_data, state_data_insert, \
+    null_missing_state_categories, null_missing_state_fund_codes
 from sweri_utils.download import fetch_features, prep_buffer_table, get_ids, get_query_params_chunk, swap_buffer_table
 from sweri_utils.files import download_file_from_url, extract_and_remove_zip_file, gdb_to_postgres
 from sweri_utils.sql import trim_whitespace, create_db_conn_from_envs
-from sweri_utils.sweri_logging import log_this, logger
-from celery import group, chord
+from sweri_utils.sweri_logging import logger
+from celery import chord
 
 from worker import app
 
@@ -30,8 +33,11 @@ def service_chunk_to_postgres(url, params, schema, destination_table, ogr_db_str
     _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=f"ESRIJSON:{json.dumps(r)}", options=options)
     del _
 
+# NFPORS Tasks
+
 @app.task()
 def update_nfpors(nfpors_url, schema, wkid, ogr_db_string, chunk_size=40):
+    # This function is not currently used since NFPORS is down for an indefinite amount of time
     where = create_nfpors_where_clause()
     destination_table = 'nfpors'
     out_fields = ['*']
@@ -49,22 +55,25 @@ def update_nfpors(nfpors_url, schema, wkid, ogr_db_string, chunk_size=40):
 
     return header, destination_table
 
-
 @app.task()
-def nfpors_finalize_task(schema, insert_table, destination_table):
+def nfpors_download_and_insert(schema, insert_table):
+    # This function no longer downloads from NFPORS since NFPORS is down and will not be coming back up
     conn = create_db_conn_from_envs()
 
-    swap_buffer_table(schema, destination_table)
+    # Update NFPORS no longer run before insert, the latest copy in the database will be used instead
     nfpors_insert(conn, schema, insert_table)
     nfpors_fund_code(conn, schema, insert_table)
     nfpors_treatment_date_and_status(conn, schema, insert_table)
 
-@app.task()
-def nfpors_download_and_insert(nfpors_url, schema, insert_table, wkid, ogr_db_string):
+#IFPRS Tasks
 
+@app.task()
+def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
+    # IFPRS processing and insert
     conn = create_db_conn_from_envs()
-    header, destination_table = update_nfpors(schema, wkid, nfpors_url, ogr_db_string)
-    chord(header)(nfpors_finalize_task.s(schema, insert_table, destination_table))
+    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string)
+    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table))
+
 
 @app.task()
 def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
@@ -99,12 +108,33 @@ def ifprs_finalize_task(schema, insert_table, destination_table):
     ifprs_treatment_date(schema, insert_table)
     ifprs_status_consolidation(schema, insert_table)
 
+# FACTS Common Attributes Tasks
+
 @app.task()
-def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
-    # IFPRS processing and insert
+def common_attributes_download_and_insert(projection, ogr_db_string, schema, treatment_index, facts_haz_table):
     conn = create_db_conn_from_envs()
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string)
-    chord(header)(ifprs_finalize_task.s(schema, insert_table, destination_table))
+
+    common_attributes_fc_name = 'Actv_CommonAttribute_PL'
+    urls = [
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region06.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region08.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region09.zip',
+    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
+
+    ]
+
+    header = []
+
+    for url in urls:
+        header.append(common_attributes_processing.s(url, projection, common_attributes_fc_name, schema, ogr_db_string,
+                                     facts_haz_table, treatment_index))
+
+    chord(header)(common_attributes_type_filter.s(schema, treatment_index))
 
 @app.task()
 def common_attributes_processing(url, projection, common_attributes_fc_name, schema, ogr_db_string, facts_haz_table, treatment_index):
@@ -150,32 +180,6 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
 
-@app.task()
-def common_attributes_download_and_insert(projection, ogr_db_string, schema, treatment_index, facts_haz_table):
-    conn = create_db_conn_from_envs()
-
-    common_attributes_fc_name = 'Actv_CommonAttribute_PL'
-    urls = [
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region01.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region02.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region03.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region04.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region05.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region06.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region08.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region09.zip',
-    'https://data.fs.usda.gov/geodata/edw/edw_resources/fc/Actv_CommonAttribute_PL_Region10.zip'
-
-    ]
-
-    header = []
-
-    for url in urls:
-        header.append(common_attributes_processing.s(url, projection, common_attributes_fc_name, schema, ogr_db_string,
-                                     facts_haz_table, treatment_index))
-
-    chord(header)(common_attributes_type_filter.s(schema, treatment_index))
-
 
 @app.task()
 def common_attributes_type_filter(schema, treatment_index):
@@ -192,6 +196,8 @@ def common_attributes_type_filter(schema, treatment_index):
             AND
             identifier_database = 'FACTS Common Attributes';
         ''')
+
+# FACTS Hazardous Fuels Tasks
 
 @app.task()
 def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url, facts_haz_gdb, out_wkid, facts_haz_fc_name,
@@ -211,3 +217,14 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
     hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
     hazardous_fuels_insert(conn, schema, insert_table, hazardous_fuels_table)
     remove_wildfire_non_treatment(conn, schema, insert_table)
+
+@app.task()
+def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_string):
+    conn = create_db_conn_from_envs()
+    parquet_filename = 'state_data.parquet'
+    # State Data
+    download_file_from_url(state_data_url, 'state_data.parquet')
+    update_state_data(parquet_filename, wkid, schema, ogr_db_string)
+    state_data_insert(conn, schema, table)
+    null_missing_state_categories(conn,schema, table)
+    null_missing_state_fund_codes(conn,schema, table)

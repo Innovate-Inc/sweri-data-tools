@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
 from sweri_utils.sweri_logging import log_this
-from treatment_index import run_treatment_index
+from treatment_index.sweri_treatment_index import run_treatment_index
 
 if __name__ == "__main__":
     logging.info('starting data processing')
