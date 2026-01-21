@@ -150,7 +150,7 @@ def geoparquet_to_postgres(file_name, projection: int, postgres_table_name, sche
     del _
     logging.info(f'{postgres_table_name} now in geodatabase')
 
-    if os.exists(file_name):
+    if os.path.exists(file_name):
         os.remove(file_name)
 
 ########################### arcpy required for below functions ###########################

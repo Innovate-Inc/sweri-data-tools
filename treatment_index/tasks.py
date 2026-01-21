@@ -102,11 +102,12 @@ def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
 
 @app.task()
 def ifprs_finalize_task(schema, insert_table, destination_table):
+    conn = create_db_conn_from_envs()
 
     swap_buffer_table(schema, destination_table)
-    ifprs_insert(schema, insert_table)
-    ifprs_treatment_date(schema, insert_table)
-    ifprs_status_consolidation(schema, insert_table)
+    ifprs_insert(conn, schema, insert_table)
+    ifprs_treatment_date(conn, schema, insert_table)
+    ifprs_status_consolidation(conn, schema, insert_table)
 
 # FACTS Common Attributes Tasks
 
@@ -134,7 +135,7 @@ def common_attributes_download_and_insert(projection, ogr_db_string, schema, tre
         header.append(common_attributes_processing.s(url, projection, common_attributes_fc_name, schema, ogr_db_string,
                                      facts_haz_table, treatment_index))
 
-    chord(header)(common_attributes_type_filter.s(schema, treatment_index))
+    chord(header)(common_attributes_type_filter.si(schema, treatment_index))
 
 @app.task()
 def common_attributes_processing(url, projection, common_attributes_fc_name, schema, ogr_db_string, facts_haz_table, treatment_index):
