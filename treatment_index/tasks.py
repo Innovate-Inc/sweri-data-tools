@@ -72,7 +72,7 @@ def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_stri
     # IFPRS processing and insert
     conn = create_db_conn_from_envs()
     header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string)
-    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table))
+    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url))
 
 
 @app.task()
@@ -101,10 +101,10 @@ def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
     return header, destination_table
 
 @app.task()
-def ifprs_finalize_task(schema, insert_table, destination_table):
+def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url):
     conn = create_db_conn_from_envs()
 
-    swap_buffer_table(schema, destination_table)
+    swap_buffer_table(schema, destination_table, ifprs_url)
     ifprs_insert(conn, schema, insert_table)
     ifprs_treatment_date(conn, schema, insert_table)
     ifprs_status_consolidation(conn, schema, insert_table)

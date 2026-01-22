@@ -253,7 +253,7 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
                         ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
-                        additional_point_views_ids,bucket, s3_obj_name, ti_points_table='treatment_index_points',
+                        additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
                         facts_haz_gdb_path='Actv_HazFuelTrt_PL.gdb', fields_for_cleanup=['type', 'fund_source'],
                         max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
@@ -270,7 +270,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     t.append(common_attributes_download_and_insert.s(wkid, ogr_db_conn_string, schema, table, haz_fuels_table))
     t.append(nfpors_download_and_insert.s(schema, table))
     t.append(ifprs_download_and_insert.s(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
-    t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
+    if state_data_inclusion_flag:
+        t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
     g = group(t)()
     g.get()
 
@@ -366,9 +367,12 @@ if __name__ == "__main__":
     start_objectid = 0
 
     s3_bucket = os.getenv('S3_BUCKET')
-    s3_obj_name = os.getenv('S3_OBJECT_NAME')
+    s3_obj = os.getenv('S3_OBJ_NAME')
+
+    # Set STATE_DATA_INCLUSION_FLAG to True to include state data
+    include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG').lower() == 'true'
 
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                        treatment_index_points_data_ids, additional_point_view_ids, s3_bucket, s3_obj_name)
+                        treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj)

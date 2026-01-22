@@ -4,8 +4,9 @@ import os
 from time import sleep
 import requests
 from datetime import datetime
+from arcgis.features import FeatureLayer
 
-from .sql import create_db_conn_from_envs
+from .sql import create_db_conn_from_envs, get_count
 from .sweri_logging import log_this
 
 try:
@@ -343,10 +344,25 @@ def prep_buffer_table(schema, destination_table):
                ''')
 
 @log_this
-def swap_buffer_table(schema, destination_table):
+def swap_buffer_table(schema, destination_table, service_url):
     conn = create_db_conn_from_envs()
     cursor = conn.cursor()
     # copy data from buffer table to destination table
+    fl = FeatureLayer(service_url)
+    service_count = fl.query(where="1=1", return_count_only=True)
+    buffer_table_count = get_count(conn, schema, f"{destination_table}_buffer")
+    diff = abs(service_count - buffer_table_count)
+    threshold = 0.01  # 1 percent difference allowed
+
+    if buffer_table_count < 1:
+        percent_diff = diff / buffer_table_count
+    else:
+        raise ValueError("Buffer table empty")
+
+    if percent_diff > threshold:
+        raise ValueError(
+            f"Data source count mismatch after upload. Database count: {buffer_table_count}, Feature Layer count: {service_count}, Difference: {diff} ({percent_diff * 100:.2f}%)")
+
     with conn.transaction():
         cursor.execute(f'''TRUNCATE {schema}.{destination_table};''')
         cursor.execute(f'''INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);''')

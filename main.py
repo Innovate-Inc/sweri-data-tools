@@ -49,6 +49,8 @@ if __name__ == "__main__":
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
 
+    include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG')
+
     # s3 details
     s3_bucket = os.getenv('S3_BUCKET')
     s3_obj_name = os.getenv('S3_OBJ_NAME')
@@ -74,7 +76,7 @@ if __name__ == "__main__":
                                 nfpors_url, ifprs_url, state_data_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
-                                s3_bucket, s3_obj_name)
+                                include_state_data, s3_bucket, s3_obj_name)
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
         intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
