@@ -50,11 +50,20 @@ if __name__ == "__main__":
     s3_obj_name = os.getenv('S3_OBJ_NAME')
 
     # cache info for treatment index
-    response_cache_info = {os.getenv('RESPONSE_CACHE_BUCKET_NAME'): [
-        os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
-        os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
-    ]}
+    cache_bucket_name = os.getenv('RESPONSE_CACHE_BUCKET_NAME')
+    ti_cache_prefix = os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX')
+    ti_points_cache_prefix = os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
 
+    # Only construct cache info if a valid bucket name is configured
+    response_cache_info = None
+    if cache_bucket_name:
+        cache_prefixes = []
+        if ti_cache_prefix:
+            cache_prefixes.append(ti_cache_prefix)
+        if ti_points_cache_prefix:
+            cache_prefixes.append(ti_points_cache_prefix)
+        if cache_prefixes:
+            response_cache_info = {cache_bucket_name: cache_prefixes}
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
