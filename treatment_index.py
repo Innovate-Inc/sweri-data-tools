@@ -823,8 +823,8 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
 @log_this
-def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, query=None, work_dir=None, geom_col='shape'):
-    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid)
+def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, where_clause="1=1", work_dir=None):
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid, where_clause=where_clause)
     zip_path = create_zip(gdb_path, table, out_dir=work_dir)
     upload_to_s3(bucket, zip_path, obj_name)
 
@@ -918,7 +918,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
         for point_view_id in additional_point_views_ids:
             swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
-    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
+    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
+                  where_clause="identifier_database <> 'NASF'")
 
     conn.close()
 
