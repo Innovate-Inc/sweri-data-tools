@@ -148,7 +148,7 @@ def create_gdb(out_name, out_dir):
 
 @log_this
 def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
-                    input_srs=None, work_dir=None, query=None, geom_col="shape"):
+                    input_srs=None, work_dir=None, where_clause="1=1"):
     if not work_dir:
         work_dir = os.getcwd()
 
@@ -167,7 +167,7 @@ def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
     if input_srs:
         opts["srcSRS"] = input_srs
 
-    opts["SQLStatement"] = query or f"SELECT * FROM {schema}.{table} WHERE {geom_col} IS NOT NULL"
+    opts["SQLStatement"] = f"SELECT * FROM {schema}.{table} WHERE {where_clause}"
 
     options = VectorTranslateOptions(**opts)
 
