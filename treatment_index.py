@@ -972,10 +972,15 @@ if __name__ == "__main__":
 
     treatment_index_points_table = 'treatment_index_points'
 
-    response_cache_info = {os.getenv('RESPONSE_CACHE_BUCKET_NAME'): [
-        os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
-        os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
-    ]}
+    response_cache_bucket_name = os.getenv('RESPONSE_CACHE_BUCKET_NAME')
+    response_cache_info = None
+    if response_cache_bucket_name:
+        response_cache_info = {
+            response_cache_bucket_name: [
+                os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
+                os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
+            ]
+        }
 
     chunk = 500
     max_points_before_simplify = 10000
