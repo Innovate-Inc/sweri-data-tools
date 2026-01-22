@@ -1,8 +1,5 @@
 import os
 import shutil
-
-import geopandas
-
 from sweri_utils.s3 import upload_to_s3
 from sweri_utils.swizzle import swizzle_service
 

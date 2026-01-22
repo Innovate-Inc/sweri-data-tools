@@ -1,7 +1,5 @@
 import os
 import zipfile
-
-import geopandas
 import requests
 import logging
 import shutil
