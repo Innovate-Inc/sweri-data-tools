@@ -13,7 +13,7 @@ from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_sh
 from sweri_utils.files import pg_table_to_gdb, create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
 from sweri_utils.sweri_logging import logging, log_this
-from sweri_utils.hosted import refresh_gis
+from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle
 from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
     hazardous_fuels_download_and_insert, nfpors_download_and_insert, state_data_download_and_insert
 
@@ -295,26 +295,26 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-    # # treatment index
-    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-    #                                            ti_data_ids, schema,
-    #                                            table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_poly_view_ids:
-    #     for polygon_view_id in additional_poly_view_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-    #
-    # # treatment index points
-    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-    #                                                   ti_points_view_id, ti_points_data_ids,
-    #                                                   schema,
-    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_point_views_ids:
-    #     for point_view_id in additional_point_views_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
-    #
-    # s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
+    # treatment index
+    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                                               ti_data_ids, schema,
+                                               table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_poly_view_ids:
+        for polygon_view_id in additional_poly_view_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+
+    # treatment index points
+    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+                                                      ti_points_view_id, ti_points_data_ids,
+                                                      schema,
+                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_point_views_ids:
+        for point_view_id in additional_point_views_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+
+    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
 
     conn.close()
 

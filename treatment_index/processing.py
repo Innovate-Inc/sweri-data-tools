@@ -1,7 +1,9 @@
-# BEGIN Common Attributes Functions
+import os
 from sweri_utils.files import get_wkid_from_geoparquet, geoparquet_to_postgres
 from sweri_utils.sql import add_column
 from sweri_utils.sweri_logging import log_this
+
+# BEGIN Common Attributes Functions
 
 
 def add_fields_and_indexes(conn, schema, feature_class, region):
