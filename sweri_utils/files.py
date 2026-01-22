@@ -3,6 +3,9 @@ import zipfile
 import requests
 import logging
 import shutil
+
+from osgeo import ogr
+
 from .sweri_logging import log_this
 
 try:
@@ -104,6 +107,49 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
         except OSError as e:
             logging.error(f'Error deleting {gdb_path}: {e}')
 
+def get_wkid_from_geoparquet(parquet_file):
+    ds = ogr.Open(parquet_file)
+    if not ds:
+        return None
+
+    try:
+        for i in range(ds.GetLayerCount()):
+            layer = ds.GetLayerByIndex(i)
+            srs = layer.GetSpatialRef()
+            if srs:
+                wkid = srs.GetAuthorityCode(None)
+                if wkid:
+                    return int(wkid)
+
+    finally:
+        ds = None
+
+    return None
+
+def geoparquet_to_postgres(file_name, projection: int, postgres_table_name, schema, ogr_db_string, where, input_wkid=None):
+
+
+    options_inputs = {
+        "format": 'PostgreSQL',
+        "accessMode": 'overwrite',
+        "layerName": f"{schema}.{postgres_table_name}",
+        "where": where
+    }
+
+    if input_wkid is not None and int(input_wkid) != int(projection):
+        options_inputs["dstSRS"] = f"EPSG:{int(projection)}"
+
+    options = VectorTranslateOptions(**options_inputs)
+
+    file_name = os.path.join(os.getcwd(), file_name)
+
+    # Upload fc to postgres
+    _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=file_name, options=options)
+    del _
+    logging.info(f'{postgres_table_name} now in geodatabase')
+
+    if os.path.exists(file_name):
+        os.remove(file_name)
 
 ########################### arcpy required for below functions ###########################
 def export_file_by_type(fc_path, filetype, out_dir, out_name, tmp_path):

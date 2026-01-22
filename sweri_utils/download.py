@@ -4,8 +4,9 @@ import os
 from time import sleep
 import requests
 from datetime import datetime
+from arcgis.features import FeatureLayer
 
-from .sql import create_db_conn_from_envs
+from .sql import create_db_conn_from_envs, get_count
 from .sweri_logging import log_this
 
 try:
@@ -135,7 +136,6 @@ def get_ids(service_url, where='1=1', geometry=None, geometry_type=None):
         raise Exception('objectIds are missing from request')
     return data.get('objectIds')
 
-
 def get_query_params_chunk(ids, out_sr=3857, out_fields=None, chunk_size=2000, format='json'):
     """
     Function for creating query parameters for a feature service
@@ -197,6 +197,7 @@ def get_all_features(url, ids, out_sr=3857, out_fields=None, chunk_size=2000, fo
     if total != len(ids):
         logging.warning(f'missing features: {total} of {len(ids)} collected')
 
+@log_this
 @retry(retries=2, on_failure=fetch_failure)
 def fetch_features(url, params, return_full_response=False):
     """
@@ -208,6 +209,7 @@ def fetch_features(url, params, return_full_response=False):
     """
     try:
         r = requests.post(url, data=params)
+        logging.info(r.content)
         r_json = r.json()
 
         if return_full_response:
@@ -325,3 +327,43 @@ def fetch_and_create_featureclass(service_url, where, gdb, fc_name, geometry=Non
     # delete JSON
     os.remove(f.name)
     return out_fc
+
+@log_this
+def prep_buffer_table(schema, destination_table):
+
+    conn = create_db_conn_from_envs()
+    cursor = conn.cursor()
+    # create a buffer table to hold the data without copying data
+    # this is a workaround for the fact that vector translate does not support overwriting
+    # the destination table if it is already in use
+    with conn.transaction():
+        # create table has to be commited to be used in another transaction
+        cursor.execute(f'''
+                   DROP TABLE IF EXISTS {schema}.{destination_table}_buffer;
+                   CREATE TABLE {schema}.{destination_table}_buffer (LIKE {schema}.{destination_table} INCLUDING ALL);
+               ''')
+
+@log_this
+def swap_buffer_table(schema, destination_table, service_url):
+    conn = create_db_conn_from_envs()
+    cursor = conn.cursor()
+    # copy data from buffer table to destination table
+    fl = FeatureLayer(service_url)
+    service_count = fl.query(where="1=1", return_count_only=True)
+    buffer_table_count = get_count(conn, schema, f"{destination_table}_buffer")
+    diff = abs(service_count - buffer_table_count)
+    threshold = 0.01  # 1 percent difference allowed
+
+    if buffer_table_count < 1:
+        percent_diff = diff / buffer_table_count
+    else:
+        raise ValueError("Buffer table empty")
+
+    if percent_diff > threshold:
+        raise ValueError(
+            f"Data source count mismatch after upload. Database count: {buffer_table_count}, Feature Layer count: {service_count}, Difference: {diff} ({percent_diff * 100:.2f}%)")
+
+    with conn.transaction():
+        cursor.execute(f'''TRUNCATE {schema}.{destination_table};''')
+        cursor.execute(f'''INSERT INTO {schema}.{destination_table} (SELECT * FROM {schema}.{destination_table}_buffer);''')
+        cursor.execute(f'''DROP TABLE {schema}.{destination_table}_buffer;''')
