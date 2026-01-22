@@ -33,7 +33,7 @@ def import_s3_csv_to_postgres_table(conn, db_schema, fields, destination_table, 
 
 
 def delete_bucket_contents(bucket_name, prefix):
-    if prefix is None:
+    if not prefix:
         error_msg = f'Deleting {bucket_name} without a prefix is not allowed.'
         logging.error(error_msg)
         raise ValueError(error_msg)

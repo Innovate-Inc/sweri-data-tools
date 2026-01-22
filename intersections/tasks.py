@@ -52,7 +52,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                     target_union AS (
                         SELECT ST_UnaryUnion(ST_Collect(shape)) as shape, objectid, id_2_source
                         FROM intersection_data
-                        GROUP BY objectid, id_2_source 
+                        GROUP BY objectid, id_2_source
                     ), 
                     dissolve_intersection_data AS (
                          SELECT ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape), 4326)::geography) *
@@ -60,7 +60,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                                 a.unique_id   AS id_1,
                                 a.feat_source AS id_1_source,
                                 b.id_2_source  AS id_2_source
-                         FROM sweri.intersection_features a,
+                         FROM {schema}.intersection_features a,
                               target_union b
                          WHERE a.objectid = b.objectid
                     ),
@@ -73,7 +73,8 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
 
                     INSERT INTO {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
                     SELECT acre_overlap, id_1, id_1_source, 'dissolve', id_2_source
-                    FROM dissolve_intersection_data;
+                    FROM dissolve_intersection_data
+                    WHERE acre_overlap > 0;
                     """
             cursor.execute(query)
         del cursor
