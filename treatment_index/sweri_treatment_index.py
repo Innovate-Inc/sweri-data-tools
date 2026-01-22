@@ -240,8 +240,8 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
 @log_this
-def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, query=None, work_dir=None, geom_col='shape'):
-    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid)
+def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, where_clause="1=1", work_dir=None):
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid, where_clause=where_clause)
     zip_path = create_zip(gdb_path, table, out_dir=work_dir)
     upload_to_s3(bucket, zip_path, obj_name)
 
@@ -249,6 +249,13 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, 
         shutil.rmtree(gdb_path)
     if zip_path and os.path.exists(zip_path):
         os.remove(zip_path)
+
+@log_this
+def clear_response_cache(cache_info):
+    # clear cached responses in s3 bucket
+    for bucket_name, prefixes in cache_info.items():
+        for prefix in prefixes:
+            delete_bucket_contents(bucket_name, prefix)
 
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
                         ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
@@ -315,9 +322,12 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
         for point_view_id in additional_point_views_ids:
             swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
-    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid)
+    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
+                  where_clause="identifier_database <> 'NASF'")
 
     conn.close()
+
+    clear_response_cache(response_cache_info)
 
 if __name__ == "__main__":
     load_dotenv()
@@ -360,6 +370,16 @@ if __name__ == "__main__":
 
     treatment_index_points_table = 'treatment_index_points'
 
+    response_cache_bucket_name = os.getenv('RESPONSE_CACHE_BUCKET_NAME')
+    response_cache_info = None
+    if response_cache_bucket_name:
+        response_cache_info = {
+            response_cache_bucket_name: [
+                os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX'),
+                os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
+            ]
+        }
+
     chunk = 500
     max_points_before_simplify = 10000
     simplify_tolerance = 0.000009  # ESPG:4326 degrees
@@ -375,4 +395,5 @@ if __name__ == "__main__":
     run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
-                        treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj)
+                        treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj,
+                        response_cache_info=response_cache_info)
