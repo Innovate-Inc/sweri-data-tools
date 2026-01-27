@@ -3,6 +3,7 @@ services:
   app:
     volumes:
       - ..:/src
+      - ~/.aws:/root/.aws:ro
   celery:
     volumes:
       - ..:/src

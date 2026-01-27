@@ -49,10 +49,25 @@ if __name__ == "__main__":
 
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG')
 
-    # s3 details
+    # s3 details for filegdb export
     s3_bucket = os.getenv('S3_BUCKET')
     s3_obj_name = os.getenv('S3_OBJ_NAME')
 
+    # cache info for treatment index
+    cache_bucket_name = os.getenv('RESPONSE_CACHE_BUCKET_NAME')
+    ti_cache_prefix = os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX')
+    ti_points_cache_prefix = os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
+
+    # Only construct cache info if a valid bucket name is configured
+    response_cache_info = None
+    if cache_bucket_name:
+        cache_prefixes = []
+        if ti_cache_prefix:
+            cache_prefixes.append(ti_cache_prefix)
+        if ti_points_cache_prefix:
+            cache_prefixes.append(ti_points_cache_prefix)
+        if cache_prefixes:
+            response_cache_info = {cache_bucket_name: cache_prefixes}
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -74,7 +89,7 @@ if __name__ == "__main__":
                                 nfpors_url, ifprs_url, state_data_url, root_site_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
-                                include_state_data, s3_bucket, s3_obj_name)
+                                include_state_data, s3_bucket, s3_obj_name, response_cache_info=response_cache_info)
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
         intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
