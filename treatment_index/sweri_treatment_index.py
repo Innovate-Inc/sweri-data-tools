@@ -1,7 +1,7 @@
 import os
 import shutil
 
-from sweri_utils.s3 import upload_to_s3
+from sweri_utils.s3 import upload_to_s3, delete_bucket_contents
 from sweri_utils.swizzle import swizzle_service
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
@@ -260,7 +260,7 @@ def clear_response_cache(cache_info):
 def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
                         ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
-                        additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, ti_points_table='treatment_index_points',
+                        additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info,  ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
                         facts_haz_gdb_path='Actv_HazFuelTrt_PL.gdb', fields_for_cleanup=['type', 'fund_source'],
                         max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
