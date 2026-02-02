@@ -94,7 +94,7 @@ def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70)
     except Exception as e:
         logger.error(f'Error downloading IFPRS: {e}... continuing')
         pass
-    return header, destination_table, where
+    return header, destination_table
 
 @app.task()
 def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
