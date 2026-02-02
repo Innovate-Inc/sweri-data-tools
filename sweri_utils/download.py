@@ -344,12 +344,12 @@ def prep_buffer_table(schema, destination_table):
                ''')
 
 @log_this
-def swap_buffer_table(schema, destination_table, service_url):
+def swap_buffer_table(schema, destination_table, service_url, where):
     conn = create_db_conn_from_envs()
     cursor = conn.cursor()
     # copy data from buffer table to destination table
     fl = FeatureLayer(service_url)
-    service_count = fl.query(where="1=1", return_count_only=True)
+    service_count = fl.query(where=where, return_count_only=True)
     buffer_table_count = get_count(conn, schema, f"{destination_table}_buffer")
     diff = abs(service_count - buffer_table_count)
     threshold = 0.01  # 1 percent difference allowed

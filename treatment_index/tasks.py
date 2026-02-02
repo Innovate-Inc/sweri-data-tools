@@ -70,21 +70,17 @@ def nfpors_download_and_insert(schema, insert_table):
 @app.task()
 def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
     # IFPRS processing and insert
-    conn = create_db_conn_from_envs()
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string)
-    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url))
+    where = '''
+        (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
+        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
+    '''
+    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
+    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
 @app.task()
-def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
-    conn = create_db_conn_from_envs()
-
-    where = '''
-    (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
-    OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-    OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
-'''
-
+def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70):
     destination_table = 'ifprs'
     out_fields = ['*']
 
@@ -101,10 +97,10 @@ def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
     return header, destination_table
 
 @app.task()
-def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url):
+def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
     conn = create_db_conn_from_envs()
 
-    swap_buffer_table(schema, destination_table, ifprs_url)
+    swap_buffer_table(schema, destination_table, ifprs_url, where)
     ifprs_insert(conn, schema, insert_table)
     ifprs_treatment_date(conn, schema, insert_table)
     ifprs_status_consolidation(conn, schema, insert_table)
