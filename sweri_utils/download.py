@@ -354,7 +354,7 @@ def swap_buffer_table(schema, destination_table, service_url):
     diff = abs(service_count - buffer_table_count)
     threshold = 0.01  # 1 percent difference allowed
 
-    if buffer_table_count < 1:
+    if buffer_table_count > 1:
         percent_diff = diff / buffer_table_count
     else:
         raise ValueError("Buffer table empty")
