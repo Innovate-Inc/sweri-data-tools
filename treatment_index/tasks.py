@@ -67,7 +67,6 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-@app.task()
 def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
     # IFPRS processing and insert
     where = '''
@@ -76,7 +75,7 @@ def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_stri
         OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
     '''
     header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
-    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
+    return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
 @app.task()
@@ -107,9 +106,7 @@ def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, wher
 
 # FACTS Common Attributes Tasks
 
-@app.task()
 def common_attributes_download_and_insert(projection, ogr_db_string, schema, treatment_index, facts_haz_table):
-    conn = create_db_conn_from_envs()
 
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
@@ -131,7 +128,8 @@ def common_attributes_download_and_insert(projection, ogr_db_string, schema, tre
         header.append(common_attributes_processing.s(url, projection, common_attributes_fc_name, schema, ogr_db_string,
                                      facts_haz_table, treatment_index))
 
-    chord(header)(common_attributes_type_filter.si(schema, treatment_index))
+    return chord(header, common_attributes_type_filter.si(schema, treatment_index))
+
 
 @app.task()
 def common_attributes_processing(url, projection, common_attributes_fc_name, schema, ogr_db_string, facts_haz_table, treatment_index):

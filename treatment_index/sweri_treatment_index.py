@@ -273,9 +273,9 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     t = []
     t.append(hazardous_fuels_download_and_insert.s(haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid, facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string))
-    t.append(common_attributes_download_and_insert.s(wkid, ogr_db_conn_string, schema, table, haz_fuels_table))
+    t.append(common_attributes_download_and_insert(wkid, ogr_db_conn_string, schema, table, haz_fuels_table))
     t.append(nfpors_download_and_insert.s(schema, table))
-    t.append(ifprs_download_and_insert.s(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
+    t.append(ifprs_download_and_insert(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
     if state_data_inclusion_flag:
         t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
     g = group(t)()
