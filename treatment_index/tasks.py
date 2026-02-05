@@ -67,24 +67,19 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-@app.task()
 def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
     # IFPRS processing and insert
-    conn = create_db_conn_from_envs()
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string)
-    chord(header)(ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url))
+    where = '''
+        (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
+        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
+    '''
+    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
+    return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
 @app.task()
-def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
-    conn = create_db_conn_from_envs()
-
-    where = '''
-    (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
-    OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-    OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
-'''
-
+def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70):
     destination_table = 'ifprs'
     out_fields = ['*']
 
@@ -101,19 +96,17 @@ def update_ifprs(schema, wkid, service_url, ogr_db_string, chunk_size=70):
     return header, destination_table
 
 @app.task()
-def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url):
+def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
     conn = create_db_conn_from_envs()
 
-    swap_buffer_table(schema, destination_table, ifprs_url)
+    swap_buffer_table(schema, destination_table, ifprs_url, where)
     ifprs_insert(conn, schema, insert_table)
     ifprs_treatment_date(conn, schema, insert_table)
     ifprs_status_consolidation(conn, schema, insert_table)
 
 # FACTS Common Attributes Tasks
 
-@app.task()
 def common_attributes_download_and_insert(projection, ogr_db_string, schema, treatment_index, facts_haz_table):
-    conn = create_db_conn_from_envs()
 
     common_attributes_fc_name = 'Actv_CommonAttribute_PL'
     urls = [
@@ -135,7 +128,8 @@ def common_attributes_download_and_insert(projection, ogr_db_string, schema, tre
         header.append(common_attributes_processing.s(url, projection, common_attributes_fc_name, schema, ogr_db_string,
                                      facts_haz_table, treatment_index))
 
-    chord(header)(common_attributes_type_filter.si(schema, treatment_index))
+    return chord(header, common_attributes_type_filter.si(schema, treatment_index))
+
 
 @app.task()
 def common_attributes_processing(url, projection, common_attributes_fc_name, schema, ogr_db_string, facts_haz_table, treatment_index):
