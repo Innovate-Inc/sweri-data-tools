@@ -1001,7 +1001,7 @@ class SwizzleTests(TestCase):
         assert result["tables"] == []
 
     def test_constructs_administrative_url_correctly(self):
-        result = get_view_admin_url("any_url", "any_service")
+        result = get_view_admin_url("any_url/arcgis", "any_service")
         assert "arcgis/rest/admin/services/Hosted/any_service/FeatureServer" in result
 
     @patch('requests.get')

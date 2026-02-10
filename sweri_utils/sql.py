@@ -1,6 +1,8 @@
 import logging
 import os
 from typing import TextIO
+from urllib.parse import quote_plus
+
 import psycopg
 from sqlalchemy import create_engine
 
@@ -496,7 +498,11 @@ def get_sql_alchemy_engine_from_envs():
     docker_db_user = os.getenv('DB_USER')
     docker_db_password = os.getenv('DB_PASSWORD')
 
-    db_conn_string = f'postgresql+psycopg://{docker_db_user}:{docker_db_password}@{docker_db_host}:{docker_db_port}/{docker_db_name}'
+    # URL-encode the username and password to safely handle special characters (like '@')
+    user_encoded = quote_plus(docker_db_user)
+    password_encoded = quote_plus(docker_db_password)
+
+    db_conn_string = f'postgresql+psycopg://{user_encoded}:{password_encoded}@{docker_db_host}:{docker_db_port}/{docker_db_name}'
     return create_engine(db_conn_string, pool_size=10, max_overflow=20, pool_recycle=300)
 
 def truncate_and_insert(schema, source_table, destination_table, conn, common_fields):
