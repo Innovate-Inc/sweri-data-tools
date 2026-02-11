@@ -19,7 +19,6 @@ services:
         awslogs-stream: rabbit
 
   celery:
-    command: celery -A worker worker --loglevel=warning
     ports:
       - "5555:5555"
     logging:
