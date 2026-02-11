@@ -7,7 +7,7 @@ services:
         awslogs-region: us-west-2
         awslogs-group: /data-processing/staging
         awslogs-create-group: "true"
-        awslogs-stream-prefix: app
+        awslogs-stream: app
 
   rabbit:
     logging:
@@ -16,7 +16,7 @@ services:
         awslogs-region: us-west-2
         awslogs-group: /data-processing/staging
         awslogs-create-group: "true"
-        awslogs-stream-prefix: rabbit
+        awslogs-stream: rabbit
 
   celery:
     command: celery -A worker worker --loglevel=warning
@@ -28,7 +28,7 @@ services:
         awslogs-region: us-west-2
         awslogs-group: /data-processing/staging
         awslogs-create-group: "true"
-        awslogs-stream-prefix: celery
+        awslogs-stream: celery
 
   redis:
     logging:
@@ -37,7 +37,7 @@ services:
         awslogs-region: us-west-2
         awslogs-group: /data-processing/staging
         awslogs-create-group: "true"
-        awslogs-stream-prefix: redis
+        awslogs-stream: redis
 
   db:
     logging:
@@ -46,4 +46,4 @@ services:
         awslogs-region: us-west-2
         awslogs-group: /data-processing/staging
         awslogs-create-group: "true"
-        awslogs-stream-prefix: db
+        awslogs-stream: db
