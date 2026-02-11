@@ -5,3 +5,4 @@ gp_tool
 venv
 ../venv
 .env
+docker

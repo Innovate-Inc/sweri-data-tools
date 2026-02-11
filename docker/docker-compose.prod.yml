@@ -1,1 +1,49 @@
 name: SWERI Processing prod
+services:
+  app:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream-prefix: app
+
+  rabbit:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream-prefix: rabbit
+
+  celery:
+    command: celery -A worker worker --loglevel=warning
+    ports:
+      - "5555:5555"
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream-prefix: celery
+
+  redis:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream-prefix: redis
+
+  db:
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream-prefix: db

@@ -5,6 +5,9 @@ services:
       - ..:/src
       - ~/.aws:/root/.aws:ro
   celery:
+    command: celery -A worker worker --loglevel=warning
+    ports:
+      - "5555:5555"
     volumes:
       - ..:/src
   db:
@@ -24,7 +27,6 @@ services:
         condition: service_healthy
     volumes:
       - ${HOST_PGADMIN_DATA_PATH}:/var/lib/pgadmin
-
 
 volumes:
   postgres_data:
