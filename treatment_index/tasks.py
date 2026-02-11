@@ -23,7 +23,7 @@ from worker import app
 @app.task
 def service_chunk_to_postgres(url, params, schema, destination_table, ogr_db_string):
     r = fetch_features(url + '/query', params, return_full_response=True)
-    logging.info(r)
+    logging.debug(r)
 
     options = VectorTranslateOptions(format='PostgreSQL',
                                      accessMode='append',

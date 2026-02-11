@@ -209,7 +209,7 @@ def fetch_features(url, params, return_full_response=False):
     """
     try:
         r = requests.post(url, data=params)
-        logging.info(r.content)
+        logging.debug(r.content)
         r_json = r.json()
 
         if return_full_response:
