@@ -102,7 +102,7 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
                 i = 0
                 while i < len(ids):
                     # calculate intersections in chunks
-                    source_object_ids = str(tuple(ids[i:i + chunk_size]))
+                    source_object_ids = f"({','.join(str(_id) for _id in ids[i:i + chunk_size])})"
                     t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key,
                                                                   source_object_ids))
                     i += chunk_size
@@ -181,12 +181,12 @@ def run_intersections(docker_conn, docker_schema,
     ############## setting up intersection features ################
     ############## fetching features ################
     # get latest features based on source
-    fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
-    # refresh the spatial index
-    refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
-
-    # run VACUUM ANALYZE to increase performance after bulk updates
-    run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
+    # fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
+    # # refresh the spatial index
+    # refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
+    #
+    # # run VACUUM ANALYZE to increase performance after bulk updates
+    # run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     # ############## calculate intersections ################
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
                                          docker_schema)
