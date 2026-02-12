@@ -84,7 +84,7 @@ def insert_from_db(
     :param wkid: The spatial reference ID to use for the geometry transformation.
     :return: None
     """
-asdf    cursor = conn.cursor()
+    cursor = conn.cursor()
     batch_size = 50000
     last_id = 0
 
