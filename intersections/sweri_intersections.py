@@ -11,14 +11,18 @@ from arcgis import GIS
 from celery import group
 import requests as r
 from dotenv import load_dotenv
-from sweri_utils.download import fetch_features
+from sweri_utils.download import fetch_features, get_ids, get_all_features, get_query_params_chunk
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db, delete_from_table, \
     create_db_conn_from_envs, truncate_and_insert, switch_autovacuum_and_triggers, delete_duplicate_records, \
     populate_sequence_field, makevalid_shapes
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
+from intersections.utils import insert_feature_into_db
+from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 
-from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
+
+logger = logging.getLogger(__name__)
+
 
 @log_this
 def configure_intersection_sources(features, start):
@@ -132,7 +136,24 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
     tasks = []
     for key, value in intersect_sources.items():
         # remove existing features
-        tasks.append(fetch_and_insert_intersection_features.s(key, value, wkid, schema, insert_table))
+        delete_from_table(conn, schema, insert_table, f"feat_source = '{key}'")
+        if value['source_type'] == 'url':
+            ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
+            for params in get_query_params_chunk(ids, wkid, chunk_size=value['chunk_size'], format='geojson'):
+                tasks.append(service_chunk_to_postgres.si(value['source'], params, schema, insert_table, key, value, wkid))
+
+        elif value['source_type'] == 'db_table':
+            logger.info(f'copying data from DB for {value["source"]}')
+            tasks.append(insert_from_db_task.si(
+                schema,
+                insert_table,
+                ['unique_id', 'feat_source'],
+                value['source'],
+                [value['id'], f"'{key}' as feat_source"],
+                'shape',
+                'shape',
+                wkid))
+
     g = group(tasks)()
     g.get()
     # remove null shapes and unique ids

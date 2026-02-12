@@ -5,9 +5,6 @@ services:
       - ..:/src
       - ~/.aws:/root/.aws:ro
   celery:
-    command: celery -A worker worker --loglevel=warning
-    ports:
-      - "5555:5555"
     volumes:
       - ..:/src
   db:
