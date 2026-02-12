@@ -1,5 +1,5 @@
 from intersections.utils import insert_feature_into_db
-from sweri_utils.download import get_ids, get_all_features
+from sweri_utils.download import get_ids, fetch_features
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.sql import delete_from_table, insert_from_db, create_db_conn_from_envs
 from worker import app
@@ -83,27 +83,33 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
     logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} ')
 
 
-@app.task(time_limit=1440000)
-def fetch_and_insert_intersection_features(key, value, wkid, docker_schema, insert_table):
-    docker_conn = create_db_conn_from_envs()
-    delete_from_table(docker_conn, docker_schema, insert_table, f"feat_source = '{key}'")
-    if value['source_type'] == 'url':
-        logger.info(f'fetching geojson features from {value["source"]}')
-        ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
-        for chunk in get_all_features(value['source'], ids, wkid, out_fields=None, chunk_size=value['chunk_size'], format='geojson'):
-            for f in chunk:
-                insert_feature_into_db(docker_conn, insert_table, f, key, value['id'], docker_schema, wkid)
-    elif value['source_type'] == 'db_table':
-        logger.info(f'copying data from rds db for {value["source"]}')
-        insert_from_db(
-            docker_conn,
-            docker_schema,
-            insert_table,
-            ['unique_id', 'feat_source'],
-            value['source'],
-            [value['id'], f"'{key}' as feat_source"],
-            'shape',
-            'shape',
-            wkid)
-    else:
-        raise ValueError('invalid source type: {}'.format(value['source_type']))
+@app.task
+def insert_from_db_task(
+        schema: str,
+        insert_table: str,
+        insert_fields: list[str],
+        from_table: str,
+        from_fields: list[str],
+        from_shape: str = 'shape',
+        to_shape: str = 'shape',
+        wkid: int = 4326):
+    conn = create_db_conn_from_envs()
+    insert_from_db(
+        conn,
+        schema,
+        insert_table,
+        insert_fields,
+        from_table,
+        from_fields,
+        from_shape,
+        to_shape,
+        wkid)
+
+
+@app.task
+def service_chunk_to_postgres(url, params, schema, destination_table, key, value, wkid):
+    conn = create_db_conn_from_envs()
+    logger.info(f'fetching geojson features from {value["source"]}')
+    r = fetch_features(url + '/query', params, return_full_response=True)
+    for f in r['features']:
+        insert_feature_into_db(conn, destination_table, f, key, value['id'], schema, wkid)

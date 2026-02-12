@@ -49,6 +49,8 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+    ports:
+      - "5555:5555"
   redis:
     image: redis:latest
     ports:

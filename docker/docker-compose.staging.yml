@@ -19,9 +19,7 @@ services:
         awslogs-stream: rabbit
 
   celery:
-    ports:
-      - "5555:5555"
-    logging:
+     logging:
       driver: awslogs
       options:
         awslogs-region: us-west-2
