@@ -313,27 +313,27 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-    # # treatment index
-    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-    #                                            ti_data_ids, schema,
-    #                                            table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_poly_view_ids:
-    #     for polygon_view_id in additional_poly_view_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-    #
-    # # treatment index points
-    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-    #                                                   ti_points_view_id, ti_points_data_ids,
-    #                                                   schema,
-    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_point_views_ids:
-    #     for point_view_id in additional_point_views_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
-    #
-    # s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
-    #               where_clause="identifier_database <> 'NASF'")
+    # treatment index
+    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                                               ti_data_ids, schema,
+                                               table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_poly_view_ids:
+        for polygon_view_id in additional_poly_view_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+
+    # treatment index points
+    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+                                                      ti_points_view_id, ti_points_data_ids,
+                                                      schema,
+                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_point_views_ids:
+        for point_view_id in additional_point_views_ids:
+            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+
+    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
+                  where_clause="identifier_database <> 'NASF'")
 
     conn.close()
 
