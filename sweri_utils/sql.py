@@ -113,7 +113,12 @@ def insert_from_db(
                 FROM {schema}.{from_table}
                 WHERE objectid > {last_id} AND objectid <= {max_id};'''
 
-    logging.info(f'Completed {q}')
+        with conn.transaction():
+            cursor.execute(q)
+
+        last_id = max_id
+
+    logging.info(f'Completed insert into {schema}.{insert_table}')
 
 
 def pg_copy_to_csv(conn: psycopg.Connection, schema: str, table: str, filename: str, columns: list[str]) -> TextIO:

@@ -570,13 +570,58 @@ class SqlTests(TestCase):
         insert_fields = ['field1', 'field2']
         from_table = 'source_table'
         from_fields = ['field1', 'field2']
-        expected_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} FROM {schema}.{from_table};'''
+        batch_size = 50000
+
+        # Create expected queries
+        # 1. First batch max id query
+        select_max_q_1 = f"""
+                SELECT max(objectid) 
+                FROM (
+                    SELECT objectid 
+                    FROM {schema}.{from_table} 
+                    WHERE objectid > 0 
+                    ORDER BY objectid ASC 
+                    LIMIT {batch_size}
+                ) sub
+            """
+
+        # 2. Insert query for first batch
+        insert_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) 
+                SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} 
+                FROM {schema}.{from_table}
+                WHERE objectid > 0 AND objectid <= 100;'''
+
+        # 3. Second batch max id query (returns None to stop loop)
+        select_max_q_2 = f"""
+                SELECT max(objectid) 
+                FROM (
+                    SELECT objectid 
+                    FROM {schema}.{from_table} 
+                    WHERE objectid > 100 
+                    ORDER BY objectid ASC 
+                    LIMIT {batch_size}
+                ) sub
+            """
+
+        # Mock fetchone return values: (100,) for first batch, (None,) for second batch check
+        mock_cursor.fetchone.side_effect = [(100,), (None,)]
+
         # Call the function
         sql.insert_from_db(mock_connection, schema, insert_table, insert_fields, from_table, from_fields)
 
         # Check if the correct SQL commands were executed
-        mock_cursor.execute.assert_called_once_with(expected_q)
-        mock_connection.transaction.assert_called_once()
+        # We expect 3 execute calls
+        self.assertEqual(mock_cursor.execute.call_count, 3)
+
+        # Check calls args
+        mock_cursor.execute.assert_has_calls([
+            call(select_max_q_1),
+            call(insert_q),
+            call(select_max_q_2)
+        ])
+
+        # We expect 3 transaction contexts (2 for select max, 1 for insert)
+        self.assertEqual(mock_connection.transaction.call_count, 3)
 
     def test_copy_table_across_servers(self):
         from_mock_connection = MagicMock()
