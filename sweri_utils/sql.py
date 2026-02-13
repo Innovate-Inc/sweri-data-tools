@@ -109,9 +109,9 @@ def insert_from_db(
 
             # Construct the query for the current batch
             q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) 
-                    SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
-                    FROM {schema}.{from_table}
-                    WHERE objectid > {last_id} AND objectid <= {max_id};'''
+                SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
+                FROM {schema}.{from_table}
+                WHERE objectid > {last_id} AND objectid <= {max_id};'''
 
             cursor.execute(q)
 

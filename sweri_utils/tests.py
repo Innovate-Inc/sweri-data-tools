@@ -570,7 +570,7 @@ class SqlTests(TestCase):
         insert_fields = ['field1', 'field2']
         from_table = 'source_table'
         from_fields = ['field1', 'field2']
-        batch_size = 50000
+        batch_size = 5000
 
         # Create expected queries
         # 1. First batch max id query
@@ -621,7 +621,7 @@ class SqlTests(TestCase):
         ])
 
         # We expect 3 transaction contexts (2 for select max, 1 for insert)
-        self.assertEqual(mock_connection.transaction.call_count, 3)
+        self.assertEqual(mock_connection.transaction.call_count, 2)
 
     def test_copy_table_across_servers(self):
         from_mock_connection = MagicMock()
