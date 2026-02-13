@@ -85,7 +85,7 @@ def insert_from_db(
     :return: None
     """
     cursor = conn.cursor()
-    batch_size = 50000
+    batch_size = 5000
     last_id = 0
 
     while True:
@@ -104,19 +104,18 @@ def insert_from_db(
             """)
             max_id = cursor.fetchone()[0]
 
-        if max_id is None:
-            break
+            if max_id is None:
+                break
 
-        # Construct the query for the current batch
-        q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) 
-                SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
-                FROM {schema}.{from_table}
-                WHERE objectid > {last_id} AND objectid <= {max_id};'''
+            # Construct the query for the current batch
+            q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) 
+                    SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
+                    FROM {schema}.{from_table}
+                    WHERE objectid > {last_id} AND objectid <= {max_id};'''
 
-        with conn.transaction():
             cursor.execute(q)
 
-        last_id = max_id
+            last_id = max_id
 
     logging.info(f'Completed insert into {schema}.{insert_table}')
 
