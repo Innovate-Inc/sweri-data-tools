@@ -36,6 +36,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
         logger.info(f'beginning intersections on {source_key} and {target_key}')
         cursor = conn.cursor()
         with conn.transaction():
+            # snapping the collection of target features to a grid before dissolving to prevent topology errors that can arise when dissolving features with very small gaps or overlaps
             query = f"""
                     WITH intersection_data AS (
                         SELECT
@@ -50,7 +51,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                         WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     ),
                     target_union AS (
-                        SELECT ST_UnaryUnion(ST_Collect(shape)) as shape, objectid, id_2_source
+                        SELECT ST_UnaryUnion(ST_SnapToGrid(ST_Collect(shape), 0.000000001)) as shape, objectid, id_2_source
                         FROM intersection_data
                         GROUP BY objectid, id_2_source
                     ), 
