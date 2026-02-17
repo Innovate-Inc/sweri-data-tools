@@ -51,7 +51,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                         WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     ),
                     target_union AS (
-                        SELECT ST_UnaryUnion(ST_SnapToGrid(ST_Collect(shape), 0.000000001)) as shape, objectid, id_2_source
+                        SELECT ST_UnaryUnion(ST_MakeValid(ST_SnapToGrid(ST_Collect(shape), 0.000000001))) as shape, objectid, id_2_source
                         FROM intersection_data
                         GROUP BY objectid, id_2_source
                     ), 
@@ -94,17 +94,17 @@ def insert_from_db_task(
         from_shape: str = 'shape',
         to_shape: str = 'shape',
         wkid: int = 4326):
-    conn = create_db_conn_from_envs()
-    insert_from_db(
-        conn,
-        schema,
-        insert_table,
-        insert_fields,
-        from_table,
-        from_fields,
-        from_shape,
-        to_shape,
-        wkid)
+    with create_db_conn_from_envs() as conn:
+        insert_from_db(
+            conn,
+            schema,
+            insert_table,
+            insert_fields,
+            from_table,
+            from_fields,
+            from_shape,
+            to_shape,
+            wkid)
 
 
 @app.task
