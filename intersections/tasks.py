@@ -46,7 +46,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                             b.unique_id AS id_2,
                             b.feat_source AS id_2_source,
                             a.objectid AS objectid,
-                            b.shape as ST_MakeValid(shape)
+                            ST_MakeValid(b.shape) as shape
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
                         WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     ),
