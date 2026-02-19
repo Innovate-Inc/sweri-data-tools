@@ -1,4 +1,5 @@
 from intersections.utils import insert_feature_into_db
+from psycopg import OperationalError
 from sweri_utils.download import get_ids, fetch_features
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.sql import delete_from_table, insert_from_db, create_db_conn_from_envs
@@ -17,7 +18,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='
 # logger.addHandler(cw)
 
 
-@app.task(time_limit=1440000)
+@app.task(time_limit=1440000, autoretry_for=(OperationalError,))
 def calculate_intersections_and_insert(schema, insert_table, source_key, target_key, source_object_ids):
     """
     Calculate intersections between features from two sources and insert the results into a specified table.
@@ -46,12 +47,14 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
                             b.unique_id AS id_2,
                             b.feat_source AS id_2_source,
                             a.objectid AS objectid,
-                            ST_MakeValid(b.shape) as shape
+                            ST_MakeValid(ST_SnapToGrid(b.shape, 0.000000001)) as shape
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
                         WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     ),
                     target_union AS (
-                        SELECT ST_UnaryUnion(ST_MakeValid(ST_SnapToGrid(ST_Collect(shape), 0.000000001))) as shape, objectid, id_2_source
+                        SELECT ST_Union(shape) as shape, 
+                               objectid, 
+                               id_2_source
                         FROM intersection_data
                         GROUP BY objectid, id_2_source
                     ), 
