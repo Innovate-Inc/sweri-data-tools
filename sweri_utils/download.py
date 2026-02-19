@@ -354,14 +354,15 @@ def swap_buffer_table(schema, destination_table, service_url, where):
     diff = abs(service_count - buffer_table_count)
     threshold = 0.01  # 1 percent difference allowed
 
-    if buffer_table_count > 1:
+    if buffer_table_count >= 1:
         percent_diff = diff / buffer_table_count
     else:
-        raise ValueError("Buffer table empty")
+        logging.error("Buffer table empty")
+        return
 
     if percent_diff > threshold:
-        raise ValueError(
-            f"Data source count mismatch after upload. Database count: {buffer_table_count}, Feature Layer count: {service_count}, Difference: {diff} ({percent_diff * 100:.2f}%)")
+        logging.error(f"Data source count mismatch after upload. Database count: {buffer_table_count}, Feature Layer count: {service_count}, Difference: {diff} ({percent_diff * 100:.2f}%)")
+        return
 
     with conn.transaction():
         cursor.execute(f'''TRUNCATE {schema}.{destination_table};''')
