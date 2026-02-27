@@ -90,6 +90,7 @@ jobs:
           file: ./docker/Dockerfile
           context: .
           load: true
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
 
