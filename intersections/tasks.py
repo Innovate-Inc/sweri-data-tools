@@ -18,7 +18,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='
 # logger.addHandler(cw)
 
 
-@app.task(time_limit=1440000, autoretry_for=(OperationalError,))
+@app.task(time_limit=60*60*1000, autoretry_for=(OperationalError,))
 def calculate_intersections_and_insert(schema, insert_table, source_key, target_key, source_object_ids):
     """
     Calculate intersections between features from two sources and insert the results into a specified table.
