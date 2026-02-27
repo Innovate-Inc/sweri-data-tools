@@ -22,7 +22,7 @@ services:
 
   celery:
     platform: linux/arm64
-     logging:
+    logging:
       driver: awslogs
       options:
         awslogs-region: us-west-2
