@@ -1,6 +1,7 @@
 name: SWERI Processing Staging
 services:
   app:
+    platform: linux/arm64
     logging:
       driver: awslogs
       options:
@@ -10,6 +11,7 @@ services:
         awslogs-stream: app
 
   rabbit:
+    platform: linux/arm64
     logging:
       driver: awslogs
       options:
@@ -19,6 +21,7 @@ services:
         awslogs-stream: rabbit
 
   celery:
+    platform: linux/arm64
      logging:
       driver: awslogs
       options:
@@ -28,6 +31,7 @@ services:
         awslogs-stream: celery
 
   redis:
+    platform: linux/arm64
     logging:
       driver: awslogs
       options:
@@ -37,7 +41,8 @@ services:
         awslogs-stream: redis
 
   db:
-    shm_size: 4gb
+    platform: linux/arm64
+    shm_size: '4gb'
     command: postgres -c max_wal_size=5GB -c wal_level=minimal -c synchronous_commit=off -c max_wal_senders=0 -c shared_buffers=4GB
     logging:
       driver: awslogs
