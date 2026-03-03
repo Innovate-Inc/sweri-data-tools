@@ -12,7 +12,8 @@ from sweri_utils.sql import connect_to_pg_db, postgres_create_index, add_column,
 from sweri_utils.download import service_to_postgres, get_ids
 from sweri_utils.files import gdb_to_postgres, download_file_from_url, extract_and_remove_zip_file, \
     pg_table_to_gdb, create_zip
-from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, \
+    flag_spatial_errors, flag_large_area
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, refresh_gis
 
@@ -890,6 +891,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     flag_high_cost(conn, schema, table)
     flag_duplicates(conn, schema, table)
     flag_uom_outliers(conn, schema, table)
+    flag_large_area(conn, schema, table)
     revert_multi_to_poly(conn, schema, table)
     simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
     makevalid_shapes(conn, schema, table, 'shape', fc_res)
