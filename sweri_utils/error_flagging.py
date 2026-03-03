@@ -192,3 +192,16 @@ def flag_spatial_errors(conn, schema, table_name):
             WHERE ti.state = s.stusps
             AND NOT ST_Intersects(ti.shape, s.shape);
         ''')
+
+def flag_large_area(conn, schema, table_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.{table_name} ti
+            SET error =
+                CASE
+                  WHEN ti.error IS NULL THEN 'LARGE_AREA'
+                  ELSE ti.error || ';LARGE_AREA'
+                END
+            WHERE ti.acres > 3000000;
+        ''')
