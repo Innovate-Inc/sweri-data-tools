@@ -6,6 +6,7 @@ sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from arcgis import GIS
 from celery import group
@@ -111,6 +112,14 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
     switch_autovacuum_and_triggers(False, conn,  schema, autovacuum_tables)
     try:
         g = group(t)()
+        while not g.ready():
+            # Check how many are done
+            done_count = g.completed_count()
+            total_count = len(t)
+            logging.info(f"Progress: {done_count}/{total_count} intersection tasks completed...")
+
+            time.sleep(30)  # check every 30 seconds
+
         g.get()
     except Exception as err:
         switch_autovacuum_and_triggers(True, conn, schema, autovacuum_tables)
