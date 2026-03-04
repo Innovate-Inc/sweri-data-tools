@@ -38,12 +38,3 @@ services:
         awslogs-group: /data-processing/prod
         awslogs-create-group: "true"
         awslogs-stream: redis
-
-  db:
-    logging:
-      driver: awslogs
-      options:
-        awslogs-region: us-west-2
-        awslogs-group: /data-processing/prod
-        awslogs-create-group: "true"
-        awslogs-stream: db
