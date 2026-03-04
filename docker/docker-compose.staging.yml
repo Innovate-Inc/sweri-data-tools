@@ -30,7 +30,6 @@ services:
         awslogs-create-group: "true"
         awslogs-stream: celery
     command: celery -A worker worker --loglevel=info --autoscale=16,8
-
   redis:
     platform: linux/arm64
     logging:
