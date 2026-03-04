@@ -8,7 +8,7 @@ import watchtower
 
 @log_this
 def flag_duplicate_ids(conn, schema, table_name):
-    # Sets DUPLICATE-ID Flag for all entries where the id appears in the table more than once
+    # Sets DUPLICATE_ID Flag for all entries where the id appears in the table more than once
 
     cursor = conn.cursor()
     with conn.transaction():
@@ -17,8 +17,8 @@ def flag_duplicate_ids(conn, schema, table_name):
             UPDATE {schema}.{table_name} tid
              SET error = 
                     CASE
-                        WHEN tid.error IS NULL THEN 'DUPLICATE-ID'
-                        ELSE tid.error || ';DUPLICATE-ID'
+                        WHEN tid.error IS NULL THEN 'DUPLICATE_ID'
+                        ELSE tid.error || ';DUPLICATE_ID'
                     END
             WHERE unique_id IN (
                 SELECT unique_id
@@ -75,7 +75,7 @@ def create_duplicate_table(conn, schema, table_name):
 @log_this
 def flag_duplicate_table(conn, schema, table_name):
     # Creates partitions of each group of duplicates and ranks them
-    # Changes rank 1 to DUPLICATE-KEEP, and all others to DUPLICATE-DROP
+    # Changes rank 1 to DUPLICATE_KEEP, and all others to DUPLICATE_DROP
     # Ensures 1 record kept and all others dropped for each group of duplicates
     cursor = conn.cursor()
     with conn.transaction():
@@ -93,13 +93,13 @@ def flag_duplicate_table(conn, schema, table_name):
                     CASE
                         WHEN ranking_treatment_duplicates.row_num = 1 THEN 
                             CASE
-                                WHEN tid.error IS NULL THEN 'DUPLICATE-KEEP'
-                                ELSE tid.error || ';DUPLICATE-KEEP'
+                                WHEN tid.error IS NULL THEN 'DUPLICATE_KEEP'
+                                ELSE tid.error || ';DUPLICATE_KEEP'
                             END
                         ELSE 
                             CASE
-                                WHEN tid.error IS NULL THEN 'DUPLICATE-DROP'
-                                ELSE tid.error || ';DUPLICATE-DROP'
+                                WHEN tid.error IS NULL THEN 'DUPLICATE_DROP'
+                                ELSE tid.error || ';DUPLICATE_DROP'
                             END
                     END	
                 FROM ranking_treatment_duplicates
@@ -128,7 +128,7 @@ def update_treatment_index_duplicates(conn, schema, table_name):
 @log_this
 def flag_duplicates(cursor, schema, table_name):
     # Create a table of all duplicates
-    # Flag table with DUPLICATE-KEEP or DUPLICATE-DROP for each record
+    # Flag table with DUPLICATE_KEEP or DUPLICATE_DROP for each record
     # Update treatment index with duplicate flags from duplicate table
 
     create_duplicate_table(cursor, schema, table_name)
