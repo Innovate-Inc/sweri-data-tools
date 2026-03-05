@@ -4,7 +4,6 @@ import shutil
 from sweri_utils.s3 import upload_to_s3, delete_bucket_contents
 from sweri_utils.swizzle import swizzle_service
 
-from scripts.sweri_utils.error_flagging import flag_large_area
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
@@ -13,7 +12,7 @@ from celery import group, chain
 from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_shapes, \
     extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
 from sweri_utils.files import pg_table_to_gdb, create_zip
-from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors
+from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors, flag_large_area
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle
 from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
