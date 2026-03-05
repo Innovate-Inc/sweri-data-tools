@@ -4,6 +4,8 @@ import shutil
 from sweri_utils.s3 import upload_to_s3, delete_bucket_contents
 from sweri_utils.swizzle import swizzle_service
 
+from scripts.sweri_utils.error_flagging import flag_large_area
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
 from celery import group, chain
@@ -171,7 +173,7 @@ def state_data_twig_category(conn, schema):
             {schema}.twig_category_lookup tc
             WHERE ti.identifier_database = 'NASF'
             AND
-            ti.category = tc.category;
+            ti.twig_category = tc.category;
         ''')
 
 @log_this
@@ -304,6 +306,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     flag_high_cost(conn, schema, table)
     flag_duplicates(conn, schema, table)
     flag_uom_outliers(conn, schema, table)
+    flag_large_area(conn, schema, table)
     revert_multi_to_poly(conn, schema, table)
     simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
     makevalid_shapes(conn, schema, table, 'shape', fc_res)
