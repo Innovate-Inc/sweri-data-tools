@@ -84,12 +84,40 @@ def insert_from_db(
     :param wkid: The spatial reference ID to use for the geometry transformation.
     :return: None
     """
-    q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} FROM {schema}.{from_table};'''
-    logging.info(q)
     cursor = conn.cursor()
-    with conn.transaction():
-        cursor.execute(q)
-    logging.info(f'Completed {q}')
+    batch_size = 5000
+    last_id = 0
+
+    while True:
+        # Determine the upper bound of the next batch
+        # We query the source table's objectids to find the cutoff for this batch
+        with conn.transaction():
+            cursor.execute(f"""
+                SELECT max(objectid) 
+                FROM (
+                    SELECT objectid 
+                    FROM {schema}.{from_table} 
+                    WHERE objectid > {last_id} 
+                    ORDER BY objectid ASC 
+                    LIMIT {batch_size}
+                ) sub
+            """)
+            max_id = cursor.fetchone()[0]
+
+            if max_id is None:
+                break
+
+            # Construct the query for the current batch
+            q = f'''INSERT INTO {schema}.{insert_table} (objectid, {to_shape}, {','.join(insert_fields)}) 
+                SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM({from_shape}, {wkid})), {','.join(from_fields)} 
+                FROM {schema}.{from_table}
+                WHERE objectid > {last_id} AND objectid <= {max_id};'''
+
+            cursor.execute(q)
+
+            last_id = max_id
+
+    logging.info(f'Completed insert into {schema}.{insert_table}')
 
 
 def pg_copy_to_csv(conn: psycopg.Connection, schema: str, table: str, filename: str, columns: list[str]) -> TextIO:
@@ -479,7 +507,6 @@ def trim_whitespace(conn, schema, table, field):
 
         ''')
 
-@log_this
 def create_db_conn_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))
@@ -488,7 +515,6 @@ def create_db_conn_from_envs():
     docker_db_password = os.getenv('DB_PASSWORD')
     return connect_to_pg_db(docker_db_host, docker_db_port, docker_db_name, docker_db_user, docker_db_password)
 
-@log_this
 def get_sql_alchemy_engine_from_envs():
     docker_db_host = os.getenv('DB_HOST')
     docker_db_port = int(os.getenv('DB_PORT'))

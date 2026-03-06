@@ -39,7 +39,7 @@ jobs:
   deploy:
     name: Update latest ECR image
     environment: ${{ inputs.environment }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -89,7 +89,7 @@ jobs:
         with:
           file: ./docker/Dockerfile
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/arm64
           tags: ${{ steps.metadata.outputs.tags }}
           cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           push: true

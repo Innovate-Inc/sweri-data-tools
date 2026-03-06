@@ -6,19 +6,24 @@ sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from arcgis import GIS
 from celery import group
 import requests as r
 from dotenv import load_dotenv
-from sweri_utils.download import fetch_features
+from sweri_utils.download import fetch_features, get_ids, get_all_features, get_query_params_chunk
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db, delete_from_table, \
     create_db_conn_from_envs, truncate_and_insert, switch_autovacuum_and_triggers, delete_duplicate_records, \
-    populate_sequence_field
+    populate_sequence_field, makevalid_shapes
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
+from intersections.utils import insert_feature_into_db
+from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 
-from intersections.tasks import calculate_intersections_and_insert, fetch_and_insert_intersection_features
+
+logger = logging.getLogger(__name__)
+
 
 @log_this
 def configure_intersection_sources(features, start):
@@ -34,7 +39,8 @@ def configure_intersection_sources(features, start):
             'last_run': att['last_run'],
             'frequency_days': att['frequency_days'],
             'name': att['name'],
-            'chunk_size': int(att['chunk_size']) if att['chunk_size'] else 1000,
+            'chunk_size': int(att.get('chunk_size') or 1000),
+            'processing_chunk_size': int(att.get('processing_chunk_size') or 1000),
         }
 
         # always set targets
@@ -73,10 +79,12 @@ def update_last_run(features, start_time, url, layer_id, portal, user, password)
 
 
 @log_this
-def calculate_intersections_from_sources(intersect_sources, intersect_targets, intersections_name, schema, chunk):
+def calculate_intersections_from_sources(intersect_sources, intersect_targets, intersections_name, schema):
     t = []
     source_ids = {}
     for source_key, source_value in intersect_sources.items():
+        chunk_size = source_value['processing_chunk_size']
+
         for target_key, target_value in intersect_targets.items():
             if target_key == source_key:
                 continue
@@ -88,7 +96,6 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
             if source_key not in source_ids:
                 source_ids[source_key] = fetch_object_ids(conn, schema, source_key)
             ids = source_ids[source_key]
-
             conn.close()
             del conn
             # get all object ids for the intersecting features
@@ -96,15 +103,23 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
                 i = 0
                 while i < len(ids):
                     # calculate intersections in chunks
-                    source_object_ids = str(tuple(ids[i:i + chunk]))
+                    source_object_ids = f"({','.join(str(_id) for _id in ids[i:i + chunk_size])})"
                     t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key,
                                                                   source_object_ids))
-                    i += chunk
+                    i += chunk_size
     conn = create_db_conn_from_envs()
     autovacuum_tables = [intersections_name, 'intersection_features']
     switch_autovacuum_and_triggers(False, conn,  schema, autovacuum_tables)
     try:
         g = group(t)()
+        while not g.ready():
+            # Check how many are done
+            done_count = g.completed_count()
+            total_count = len(t)
+            logging.info(f"Progress: {done_count}/{total_count} intersection tasks completed...")
+
+            time.sleep(30)  # check every 30 seconds
+
         g.get()
     except Exception as err:
         switch_autovacuum_and_triggers(True, conn, schema, autovacuum_tables)
@@ -130,7 +145,24 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
     tasks = []
     for key, value in intersect_sources.items():
         # remove existing features
-        tasks.append(fetch_and_insert_intersection_features.s(key, value, wkid, schema, insert_table))
+        delete_from_table(conn, schema, insert_table, f"feat_source = '{key}'")
+        if value['source_type'] == 'url':
+            ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
+            for params in get_query_params_chunk(ids, wkid, chunk_size=value['chunk_size'], format='geojson'):
+                tasks.append(service_chunk_to_postgres.si(value['source'], params, schema, insert_table, key, value, wkid))
+
+        elif value['source_type'] == 'db_table':
+            logger.info(f'copying data from DB for {value["source"]}')
+            tasks.append(insert_from_db_task.si(
+                schema,
+                insert_table,
+                ['unique_id', 'feat_source'],
+                value['source'],
+                [value['id'], f"'{key}' as feat_source"],
+                'shape',
+                'shape',
+                wkid))
+
     g = group(tasks)()
     g.get()
     # remove null shapes and unique ids
@@ -143,7 +175,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 @log_this
 def run_intersections(docker_conn, docker_schema,
                       start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
-                      intersection_view, intersection_data_ids, chunk_size=5000):
+                      intersection_view, intersection_data_ids):
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
@@ -159,14 +191,14 @@ def run_intersections(docker_conn, docker_schema,
     ############## fetching features ################
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
-    # refresh the spatial index
+    # # refresh the spatial index
     refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
-
-    # run VACUUM ANALYZE to increase performance after bulk updates
+    #
+    # # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     # ############## calculate intersections ################
     calculate_intersections_from_sources(intersect_sources, intersect_targets, 'intersections',
-                                         docker_schema, chunk_size)
+                                         docker_schema)
 
     delete_duplicate_records(docker_schema, 'intersections', docker_conn, ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'], 'id_1')
     # populate objectid field
