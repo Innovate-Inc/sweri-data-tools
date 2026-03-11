@@ -172,7 +172,7 @@ def state_data_twig_category(conn, schema):
             {schema}.twig_category_lookup tc
             WHERE ti.identifier_database = 'NASF'
             AND
-            ti.twig_category = tc.category;
+            ti.category = tc.category;
         ''')
 
 @log_this
