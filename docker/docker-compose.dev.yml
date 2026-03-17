@@ -8,8 +8,27 @@ services:
     volumes:
       - ..:/src
   db:
+    image: postgis/postgis:15-3.5
+    env_file:
+      - "../.env"
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    shm_size: 1gb
+    stop_grace_period: 1m
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}" ]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: postgres -c max_wal_size=5GB -c wal_level=minimal -c synchronous_commit=off -c max_wal_senders=0
+
   pgadmin:
     image: dpage/pgadmin4:latest
     env_file:
