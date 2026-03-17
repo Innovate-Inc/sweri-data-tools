@@ -525,7 +525,7 @@ def state_data_insert(conn, schema, treatment_index):
         INSERT INTO {schema}.{treatment_index} (
 
             objectid, name, treatment_date, date_current,
-            acres, fund_code, identifier_database, 
+            acres, fund_code, identifier_database, type,
             category, unique_id, state, agency,
             total_cost, status, error, shape
         )
@@ -533,6 +533,11 @@ def state_data_insert(conn, schema, treatment_index):
 
             sde.next_rowid('{schema}', '{treatment_index}'),
             treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
+            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database,
+            treatmenttypereported as type, treatmentcategory as category, globalid AS unique_id, 
+            source AS state, treatmentidentifierdatabase as agency, federalfundingamount as total_cost, 
+            'Completed' as status, geometry as shape
+            
             treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
             treatmentcategory as category, globalid AS unique_id, stateabbrev AS state, treatmentidentifierdatabase as agency, 
             federalfundingamount as total_cost, 'Completed' as status, 
