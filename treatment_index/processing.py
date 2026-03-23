@@ -375,8 +375,7 @@ def ifprs_insert(conn, schema, treatment_index):
             acres, type, category, fund_source,
             identifier_database, unique_id,
             state, status,
-            total_cost, twig_category,
-            agency, shape
+            total_cost, agency, shape
         )
         SELECT
 
@@ -386,8 +385,7 @@ def ifprs_insert(conn, schema, treatment_index):
             fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, 
             CASE WHEN class = 'Estimated Treatment' AND status IS NULL THEN 'Planned' ELSE status END AS status, 
-            estimatedtotalcost as total_cost, category as twig_category, 
-            agency as agency, shape as shape
+            estimatedtotalcost as total_cost, agency as agency, shape as shape
 
         FROM {schema}.ifprs
         WHERE {schema}.ifprs.shape IS NOT NULL;

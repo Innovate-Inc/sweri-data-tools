@@ -123,6 +123,7 @@ def update_treatment_points(conn, schema, treatment_index):
 def add_twig_category(conn, schema):
     common_attributes_twig_category(conn, schema)
     facts_nfpors_twig_category(conn, schema)
+    ifprs_twig_category(conn, schema)
     state_data_twig_category(conn, schema)
 
 @log_this
@@ -160,6 +161,19 @@ def facts_nfpors_twig_category(conn, schema):
                 )     
             AND
             ti.type = tc.type;
+        ''')
+
+def ifprs_twig_category(conn, schema):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.treatment_index ti
+            SET twig_category = tc.twig_category
+            FROM
+            {schema}.twig_category_lookup tc
+            WHERE ti.identifier_database = 'IFPRS'
+            AND
+            ti.category = tc.category;
         ''')
 
 def state_data_twig_category(conn, schema):
@@ -275,18 +289,18 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     t = []
 
     # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
-    facts_chain = chain(
-        hazardous_fuels_download_and_insert.s(
-            haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
-            facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
-            ),
-            common_attributes_download_and_insert(
-                wkid, ogr_db_conn_string, schema, table, haz_fuels_table
-            ).set(immutable=True),
-        )
-
-    t.append(facts_chain)
-    t.append(nfpors_download_and_insert.s(schema, table))
+    # facts_chain = chain(
+    #     hazardous_fuels_download_and_insert.s(
+    #         haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
+    #         facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
+    #         ),
+    #         common_attributes_download_and_insert(
+    #             wkid, ogr_db_conn_string, schema, table, haz_fuels_table
+    #         ).set(immutable=True),
+    #     )
+    #
+    # t.append(facts_chain)
+    # t.append(nfpors_download_and_insert.s(schema, table))
     t.append(ifprs_download_and_insert(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
     if state_data_inclusion_flag:
         t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
@@ -315,31 +329,31 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-    # treatment index
-    treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-                                               ti_data_ids, schema,
-                                               table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_poly_view_ids:
-        for polygon_view_id in additional_poly_view_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-
-    # treatment index points
-    treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-                                                      ti_points_view_id, ti_points_data_ids,
-                                                      schema,
-                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
-
-    if additional_point_views_ids:
-        for point_view_id in additional_point_views_ids:
-            swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
-
-    s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
-                  where_clause="identifier_database <> 'NASF'")
-
-    conn.close()
-
-    clear_response_cache(response_cache_info)
+    # # treatment index
+    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+    #                                            ti_data_ids, schema,
+    #                                            table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_poly_view_ids:
+    #     for polygon_view_id in additional_poly_view_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+    #
+    # # treatment index points
+    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
+    #                                                   ti_points_view_id, ti_points_data_ids,
+    #                                                   schema,
+    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
+    #
+    # if additional_point_views_ids:
+    #     for point_view_id in additional_point_views_ids:
+    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+    #
+    # s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
+    #               where_clause="identifier_database <> 'NASF'")
+    #
+    # conn.close()
+    #
+    # clear_response_cache(response_cache_info)
 
 if __name__ == "__main__":
     load_dotenv()
