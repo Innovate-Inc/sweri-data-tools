@@ -123,6 +123,7 @@ def update_treatment_points(conn, schema, treatment_index):
 def add_twig_category(conn, schema):
     common_attributes_twig_category(conn, schema)
     facts_nfpors_twig_category(conn, schema)
+    ifprs_twig_category(conn, schema)
     state_data_twig_category(conn, schema)
 
 @log_this
@@ -162,6 +163,19 @@ def facts_nfpors_twig_category(conn, schema):
             ti.type = tc.type;
         ''')
 
+def ifprs_twig_category(conn, schema):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.treatment_index ti
+            SET twig_category = tc.twig_category
+            FROM
+            {schema}.twig_category_lookup tc
+            WHERE ti.identifier_database = 'IFPRS'
+            AND
+            ti.category = tc.category;
+        ''')
+
 def state_data_twig_category(conn, schema):
     cursor = conn.cursor()
     with conn.transaction():
@@ -172,7 +186,7 @@ def state_data_twig_category(conn, schema):
             {schema}.twig_category_lookup tc
             WHERE ti.identifier_database = 'NASF'
             AND
-            ti.twig_category = tc.category;
+            ti.category = tc.category;
         ''')
 
 @log_this

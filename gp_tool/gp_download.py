@@ -40,6 +40,9 @@ if __name__ == "__main__":
     out_dir = os.path.join(arcpy.env.scratchFolder, out_name)
     os.mkdir(out_dir)
 
+    # exclude state data from gp_tool download
+    if fc_in == 'treatment_index':
+        where += " AND identifier_database <> 'NASF'"
 
     # get the features
     try:

@@ -375,8 +375,7 @@ def ifprs_insert(conn, schema, treatment_index):
             acres, type, category, fund_source,
             identifier_database, unique_id,
             state, status,
-            total_cost, twig_category,
-            agency, shape
+            total_cost, agency, shape
         )
         SELECT
 
@@ -386,8 +385,7 @@ def ifprs_insert(conn, schema, treatment_index):
             fundingsourcecategory as fund_source, 'IFPRS' AS identifier_database, id AS unique_id,
             state AS state, 
             CASE WHEN class = 'Estimated Treatment' AND status IS NULL THEN 'Planned' ELSE status END AS status, 
-            estimatedtotalcost as total_cost, category as twig_category, 
-            agency as agency, shape as shape
+            estimatedtotalcost as total_cost, agency as agency, shape as shape
 
         FROM {schema}.ifprs
         WHERE {schema}.ifprs.shape IS NOT NULL;
@@ -525,17 +523,22 @@ def state_data_insert(conn, schema, treatment_index):
         INSERT INTO {schema}.{treatment_index} (
 
             objectid, name, treatment_date, date_current,
-            acres, fund_code, identifier_database, 
+            acres, fund_code, identifier_database, type,
             category, unique_id, state, agency,
-            total_cost, status, shape
+            total_cost, status, error, shape
         )
         SELECT
 
             sde.next_rowid('{schema}', '{treatment_index}'),
             treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
-            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database, 
-            treatmentcategory as category, globalid AS unique_id, source AS state, treatmentidentifierdatabase as agency, 
-            federalfundingamount as total_cost, 'Completed' as status, geometry as shape
+            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database,
+            treatmenttypereported as type, treatmentcategory as category, globalid AS unique_id, 
+            stateabbrev AS state, treatmentidentifierdatabase as agency, 
+            federalfundingamount as total_cost, 'Completed' as status, 
+            CASE WHEN sourcegeometrytype = 'Point' THEN 'BUFFERED_POINT' 
+            WHEN sourcegeometrytype = 'Line' THEN 'BUFFERED_LINE' 
+            END AS error, geometry as shape
+            
         FROM {schema}.state_data
         WHERE {schema}.state_data.geometry IS NOT NULL
         and
