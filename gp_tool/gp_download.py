@@ -1,3 +1,5 @@
+import re
+import requests
 import arcpy
 import datetime as dt
 import os
@@ -9,7 +11,7 @@ mod = r"C:\Data\Sweri\twig\scripts\sweri_utils"
 sys.path.append(mod)
 # any relative imports in any of the sweri_utils need to be changed to absolute imports to work when published to the server
 import files
-import download
+from download import fetch_and_create_featureclass
 
 
 if __name__ == "__main__":
@@ -21,6 +23,7 @@ if __name__ == "__main__":
     geom = arcpy.GetParameterAsText(4)
     geom_type = arcpy.GetParameterAsText(5)
     api_url = arcpy.GetParameterAsText(6)
+    reshape_url = 'reshapewildfire.org'
 
     # set defaults CMS API url
     if not api_url:
@@ -40,16 +43,23 @@ if __name__ == "__main__":
     out_dir = os.path.join(arcpy.env.scratchFolder, out_name)
     os.mkdir(out_dir)
 
-    # exclude state data from gp_tool download
-    if fc_in == 'treatment_index':
-        where += " AND identifier_database <> 'NASF'"
+    if re.search(reshape_url, url):
+        response = requests.get(url + '?f=json')
+        response.raise_for_status()
+        data = response.json()
+
+        # Check if the layer has a field named identifier_database
+        field_names = [field["name"] for field in data.get("fields", [])]
+
+        if "identifier_database" in field_names:
+            where += " AND identifier_database <> 'NASF'"
 
     # get the features
     try:
         # if output is a gdb, create a fresh one instead of using the scratch geodatabase
         if filetype == 'gdb':
             gdb = files.create_gdb(out_name, out_dir)
-        save_features = download.fetch_and_create_featureclass(url, where, gdb, out_fc, geom, geom_type, chunk_size=1000)
+        save_features = fetch_and_create_featureclass(url, where, gdb, out_fc, geom, geom_type, chunk_size=1000)
         arcpy.AddMessage(f'out features: {save_features}')
     except Exception as e:
         arcpy.AddError(e.args[0])
