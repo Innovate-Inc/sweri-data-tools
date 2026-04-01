@@ -6,8 +6,14 @@ import requests
 from datetime import datetime
 from arcgis.features import FeatureLayer
 
-from .sql import create_db_conn_from_envs, get_count
-from .sweri_logging import log_this
+from sweri_logging import log_this
+
+try:
+    # attempt import of psycopg before importing sql methods
+    import psycopg
+    from sql import create_db_conn_from_envs, get_count
+except ModuleNotFoundError:
+    logging.warning('Missing psycopg, some functions will not work')
 
 try:
     from osgeo.gdal import VectorTranslateOptions, VectorTranslate

@@ -11,7 +11,7 @@ mod = r"C:\Data\Sweri\twig\scripts\sweri_utils"
 sys.path.append(mod)
 # any relative imports in any of the sweri_utils need to be changed to absolute imports to work when published to the server
 import files
-import download
+from download import fetch_and_create_featureclass
 
 
 if __name__ == "__main__":
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         # if output is a gdb, create a fresh one instead of using the scratch geodatabase
         if filetype == 'gdb':
             gdb = files.create_gdb(out_name, out_dir)
-        save_features = download.fetch_and_create_featureclass(url, where, gdb, out_fc, geom, geom_type, chunk_size=1000)
+        save_features = fetch_and_create_featureclass(url, where, gdb, out_fc, geom, geom_type, chunk_size=1000)
         arcpy.AddMessage(f'out features: {save_features}')
     except Exception as e:
         arcpy.AddError(e.args[0])

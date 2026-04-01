@@ -1,10 +1,14 @@
 import logging
 import os
 from typing import TextIO
-import psycopg
 from sqlalchemy import create_engine
 
-from .sweri_logging import log_this
+from sweri_logging import log_this
+
+try:
+    import psycopg
+except ModuleNotFoundError:
+    logging.warning('Missing psycopg, some functions will not work')
 
 def rename_postgres_table(conn: psycopg.Connection, schema: str, old_table_name: str, new_table_name: str) -> None:
     """
