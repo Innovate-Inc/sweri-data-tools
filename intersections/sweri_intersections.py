@@ -18,6 +18,7 @@ from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_t
     populate_sequence_field, makevalid_shapes
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.conversion import s3_gdb_update
 from intersections.utils import insert_feature_into_db
 from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 
@@ -175,7 +176,8 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 @log_this
 def run_intersections(docker_conn, docker_schema,
                       start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
-                      intersection_view, intersection_data_ids):
+                      intersection_view, intersection_data_ids,
+                      intersection_features_gdb_bucket=None, intersection_features_gdb_s3_obj=None):
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
@@ -207,6 +209,13 @@ def run_intersections(docker_conn, docker_schema,
     hosted_upload_and_swizzle(root_url, portal, user, password, intersection_view, intersection_data_ids, docker_schema,
                               'intersections', 0, 10000, False, [])
 
+    # ############ export intersection_features to file GDB and upload to private S3 bucket ################
+    if intersection_features_gdb_bucket and intersection_features_gdb_s3_obj:
+        ogr_db_conn_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+        s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
+                      intersection_features_gdb_bucket, intersection_features_gdb_s3_obj,
+                      fc_name='intersection_features', wkid=wkid)
+
     # ############ update run info on intersection sources table ################
     update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
     # close connections
@@ -231,6 +240,9 @@ if __name__ == '__main__':
     # views
     intersections_view_id = os.getenv('INTERSECTIONS_VIEW_ID')
     intersections_data_ids = [os.getenv('INTERSECTIONS_DATA_ID_1'), os.getenv('INTERSECTIONS_DATA_ID_2')]
+    # Private S3 bucket for storing intersection_features file GDB (accessible by ArcGIS Server EC2)
+    intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
+    intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ', 'intersection_features/intersection_features.zip')
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
@@ -244,7 +256,9 @@ if __name__ == '__main__':
                           root_site_url,
                           portal_url,
                           portal_user,
-                          portal_password, intersections_view_id, intersections_data_ids)
+                          portal_password, intersections_view_id, intersections_data_ids,
+                          intersection_features_gdb_bucket=intersection_features_gdb_bucket,
+                          intersection_features_gdb_s3_obj=intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR: error running intersections: {e}')
