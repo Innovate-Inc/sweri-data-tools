@@ -59,8 +59,8 @@ if __name__ == '__main__':
     arcpy.env.overwriteOutput = True
     aoi = arcpy.GetParameterAsText(0) # AOI
     treatment_intersections = arcpy.GetParameterAsText(1) # Treatment Intersections
-    intersection_features = '../intersection_features.gdb/intersection_features'
-    intersections_source_list = arcpy.GetParameterAsText(2)
+    intersection_features = arcpy.GetParameterAsText(2)
+    intersections_source_list = arcpy.GetParameterAsText(3)
     progress = 0
     buffer = 2
     label = "Configuring data sources"
@@ -119,4 +119,4 @@ if __name__ == '__main__':
     with open(export, 'w') as f:
         f.write(j)
 
-    arcpy.SetParameter(3, export)
+    arcpy.SetParameter(4, export)
