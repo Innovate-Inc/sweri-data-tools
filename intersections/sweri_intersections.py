@@ -177,7 +177,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 def run_intersections(docker_conn, docker_schema,
                       start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
                       intersection_view, intersection_data_ids,
-                      intersection_features_gdb_bucket=None, intersection_features_gdb_s3_obj=None):
+                      intersection_features_gdb_bucket, intersection_features_gdb_s3_obj):
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
@@ -205,16 +205,18 @@ def run_intersections(docker_conn, docker_schema,
     delete_duplicate_records(docker_schema, 'intersections', docker_conn, ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'], 'id_1')
     # populate objectid field
     populate_sequence_field(docker_conn, docker_schema, 'intersections', 'objectid', 'intersection_objectid_seq')
+
+    ############ export intersection_features to file GDB and upload to private S3 bucket ################
+    ogr_db_conn_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+    s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
+                  intersection_features_gdb_bucket, intersection_features_gdb_s3_obj,
+                  fc_name='intersection_features', wkid=wkid)
+
     ############ hosted upload ################
     hosted_upload_and_swizzle(root_url, portal, user, password, intersection_view, intersection_data_ids, docker_schema,
                               'intersections', 0, 10000, False, [])
 
-    # ############ export intersection_features to file GDB and upload to private S3 bucket ################
-    if intersection_features_gdb_bucket and intersection_features_gdb_s3_obj:
-        ogr_db_conn_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-        s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
-                      intersection_features_gdb_bucket, intersection_features_gdb_s3_obj,
-                      fc_name='intersection_features', wkid=wkid)
+
 
     # ############ update run info on intersection sources table ################
     update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
@@ -257,8 +259,8 @@ if __name__ == '__main__':
                           portal_url,
                           portal_user,
                           portal_password, intersections_view_id, intersections_data_ids,
-                          intersection_features_gdb_bucket=intersection_features_gdb_bucket,
-                          intersection_features_gdb_s3_obj=intersection_features_gdb_s3_obj)
+                          intersection_features_gdb_bucket,
+                          intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR: error running intersections: {e}')
