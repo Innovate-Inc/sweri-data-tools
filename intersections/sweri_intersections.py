@@ -177,7 +177,8 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 def run_intersections(docker_conn, docker_schema,
                       start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
                       intersection_view, intersection_data_ids,
-                      intersection_features_gdb_bucket, intersection_features_gdb_s3_obj):
+                      intersection_features_gdb_bucket,
+                      intersection_features_gdb_s3_obj):
     ############## setting intersection sources ################
     intersections = fetch_features(f'{intersection_source_view}/0/query',
                                    {'f': 'json', 'where': '1=1', 'outFields': '*', 'orderByFields': 'source_type ASC'})
@@ -205,7 +206,6 @@ def run_intersections(docker_conn, docker_schema,
     delete_duplicate_records(docker_schema, 'intersections', docker_conn, ['id_1', 'id_2', 'id_1_source', 'id_2_source', 'acre_overlap'], 'id_1')
     # populate objectid field
     populate_sequence_field(docker_conn, docker_schema, 'intersections', 'objectid', 'intersection_objectid_seq')
-
     ############ export intersection_features to file GDB and upload to private S3 bucket ################
     ogr_db_conn_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
@@ -244,7 +244,7 @@ if __name__ == '__main__':
     intersections_data_ids = [os.getenv('INTERSECTIONS_DATA_ID_1'), os.getenv('INTERSECTIONS_DATA_ID_2')]
     # Private S3 bucket for storing intersection_features file GDB (accessible by ArcGIS Server EC2)
     intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
-    intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ', 'intersection_features/intersection_features.zip')
+    intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
     ############### database connections ################
     # local docker db environment variables
     db_schema = os.getenv('SCHEMA')
