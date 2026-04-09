@@ -31,6 +31,13 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+try:
+    import arcpy
+    ARCPY_AVAILABLE = True
+except ModuleNotFoundError:
+    ARCPY_AVAILABLE = False
+    logging.warning('arcpy not available — Repair Geometry step will be skipped')
+
 load_dotenv()
 
 logging.basicConfig(
@@ -43,8 +50,8 @@ logger = logging.getLogger(__name__)
 
 def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
     """
-    Downloads the zipped GDB from S3 and extracts it to local_dir,
-    replacing any existing GDB directory atomically.
+    Downloads the zipped GDB from S3, extracts it, runs Repair Geometry on
+    feat_source = 'treatments', then atomically replaces the live GDB.
 
     :param bucket: S3 bucket name
     :param s3_obj: S3 object key for the zipped GDB
@@ -78,6 +85,9 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
             raise FileNotFoundError(f'No .gdb directory found after extracting {tmp_zip_path}')
         extracted_gdb = extracted_gdbs[0]
 
+        # run Repair Geometry before going live
+        arcpy.management.RepairGeometry(os.path.join(extracted_gdb, 'intersection_features'), 'DELETE_NULL', 'ESRI')
+
         # Atomically replace the old GDB: rename old → backup, new → final, remove backup
         backup_path = local_dir_path / f"{gdb_name}.gdb.bak"
         if final_gdb_path.exists():
@@ -108,7 +118,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
 def main():
     bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
-    s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ', 'intersection_features/intersection_features.zip')
+    s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
     local_dir = os.getenv('INTERSECTION_FEATURES_GDB_LOCAL_DIR')
 
     if not bucket:
