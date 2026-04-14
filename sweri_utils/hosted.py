@@ -137,6 +137,74 @@ def hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, view_id
 
     return new_source_item.name
 
+@log_this
+def feature_append_workflow(root_url, gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk,
+                   chunk_size, where, shape=True, drop_cols=['objectid', 'gdb_geomattr_data']):
+
+    logging.info('Starting feature append workflow')
+    if not where:
+        logging.warning('No where clase provided, exiting append')
+        return
+
+    # setup new layer connection
+    gis_con = refresh_gis(gis_url, gis_user, gis_password)
+    view_item = gis_con.content.get(view_id)
+    logging.info(f'Retrieved view item: {view_item.name} ID: {view_id}')
+
+    original_data_source_id = get_view_data_source_id(view_item)
+    new_data_source_id = next(id for id in source_feature_layer_ids if id != original_data_source_id)
+    logging.info(f'Current source ID: {original_data_source_id}')
+    logging.info(f'New source ID: {new_data_source_id}')
+
+    conn = create_db_conn_from_envs()
+
+    # append and verify to new data source
+    append_and_verify(gis_url, gis_user, gis_password, conn, schema, table, where,
+                      max_points_before_single_geom_chunk, chunk_size, shape, drop_cols, new_data_source_id)
+
+    # swizzle so view is now using new feature layer as data source
+    view_item = gis_con.content.get(view_id)
+    new_source_item = gis_con.content.get(new_data_source_id)
+    token = gis_con.session.auth.token
+
+    logging.info(f'Swizzling view {view_item.name} to new data source {new_source_item.name}')
+    swizzle_service(root_url, view_item.name, new_source_item.name, token)
+
+    # append and verify to original source
+    append_and_verify(gis_url, gis_user, gis_password, conn, schema, table, where,
+                      max_points_before_single_geom_chunk, chunk_size, shape, drop_cols, original_data_source_id)
+
+
+def append_and_verify(gis_url, gis_user, gis_password, conn, schema, table, where,
+                       max_points_before_single_geom_chunk, chunk_size, shape, drop_cols, data_source_id):
+
+    logging.info(f'Appending data to data source: {data_source_id} where: {where}')
+
+    # list of tasks
+    t = []
+    if not shape:
+        # attribute only table, no geometry
+        for chunk_ids in get_object_id_chunks(conn, schema, table, where, chunk_size):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, data_source_id, schema, table,
+                                                     chunk_ids, False, drop_cols))
+
+    else:
+
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f'{where} and ST_NPoints(shape) > {max_points_before_single_geom_chunk}', 1):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, data_source_id, schema, table,
+                                                     chunk_ids, shape, drop_cols))
+
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f'{where} and ST_NPoints(shape) <= {max_points_before_single_geom_chunk}', chunk_size):
+            t.append(upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, data_source_id, schema, table,
+                                                     chunk_ids, shape, drop_cols))
+    g = group(t)()
+    g.get()
+
+    logging.info(f'Verifying count in data source feature layer: {data_source_id}')
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, data_source_id)
+    verify_feature_count(conn, schema, table, feature_layer)
+
+
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     new_source_item = gis_con.content.get(new_data_source_id)
