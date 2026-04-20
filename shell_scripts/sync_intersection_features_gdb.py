@@ -24,7 +24,7 @@ import os
 import shutil
 import tempfile
 import zipfile
-from datetime import datetime
+from datetime import datetime as dt
 from pathlib import Path
 
 import boto3
@@ -61,7 +61,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
     local_dir_path.mkdir(parents=True, exist_ok=True)
 
     final_gdb_path = local_dir_path / "intersection_features.gdb"
-    tmp_extract_dir = local_dir_path / f"intersection_features_tmp_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    tmp_extract_dir = local_dir_path / f"intersection_features_tmp_{dt.now().strftime('%Y%m%d%H%M%S')}"
 
     s3 = boto3.client('s3')
 
@@ -123,10 +123,10 @@ def main():
         logger.error('INTERSECTION_FEATURES_GDB_LOCAL_DIR is not set. Exiting.')
         raise SystemExit(1)
 
-    start = datetime.now()
+    start = dt.now()
     logger.info(f'Starting intersection_features GDB sync at {start.isoformat()}')
     download_and_extract_gdb(bucket, s3_obj, local_dir)
-    elapsed = datetime.now() - start
+    elapsed = dt.now() - start
     logger.info(f'Sync completed in {elapsed}')
 
 
