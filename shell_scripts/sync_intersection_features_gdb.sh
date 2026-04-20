@@ -14,11 +14,24 @@
 #   AWS_DEFAULT_REGION
 #   AWS_SSO_PROFILE_NAME               (optional)
 
-export ARCGISHOME=/opt/arcgis/server
+# Source .bashrc to get ARCGISHOME and other configuration
+if [ -f ~/.bashrc ]; then
+    . ~/.bashrc
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: ~/.bashrc not found"
+fi
 
-# Activate the conda environment that has boto3, osgeo (GDAL), and python-dotenv
-. ~/miniconda3/etc/profile.d/conda.sh
-conda activate sweri-python
+# Initialize conda for non-interactive shell and activate the environment
+# This works in both interactive and non-interactive (cron) contexts
+if ! eval "$(conda shell.bash hook)"; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to initialize conda"
+    exit 1
+fi
+
+if ! conda activate sweri-python; then
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to activate conda environment"
+    exit 1
+fi
 
 # Navigate to the scripts directory (parent of shell_scripts)
 parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )

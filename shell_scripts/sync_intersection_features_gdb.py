@@ -60,9 +60,8 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
     local_dir_path = Path(local_dir)
     local_dir_path.mkdir(parents=True, exist_ok=True)
 
-    gdb_name = Path(s3_obj).stem  # e.g. 'intersection_features'
-    final_gdb_path = local_dir_path / f"{gdb_name}.gdb"
-    tmp_extract_dir = local_dir_path / f"{gdb_name}_tmp_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    final_gdb_path = local_dir_path / "intersection_features.gdb"
+    tmp_extract_dir = local_dir_path / f"intersection_features_tmp_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
     s3 = boto3.client('s3')
 
@@ -77,7 +76,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         logger.info(f'Extracting {tmp_zip_path} → {tmp_extract_dir}')
         tmp_extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_zip_path, 'r') as zf:
-            zf.extractall(tmp_extract_dir)
+            zf.extractall(tmp_extract_dir / "temp.gdb")
 
         # Find the .gdb directory inside the extracted content
         extracted_gdbs = list(tmp_extract_dir.glob('*.gdb'))
@@ -89,7 +88,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         arcpy.management.RepairGeometry(os.path.join(extracted_gdb, 'intersection_features'), 'DELETE_NULL', 'ESRI')
 
         # Atomically replace the old GDB: rename old → backup, new → final, remove backup
-        backup_path = local_dir_path / f"{gdb_name}.gdb.bak"
+        backup_path = local_dir_path / f"intersection_features.gdb.bak"
         if final_gdb_path.exists():
             if backup_path.exists():
                 shutil.rmtree(backup_path)
@@ -98,10 +97,6 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
         shutil.move(str(extracted_gdb), str(final_gdb_path))
         logger.info(f'GDB updated at {final_gdb_path}')
-
-        # Remove backup only after successful update
-        if backup_path.exists():
-            shutil.rmtree(backup_path)
 
     except ClientError as e:
         logger.error(f'S3 download failed: {e}')
