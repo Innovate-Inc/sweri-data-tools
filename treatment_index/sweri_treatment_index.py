@@ -11,12 +11,13 @@ from celery import group, chain
 
 from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_shapes, \
     extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
-from sweri_utils.files import pg_table_to_gdb, create_zip
+from sweri_utils.files import create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors, flag_large_area
 from sweri_utils.sweri_logging import logging, log_this
 from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle
 from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
     hazardous_fuels_download_and_insert, nfpors_download_and_insert, state_data_download_and_insert
+from sweri_utils.conversion import s3_gdb_update
 
 logger = logging.getLogger(__name__)
 
@@ -254,16 +255,6 @@ def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, 
     token = gis_con.session.auth.token
     swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
-@log_this
-def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, obj_name, fc_name, wkid, where_clause="1=1", work_dir=None):
-    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid, where_clause=where_clause)
-    zip_path = create_zip(gdb_path, table, out_dir=work_dir)
-    upload_to_s3(bucket, zip_path, obj_name)
-
-    if gdb_path and os.path.exists(gdb_path):
-        shutil.rmtree(gdb_path)
-    if zip_path and os.path.exists(zip_path):
-        os.remove(zip_path)
 
 @log_this
 def clear_response_cache(cache_info):
