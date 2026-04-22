@@ -12,21 +12,9 @@
 #   INTERSECTION_FEATURES_GDB_S3_OBJ   (optional, defaults in python script)
 #   INTERSECTION_FEATURES_GDB_LOCAL_DIR
 #   AWS_DEFAULT_REGION
-#   AWS_SSO_PROFILE_NAME               (optional)
 
-# Source .bashrc to get ARCGISHOME and other configuration
-if [ -f ~/.bashrc ]; then
-    . ~/.bashrc
-else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARNING: ~/.bashrc not found"
-fi
-
-# Initialize conda for non-interactive shell and activate the environment
-# This works in both interactive and non-interactive (cron) contexts
-if ! eval "$(conda shell.bash hook)"; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to initialize conda"
-    exit 1
-fi
+export ARCGISHOME=/opt/arcgis/server
+. ~/miniconda3/etc/profile.d/conda.sh
 
 if ! conda activate sweri-python; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to activate conda environment"
