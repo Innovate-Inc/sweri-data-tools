@@ -507,7 +507,7 @@ def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
 
 @log_this
 def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
-    where = "DataCategory = 'State'"
+    where = "DataCategory <> 'Federal'"
 
     in_wkid = get_wkid_from_geoparquet(parquet_file)
 
@@ -531,7 +531,11 @@ def state_data_insert(conn, schema, treatment_index):
 
             sde.next_rowid('{schema}', '{treatment_index}'),
             treatmentname AS name, actualcompletiondate AS treatment_date, edit_date as date_current,
-            treatmentgisacres AS acres, federalfundingprogram as fund_code, 'NASF' AS identifier_database,
+            treatmentgisacres AS acres, federalfundingprogram as fund_code,
+            CASE 
+                WHEN DataCategory = 'State' THEN 'NASF'
+                WHEN DataCategory = 'NGO'   THEN 'NGO'
+            END AS identifier_database,
             treatmenttypereported as type, treatmentcategory as category, globalid AS unique_id, 
             stateabbrev AS state, treatmentidentifierdatabase as agency, 
             federalfundingamount as total_cost, 'Completed' as status, 
