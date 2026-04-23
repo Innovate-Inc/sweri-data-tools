@@ -507,7 +507,7 @@ def hazardous_fuels_date_filtering(conn, schema, facts_haz_table):
 
 @log_this
 def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
-    where = "DataCategory <> 'Federal'"
+    where = "DataCategory IN ('State','NGO')"
 
     in_wkid = get_wkid_from_geoparquet(parquet_file)
 
