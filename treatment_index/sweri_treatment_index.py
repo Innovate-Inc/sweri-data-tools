@@ -340,7 +340,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
             swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
     s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
-                  where_clause="identifier_database <> 'NASF'")
+                  where_clause="identifier_database NOT IN ('NASF', 'NGO')")
 
     conn.close()
 
