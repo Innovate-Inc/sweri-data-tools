@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
 from treatment_index.sweri_treatment_index import run_treatment_index
+from daily_progression import run_daily_progression
 
 if __name__ == "__main__":
     logging.info('starting data processing')
@@ -21,12 +22,16 @@ if __name__ == "__main__":
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
 
+    # daily progression specific environment variables
+    wfigs_current_fires = os.getenv('CURRENT_FIRES')
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
+
     # treatment index specific environment variables
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
     state_data_url = os.getenv('STATE_DATA_URL')
-
 
     #intersection specific environment variables
     intersection_src_url = os.getenv('INTERSECTION_SOURCES_URL')
@@ -77,6 +82,12 @@ if __name__ == "__main__":
     treatment_index_points_table = 'treatment_index_points'
     ############## processing in docker ################
     try:
+        # Run daily progression
+        daily_prog_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                               os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+        run_daily_progression(wfigs_current_fires, sr_wkid, ogr_db_string, daily_prog_pg_conn, db_schema, root_site_url,
+                              portal_url, portal_user, portal_password, daily_progression_view_id, daily_progression_data_ids)
+
         # Get current day and env run day for treatment index
         ti_run_day_index = int(os.getenv('TI_RUN_DAY_INDEX'))
         day_of_week_index = datetime.now().weekday()

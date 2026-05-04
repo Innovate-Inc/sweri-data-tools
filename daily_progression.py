@@ -186,9 +186,9 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
     
         ''')
 
-
-if __name__ == '__main__':
-    load_dotenv()
+def run_daily_progression(wfigs_current_fires_url, wkid, ogr_db_conn_string, conn, schema, gis_root_url, api_gis_url,
+                          api_gis_user, api_gis_password, daily_prog_view_id, daily_prog_data_ids,
+                          daily_prog_table='daily_progression', max_poly_size_before_single_geom_chunk=10000, chunk_size=100):
 
     #start date and removal date 1 second apart to prevent overlap between old and new polygons
     current_time = datetime.datetime.now()
@@ -198,10 +198,33 @@ if __name__ == '__main__':
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
 
+    # import current fires layer into postgres
+    import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_conn_string, conn, schema)
+    makevalid_snapshot_shapes(conn, schema)
+
+    # add new fires from current fires into daily progression
+    add_new_fires(schema, conn, current_time_str)
+
+    # set removal date to current date for fires removed from current fires since last update
+    notate_removed_fires(schema, conn, one_second_ago_str)
+
+    # update entries modified since last run (inactivate old, add new)
+    update_modified_fires(schema, conn, current_time_str, one_second_ago_str)
+
+    # update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, daily_prog_view_id,
+                              daily_prog_data_ids, schema,
+                              daily_prog_table, max_poly_size_before_single_geom_chunk, chunk_size)
+
+    conn.close()
+
+if __name__ == '__main__':
+    load_dotenv()
+
     target_schema = os.getenv('SCHEMA')
-    wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
-    wkid = 4326
-    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+    wfigs_current_fires = os.getenv('CURRENT_FIRES')
+    out_wkid = 4326
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
                             os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
@@ -219,21 +242,6 @@ if __name__ == '__main__':
     start_objectid = 0
     max_points_before_single_geom_chunk = 10000
 
-    # import current fires layer into postgres
-    import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
-    makevalid_snapshot_shapes(conn, target_schema)
-
-    # add new fires from current fires into daily progression
-    add_new_fires(target_schema, conn, current_time_str)
-
-    # set removal date to current date for fires removed from current fires since last update
-    notate_removed_fires(target_schema, conn, one_second_ago_str)
-
-    # update entries modified since last run (inactivate old, add new)
-    update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
-
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
-
-    conn.close()
+    run_daily_progression(wfigs_current_fires, out_wkid, ogr_db_string, pg_conn, target_schema, root_url, gis_url, gis_user,
+                          gis_password, daily_progression_view_id, daily_progression_data_ids, daily_progression_table,
+                          max_points_before_single_geom_chunk, chunk)
