@@ -631,3 +631,124 @@ def get_count(conn, schema, table, where='1=1'):
         cursor.execute(f'SELECT COUNT(*) FROM {schema}.{table} WHERE {where};')
         count = cursor.fetchone()[0]
     return count
+
+def get_montly_treatment_counts(conn, schema):
+    """
+    Fetches aggregated monthly treatment counts for multiple datasets from the database.
+
+    :param conn: A database connection object.
+    :param schema: The schema where the table is located.
+
+    :return: The query results as rows of data (month, counts per dataset).
+    """
+
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f"""
+            DROP TABLE IF EXISTS {schema}.monthly_counts;
+        """)
+        cursor.execute(f"""
+                CREATE TABLE {schema}.monthly_counts AS 
+                -- Generate Months for Data Counts
+                WITH months AS (
+                    SELECT 
+                        generate_series(
+                            DATE '1984-01-01',
+                            date_trunc('month', CURRENT_DATE),
+                            INTERVAL '1 month'
+                        ) AS month
+                ),
+                -- FACTS Hazardous Fuels Data Count
+                facts_hazardous_fuels_counts AS (
+                    SELECT 
+                        DATE_TRUNC('month', t.act_created_date) AS data_month,
+                        COUNT(t.act_created_date) AS treatment_count
+                    FROM 
+                        {schema}.facts_hazardous_fuels t
+                    GROUP BY 
+                        DATE_TRUNC('month', t.act_created_date)
+                ),
+                -- NFPORS Data Count
+                nfpors_counts AS (
+                    SELECT 
+                        DATE_TRUNC('month', t.createdon) AS data_month,
+                        COUNT(t.createdon) AS treatment_count
+                    FROM 
+                        {schema}.nfpors t
+                    GROUP BY 
+                        DATE_TRUNC('month', t.createdon)
+                ),
+                -- IFPRS Data Count
+                ifprs_counts AS (
+                    SELECT 
+                        DATE_TRUNC('month', t.createdondate) AS data_month,
+                        COUNT(t.createdondate) AS treatment_count
+                    FROM 
+                        {schema}.ifprs t
+                    GROUP BY 
+                        DATE_TRUNC('month', t.createdondate)
+                ),
+                -- State Data Count
+                state_counts AS (
+                    SELECT 
+                        DATE_TRUNC('month', t.created_date) AS data_month,
+                        COUNT(t.created_date) AS treatment_count
+                    FROM 
+                        {schema}.state_data t
+                    GROUP BY 
+                        DATE_TRUNC('month', t.created_date)
+                ),
+                -- Aggregate All Common Attributes Tables into a Single Total
+                common_attributes_total_counts AS (
+                    SELECT
+                        DATE_TRUNC('month', t.act_created_date) AS data_month,
+                        COUNT(t.act_created_date) AS treatment_count
+                    FROM (
+                        SELECT act_created_date FROM {schema}.common_attributes_01
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_02
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_03
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_04
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_05
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_06
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_08
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_09
+                        UNION ALL
+                        SELECT act_created_date FROM {schema}.common_attributes_10
+                    ) t
+                    GROUP BY DATE_TRUNC('month', t.act_created_date)
+                )
+                -- COALESCE sets months without data to 0
+                SELECT 
+                    m.month,
+                    COALESCE(facts_hazardous_fuels_counts.treatment_count, 0) AS facts_hazardous_fuels_count,
+                    COALESCE(nfpors_counts.treatment_count, 0) AS nfpors_count,
+                    COALESCE(ifprs_counts.treatment_count, 0) AS ifprs_count,
+                    COALESCE(state_counts.treatment_count, 0) AS state_count,
+                    COALESCE(common_attributes_total_counts.treatment_count, 0) AS common_attributes_total_count
+                FROM 
+                    months m
+                -- Join counts for each dataset with the month
+                LEFT JOIN facts_hazardous_fuels_counts 
+                    ON m.month = facts_hazardous_fuels_counts.data_month
+                LEFT JOIN nfpors_counts 
+                    ON m.month = nfpors_counts.data_month
+                LEFT JOIN ifprs_counts 
+                    ON m.month = ifprs_counts.data_month
+                LEFT JOIN state_counts 
+                    ON m.month = state_counts.data_month
+                LEFT JOIN common_attributes_total_counts 
+                    ON m.month = common_attributes_total_counts.data_month
+                ORDER BY 
+                    m.month;
+            """)
+
+        # Fetch all rows from the cursor and return
+        results = cursor.fetchall()
+        return results
