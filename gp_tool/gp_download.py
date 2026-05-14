@@ -42,7 +42,7 @@ if __name__ == "__main__":
 
     # exclude state data from gp_tool download
     if fc_in == 'treatment_index':
-        where += " AND identifier_database <> 'NASF'"
+        where += " AND identifier_database NOT IN ('NASF','NGO')"
 
     # get the features
     try:
