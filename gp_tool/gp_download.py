@@ -60,7 +60,7 @@ if __name__ == "__main__":
         field_names = [field["name"] for field in data.get("fields", [])]
 
         if "identifier_database" in field_names:
-            where += " AND identifier_database <> 'NASF'"
+            where += " AND identifier_database NOT IN ('NASF','NGO')"
 
     # get the features
     try:

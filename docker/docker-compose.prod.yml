@@ -22,7 +22,7 @@ services:
 
   celery:
     platform: linux/arm64
-    command: celery -A worker worker --loglevel=warning
+    command: celery -A worker worker --loglevel=info --concurrency=16
     ports:
       - "5555:5555"
     logging:
