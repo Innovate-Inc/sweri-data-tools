@@ -6,8 +6,12 @@ import requests
 from datetime import datetime
 from arcgis.features import FeatureLayer
 
-from .sql import create_db_conn_from_envs, get_count
 from .sweri_logging import log_this
+
+try:
+    from .sql import create_db_conn_from_envs, get_count
+except ModuleNotFoundError:
+    logging.warning('Error loading sql, some functions will not work')
 
 try:
     from osgeo.gdal import VectorTranslateOptions, VectorTranslate

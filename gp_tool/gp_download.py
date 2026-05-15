@@ -1,15 +1,25 @@
+import re
+import requests
 import arcpy
 import datetime as dt
 import os
 import sys
 from urllib.parse import urljoin
+
+
 ################ Local Path to sweri_utils directory, must be hard-coded when publishing #################
 mod = r"C:\Data\Sweri\twig\scripts\sweri_utils"
+init = r"C:\Data\Sweri\twig\scripts\sweri_utils\__init__.py"
 ##########################################################################################################
 sys.path.append(mod)
-# any relative imports in any of the sweri_utils need to be changed to absolute imports to work when published to the server
-import files
-import download
+
+from importlib.machinery import SourceFileLoader
+
+# Force Python to load __init__.py as the "sweri_utils" module
+utils_module = SourceFileLoader("sweri_utils", init).load_module()
+sys.modules["sweri_utils"] = utils_module
+
+from sweri_utils import files, download
 
 
 if __name__ == "__main__":
@@ -21,6 +31,7 @@ if __name__ == "__main__":
     geom = arcpy.GetParameterAsText(4)
     geom_type = arcpy.GetParameterAsText(5)
     api_url = arcpy.GetParameterAsText(6)
+    reshape_url = 'reshapewildfire.org'
 
     # set defaults CMS API url
     if not api_url:
@@ -40,9 +51,16 @@ if __name__ == "__main__":
     out_dir = os.path.join(arcpy.env.scratchFolder, out_name)
     os.mkdir(out_dir)
 
-    # exclude state data from gp_tool download
-    if fc_in == 'treatment_index':
-        where += " AND identifier_database NOT IN ('NASF','NGO')"
+    if re.search(reshape_url, url):
+        response = requests.get(url + '?f=json')
+        response.raise_for_status()
+        data = response.json()
+
+        # Check if the layer has a field named identifier_database
+        field_names = [field["name"] for field in data.get("fields", [])]
+
+        if "identifier_database" in field_names:
+            where += " AND identifier_database NOT IN ('NASF','NGO')"
 
     # get the features
     try:
