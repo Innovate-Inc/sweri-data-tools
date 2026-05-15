@@ -5,7 +5,7 @@ import logging
 import shutil
 
 
-from sweri_logging import log_this
+from .sweri_logging import log_this
 
 try:
     from osgeo import ogr
