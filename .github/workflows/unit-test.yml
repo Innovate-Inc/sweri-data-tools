@@ -65,26 +65,15 @@ jobs:
 #        with:
 #          name: myimage
 #          path: ${{ runner.temp }}/myimage.tar
-  set_env:
-    runs-on: ubuntu-latest
-    outputs:
-      environment: ${{ steps.set_env.outputs.environment }}
-    steps:
-      - id: set_env
-        run: |
-          environment="${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
-          echo "environment=$environment" >> "$GITHUB_OUTPUT"
-          echo "setting environment to $environment"
-
   push_image:
-    needs: [unit_test, set_env]
+    needs: [unit_test]
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/ecr-publish.yml
     with:
       tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
-      environment: ${{ needs.set_env.outputs.environment }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     #  image_temp: ${{ runner.temp }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
