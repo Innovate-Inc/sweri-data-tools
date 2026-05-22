@@ -73,7 +73,7 @@ jobs:
     uses: ./.github/workflows/ecr-publish.yml
     with:
       tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
-      environment: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     #  image_temp: ${{ runner.temp }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
