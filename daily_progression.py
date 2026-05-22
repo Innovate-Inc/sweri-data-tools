@@ -206,6 +206,7 @@ if __name__ == '__main__':
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # Hosted upload variables
+    root_url = os.getenv('ESRI_ROOT_URL')
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
@@ -216,6 +217,7 @@ if __name__ == '__main__':
 
     chunk = 1000
     start_objectid = 0
+    max_points_before_single_geom_chunk = 10000
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
@@ -231,7 +233,7 @@ if __name__ == '__main__':
     update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
 
     # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, conn, target_schema,
-                              daily_progression_table, chunk, start_objectid)
+    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
 
     conn.close()

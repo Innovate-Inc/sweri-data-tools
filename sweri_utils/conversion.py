@@ -59,6 +59,50 @@ def create_coded_val_dict(url, layer):
     return {c['code']: c['name'] for c in cv}
 
 
+def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
+                  fc_name=None, wkid=4326, where_clause="1=1", work_dir=None):
+    """
+    Exports a PostgreSQL table to a File Geodatabase, zips it, uploads to S3, and cleans up local files.
+
+    :param ogr_db_conn_string: OGR-style PostgreSQL connection string
+    :param schema: PostgreSQL schema name
+    :param table: PostgreSQL table name
+    :param bucket: S3 bucket name to upload the zipped GDB to
+    :param s3_obj_name: S3 object key / path for the uploaded zip file
+    :param fc_name: Feature class name inside the GDB (defaults to table name)
+    :param wkid: Output spatial reference WKID (default 4326)
+    :param where_clause: SQL WHERE clause to filter exported features (default '1=1')
+    :param work_dir: Working directory for temporary files (defaults to cwd)
+    :return: None
+    """
+    import shutil
+    from sweri_utils.files import pg_table_to_gdb, create_zip
+
+    if fc_name is None:
+        fc_name = table
+
+    if work_dir is None:
+        work_dir = os.getcwd()
+
+    logging.info(f's3_gdb_update: exporting {schema}.{table} to GDB ({fc_name})')
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid,
+                                work_dir=work_dir, where_clause=where_clause)
+
+    logging.info(f's3_gdb_update: zipping {gdb_path}')
+    zip_path = create_zip(gdb_path, fc_name, out_dir=work_dir)
+
+    logging.info(f's3_gdb_update: uploading {zip_path} to s3://{bucket}/{s3_obj_name}')
+    upload_to_s3(bucket, zip_path, s3_obj_name)
+
+    # Clean up local files
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+        logging.info(f's3_gdb_update: removed local zip {zip_path}')
+    if os.path.exists(gdb_path):
+        shutil.rmtree(gdb_path)
+        logging.info(f's3_gdb_update: removed local gdb {gdb_path}')
+
+
 ########################### arcpy required for below functions ###########################
 
 

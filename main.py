@@ -93,12 +93,16 @@ if __name__ == "__main__":
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
         intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+        intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
+        intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
+
         run_intersections(intersections_pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
                           root_site_url,
                           portal_url,
                           portal_user,
-                          portal_password, intersections_view_id, intersections_data_ids)
+                          portal_password, intersections_view_id, intersections_data_ids,
+                          intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')

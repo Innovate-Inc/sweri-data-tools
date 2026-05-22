@@ -70,9 +70,11 @@ def nfpors_download_and_insert(schema, insert_table):
 def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
     # IFPRS processing and insert
     where = '''
-        (Class IN ('Actual Treatment','Estimated Treatment')) AND ((completiondate > DATE '1984-01-01 00:00:00')
+        (Class IN ('Actual Treatment','Estimated Treatment')) AND 
+        ((completiondate > DATE '1984-01-01 00:00:00')
         OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00'))
+        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
+        (EntityType = 'Fuels')
     '''
     header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))

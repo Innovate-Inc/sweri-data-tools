@@ -4,9 +4,13 @@ services:
     volumes:
       - ..:/src
       - ~/.aws:/root/.aws:ro
+    depends_on:
+      - db
   celery:
     volumes:
       - ..:/src
+    depends_on:
+      - db
   db:
     image: postgis/postgis:15-3.5
     env_file:
