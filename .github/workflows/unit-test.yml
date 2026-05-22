@@ -66,7 +66,7 @@ jobs:
 #          name: myimage
 #          path: ${{ runner.temp }}/myimage.tar
   push_image:
-    needs: [unit_test]
+    needs: unit_test
     permissions:
       id-token: write
       contents: read
@@ -74,6 +74,5 @@ jobs:
     with:
       tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
       environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-    #  image_temp: ${{ runner.temp }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
