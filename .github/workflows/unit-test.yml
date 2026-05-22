@@ -68,19 +68,23 @@ jobs:
   set_env:
     runs-on: ubuntu-latest
     outputs:
-      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      environment: ${{ steps.set_env.outputs.environment }}
     steps:
-      - run: echo "setting environment to ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
+      - id: set_env
+        run: |
+          environment="${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "setting environment to $environment"
 
   push_image:
-    needs: unit_test
+    needs: [unit_test, set_env]
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/ecr-publish.yml
     with:
       tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
-      environment: ${{ steps.set_env.outputs.environment }}
+      environment: ${{ needs.set_env.outputs.environment }}
     #  image_temp: ${{ runner.temp }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
