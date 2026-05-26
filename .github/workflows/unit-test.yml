@@ -21,7 +21,6 @@ jobs:
   unit_test:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    environment: production
     name: unit test python lib
     steps:
 #      - name: Install libkrb5 for Kerberos on Linux
@@ -74,7 +73,6 @@ jobs:
     uses: ./.github/workflows/ecr-publish.yml
     with:
       tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
-      environment: production
-    #  image_temp: ${{ runner.temp }}
+      environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}
