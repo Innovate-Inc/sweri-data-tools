@@ -4,11 +4,11 @@ import requests
 import logging
 import shutil
 
-from osgeo import ogr
 
 from .sweri_logging import log_this
 
 try:
+    from osgeo import ogr
     from osgeo.gdal import VectorTranslateOptions, VectorTranslate
 except ModuleNotFoundError:
     logging.warning('Missing osgeo, some functions will not work')
