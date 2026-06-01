@@ -10,7 +10,7 @@ on:
       environment:
         required: true
         type: string
-        default: production
+        default: staging
 #      image_temp:
 #        required: false
 #        type: string
