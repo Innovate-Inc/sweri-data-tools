@@ -83,8 +83,8 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
 
     if work_dir is None:
         work_dir = os.getcwd()
-
-    out_dir = os.path.join(work_dir, fc_name)
+    zip_name = f'{fc_name}_archive'
+    out_dir = os.path.join(work_dir, zip_name)
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
 
@@ -95,7 +95,7 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
                                 work_dir=out_dir, where_clause=where_clause)
 
     logging.info(f's3_gdb_update: zipping {out_dir}')
-    zip_path = create_zip(gdb_path, fc_name, out_dir=work_dir)
+    zip_path = create_zip(out_dir, zip_name, out_dir=work_dir)
 
     logging.info(f's3_gdb_update: uploading {zip_path} to s3://{bucket}/{s3_obj_name}')
     upload_to_s3(bucket, zip_path, s3_obj_name)
