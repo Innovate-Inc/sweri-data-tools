@@ -1,0 +1,41 @@
+name: SWERI Processing Staging
+services:
+  app:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/staging
+        awslogs-create-group: "true"
+        awslogs-stream: app
+
+  rabbit:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/staging
+        awslogs-create-group: "true"
+        awslogs-stream: rabbit
+
+  celery:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/staging
+        awslogs-create-group: "true"
+        awslogs-stream: celery
+    command: celery -A worker worker --loglevel=info --concurrency=16
+  redis:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/staging
+        awslogs-create-group: "true"
+        awslogs-stream: redis

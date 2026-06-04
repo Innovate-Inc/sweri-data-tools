@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from . import download, files, conversion, s3, sql
+from . import download, files, conversion, s3, sql, hosted
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 
@@ -570,13 +570,58 @@ class SqlTests(TestCase):
         insert_fields = ['field1', 'field2']
         from_table = 'source_table'
         from_fields = ['field1', 'field2']
-        expected_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} FROM {schema}.{from_table};'''
+        batch_size = 5000
+
+        # Create expected queries
+        # 1. First batch max id query
+        select_max_q_1 = f"""
+                SELECT max(objectid) 
+                FROM (
+                    SELECT objectid 
+                    FROM {schema}.{from_table} 
+                    WHERE objectid > 0 
+                    ORDER BY objectid ASC 
+                    LIMIT {batch_size}
+                ) sub
+            """
+
+        # 2. Insert query for first batch
+        insert_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) 
+                SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} 
+                FROM {schema}.{from_table}
+                WHERE objectid > 0 AND objectid <= 100;'''
+
+        # 3. Second batch max id query (returns None to stop loop)
+        select_max_q_2 = f"""
+                SELECT max(objectid) 
+                FROM (
+                    SELECT objectid 
+                    FROM {schema}.{from_table} 
+                    WHERE objectid > 100 
+                    ORDER BY objectid ASC 
+                    LIMIT {batch_size}
+                ) sub
+            """
+
+        # Mock fetchone return values: (100,) for first batch, (None,) for second batch check
+        mock_cursor.fetchone.side_effect = [(100,), (None,)]
+
         # Call the function
         sql.insert_from_db(mock_connection, schema, insert_table, insert_fields, from_table, from_fields)
 
         # Check if the correct SQL commands were executed
-        mock_cursor.execute.assert_called_once_with(expected_q)
-        mock_connection.transaction.assert_called_once()
+        # We expect 3 execute calls
+        self.assertEqual(mock_cursor.execute.call_count, 3)
+
+        # Check calls args
+        mock_cursor.execute.assert_has_calls([
+            call(select_max_q_1),
+            call(insert_q),
+            call(select_max_q_2)
+        ])
+
+        # We expect 3 transaction contexts (2 for select max, 1 for insert)
+        self.assertEqual(mock_connection.transaction.call_count, 2)
 
     def test_copy_table_across_servers(self):
         from_mock_connection = MagicMock()
@@ -985,6 +1030,17 @@ class S3Tests(TestCase):
             mock_boto_client.assert_called_once_with('s3')
             mock_s3.upload_file.assert_called_once_with(file_name, bucket, obj_name)
 
+    def test_prevent_delete_s3_with_no_prefix(self):
+        bucket = 'test_bucket'
+
+        with patch('sweri_utils.s3.get_s3_resource') as mock_boto_resource:
+            mock_s3 = mock_boto_resource.return_value
+
+            with self.assertRaises(ValueError) as context:
+                s3.delete_bucket_contents(bucket, None)
+
+            self.assertEqual(str(context.exception), 'Deleting test_bucket without a prefix is not allowed.')
+            mock_boto_resource.assert_not_called()
 
 class SwizzleTests(TestCase):
     @patch('requests.get')
@@ -1059,22 +1115,18 @@ class SwizzleTests(TestCase):
             swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
 
 class HostedTests(TestCase):
-    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
-    @patch('sweri_utils.hosted.get_count')
+    @patch.object(hosted, 'get_count')
     def test_verify_feature_same_count(self, mock_get_count):
-        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
         mock_get_count.return_value = 1400000
         mock_fl.query.return_value = 1400000
 
-        verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+        hosted.verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
 
-    @patch.dict('sys.modules', {'worker': Mock(app=Mock())})
-    @patch('sweri_utils.hosted.get_count')
+    @patch.object(hosted, 'get_count')
     def test_verify_feature_mismatched_count(self, mock_get_count):
-        from sweri_utils.hosted  import verify_feature_count
 
         mock_conn = MagicMock()
         mock_fl = MagicMock()
@@ -1082,4 +1134,4 @@ class HostedTests(TestCase):
         mock_fl.query.return_value = 1000000
 
         with self.assertRaises(ValueError):
-            verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+            hosted.verify_feature_count(mock_conn, 'schema', 'table', mock_fl)

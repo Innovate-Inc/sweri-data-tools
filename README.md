@@ -54,8 +54,8 @@ Finds and flags errors in treatment index records. Error codes are added to the 
 semicolon ';'
 Current error codes are:
 
-- DUPLICATE-KEEP : Record has duplicates and should be used as the representative record
-- DUPLICATE-DROP : Record is a duplicate and should be dropped during analysis
+- DUPLICATE_KEEP : Record has duplicates and should be used as the representative record
+- DUPLICATE_DROP : Record is a duplicate and should be dropped during analysis
 - HIGH-COST : Cost of treatment is greater than $10,000 per acre
 - CHECK_UOM : Unit of Measure is listed as a unit that may affect cost calculations (EACH, MILES)
 - SPATIAL : Geom of treatment is outside of the state listed in state field

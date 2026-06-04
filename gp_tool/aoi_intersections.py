@@ -80,19 +80,32 @@ if __name__ == '__main__':
         target_where = "feat_source = '{}'".format(target_key)
         target_layer = arcpy.management.MakeFeatureLayer(intersection_features, where_clause=target_where)
         intersect_output = os.path.join(arcpy.env.scratchGDB, target_key)
+        intersect_output_dissolve = os.path.join(arcpy.env.scratchGDB, f"{target_key}_dissolve")
 
         arcpy.analysis.PairwiseIntersect([aoi, target_layer], intersect_output)
         arcpy.management.Delete(target_layer)
+
         update_schema_for_intersections_insert(intersect_output, 'aoi', target_key)
+
+        # dissolve the intersect output to get total overlap with each feature in the target layer
+        arcpy.analysis.PairwiseDissolve(intersect_output, intersect_output_dissolve, ['id_2_source', 'id_1', 'id_1_source'])
+        # set id_2 to dissolve for the dissolve output so it can be appended to the target table with the non-dissolved output
+        arcpy.management.CalculateField(intersect_output_dissolve, 'id_2', "'dissolve'", 'PYTHON3')
+
         # calculate area if aoi is polygon otherwise just append the features and set acre_overlap to 0
         if arcpy.Describe(aoi).shapeType == 'Polygon':
             arcpy.management.CalculateGeometryAttributes(intersect_output, [['acre_overlap', 'AREA_GEODESIC']],
                                                          area_unit='ACRES_US')
+            arcpy.management.CalculateGeometryAttributes(intersect_output_dissolve, [['acre_overlap', 'AREA_GEODESIC']],
+                                                         area_unit='ACRES_US')
+
         else:
             # set overlap to 0 if aoi is not a polygon
             arcpy.management.CalculateField(intersect_output, 'acre_overlap', '0', 'PYTHON3')
+            arcpy.management.CalculateField(intersect_output_dissolve, 'acre_overlap', '0', 'PYTHON3')
 
         arcpy.management.Append(intersect_output, target_table, 'NO_TEST')
+        arcpy.management.Append(intersect_output_dissolve, target_table, 'NO_TEST')
 
     progress = buffer
     buffer += 2

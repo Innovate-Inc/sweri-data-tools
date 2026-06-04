@@ -1,0 +1,44 @@
+name: SWERI Processing prod
+services:
+  app:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream: app
+
+  rabbit:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream: rabbit
+
+  celery:
+    platform: linux/arm64
+    command: celery -A worker worker --loglevel=info --concurrency=16
+    ports:
+      - "5555:5555"
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream: celery
+
+  redis:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream: redis
