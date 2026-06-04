@@ -219,9 +219,12 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
 def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_string):
     conn = create_db_conn_from_envs()
     parquet_filename = 'state_data.parquet'
+    gdb_filename = 'state_data.gdb'
     # State Data
-    download_file_from_url(state_data_url, 'state_data.parquet')
-    update_state_data(parquet_filename, wkid, schema, ogr_db_string)
+    # download_file_from_url(state_data_url, 'state_data.parquet')
+    gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
+                    schema, ogr_db_string, wkid)
+    # update_state_data(parquet_filename, wkid, schema, ogr_db_string)
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn,schema, table)
     null_missing_state_fund_codes(conn,schema, table)
