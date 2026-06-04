@@ -194,7 +194,7 @@ def create_gdb(out_name, out_dir):
     return os.path.join(out_dir, out_name_ext)
 
 @log_this
-def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
+def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, dst_srs="OGC:CRS84",
                     input_srs=None, work_dir=None, where_clause="1=1"):
     if not work_dir:
         work_dir = os.getcwd()
@@ -204,7 +204,7 @@ def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
         shutil.rmtree(gdb_path)
 
     opts = {"format": "OpenFileGDB",
-            "dstSRS": "OGC:CRS84",
+            "dstSRS": dst_srs,
             "geometryType": "MULTIPOLYGON",
             "layerName": fc_name,
             "SQLStatement": f"SELECT * FROM {schema}.{table} WHERE {where_clause}"
