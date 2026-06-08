@@ -85,8 +85,7 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
         work_dir = os.getcwd()
 
     logging.info(f's3_gdb_update: exporting {schema}.{table} to GDB ({fc_name})')
-    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid,
-                                work_dir=work_dir, where_clause=where_clause)
+    gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, work_dir=work_dir, where_clause=where_clause)
 
     logging.info(f's3_gdb_update: zipping {gdb_path}')
     zip_path = create_zip(gdb_path, fc_name, out_dir=work_dir)
