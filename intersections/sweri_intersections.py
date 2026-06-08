@@ -194,6 +194,8 @@ def run_intersections(docker_conn, docker_schema,
     ############## fetching features ################
     # get latest features based on source
     fetch_features_to_intersect(intersect_sources, docker_conn, docker_schema, 'intersection_features', wkid)
+    # make valid for esri
+    makevalid_shapes(docker_conn, docker_schema, 'intersection_features', wkid)
     # # refresh the spatial index
     refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
     #
