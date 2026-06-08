@@ -103,7 +103,7 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
     # Clean up local files
     for f in [zip_path, gdb_path, out_dir]:
         if os.path.exists(f):
-            os.remove(f)
+            shutil.rmtree(out_dir)
             logging.info(f's3_gdb_update: removed {f}')
 
 
