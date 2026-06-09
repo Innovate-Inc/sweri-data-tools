@@ -258,6 +258,7 @@ TREATMENT_INDEX_VIEW_ID
 TREATMENT_INDEX_POINTS_DATA_ID_1
 TREATMENT_INDEX_POINTS_DATA_ID_2
 TREATMENT_INDEX_POINTS_VIEW_ID
+DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD # boolean for whether to upload daily progression output using celery group or synchronously
 ```
 # TWIG Treatment Index Database Replica
 
