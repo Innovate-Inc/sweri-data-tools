@@ -210,6 +210,7 @@ if __name__ == '__main__':
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
+    run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
     daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
@@ -233,7 +234,7 @@ if __name__ == '__main__':
     update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
 
     # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk, sync=run_sync_hosted_upload)
 
     conn.close()
