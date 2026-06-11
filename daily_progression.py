@@ -218,7 +218,7 @@ def update_global_date_values(db_conn, schema, id_list, today_removal_date):
                 WITH global_dates AS (
                     SELECT poly_irwinid,
                            MIN(start_date) AS global_start_date,
-                           COALESCE(MAX(removal_date),'{today_removal_date}') 
+                           MAX(COALESCE(removal_date,'{today_removal_date}'))
                 AS global_removal_date
                     FROM {schema}.daily_progression
                     GROUP BY poly_irwinid
@@ -281,7 +281,7 @@ def detect_and_update_fire_complexes(db_conn, schema):
              AND b.global_start_date <= a.global_removal_date
             GROUP BY a.poly_irwinid                                           
         )
-        UPDATE {schema}.daily_progression w -- Expand global dates of all progressions in complexes
+        UPDATE {schema}.daily_progression w -- Expand global dates of all features in complexes where needed
         SET 
             global_start_date = c.new_start_date,                            
             global_removal_date = c.new_removal_date                      
@@ -353,7 +353,6 @@ if __name__ == '__main__':
     chunk = 1000
     start_objectid = 0
     max_points_before_single_geom_chunk = 10000
-    current_fires_table = 'current_fires_snapshot'
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
