@@ -367,16 +367,16 @@ if __name__ == '__main__':
     # update entries modified since last run (inactivate old, add new)
     modified_ids = update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
 
-    # update global dates here
+    # update global dates on all fires modified this run
     all_ids = set(added_ids + removed_ids + modified_ids)
     all_ids_string = ','.join(f"'{id}'" for id in all_ids)
     update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
 
-    # do fire complexes here
+    # expand global dates that are part of complexes
     detect_and_update_fire_complexes(conn, target_schema)
 
     # update hosted feature layer with upload and swizzle
-    # hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
-    #                           daily_progression_table, max_points_before_single_geom_chunk, chunk)
+    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
 
     conn.close()
