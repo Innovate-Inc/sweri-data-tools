@@ -281,7 +281,7 @@ def detect_and_update_fire_complexes(db_conn, schema):
              AND b.global_start_date <= a.global_removal_date
             GROUP BY a.poly_irwinid                                           
         )
-        UPDATE {schema}.daily_progression w -- Expand global dates of all features in complexes where needed
+        UPDATE {schema}.daily_progression w -- Expand global dates of all features to max and min of all fires in complex
         SET 
             global_start_date = c.new_start_date,                            
             global_removal_date = c.new_removal_date                      
