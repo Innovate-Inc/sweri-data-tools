@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
 from treatment_index.sweri_treatment_index import run_treatment_index
+from daily_progression import run_daily_progressions
 
 if __name__ == "__main__":
     logging.info('starting data processing')
@@ -57,6 +58,12 @@ if __name__ == "__main__":
     ti_cache_prefix = os.getenv('TREATMENT_INDEX_RESPONSE_CACHE_PREFIX')
     ti_points_cache_prefix = os.getenv('TREATMENT_INDEX_POINTS_RESPONSE_CACHE_PREFIX')
 
+    # daily progressions envs
+    run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
+    wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
+
     # Only construct cache info if a valid bucket name is configured
     response_cache_info = None
     if cache_bucket_name:
@@ -102,6 +109,15 @@ if __name__ == "__main__":
                           portal_password, intersections_view_id, intersections_data_ids,
                           intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+
+        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+
+        run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
+                               portal_url, portal_user, portal_password,
+                               daily_progression_view_id, daily_progression_data_ids,
+                               run_sync_hosted_upload)
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
         sys.exit(1)
