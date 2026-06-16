@@ -79,7 +79,7 @@ if __name__ == "__main__":
     try:
         # Get current day and env run day for treatment index
         ti_run_day_index = int(os.getenv('TI_RUN_DAY_INDEX'))
-        day_of_week_index = datetime.now().weekday()
+        day_of_week_index = datetime.now().isoweekday()
 
         # If today is run day
         if ti_run_day_index == day_of_week_index:
