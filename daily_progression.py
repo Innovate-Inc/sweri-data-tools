@@ -234,7 +234,7 @@ def update_global_date_values(db_conn, schema, id_list, today_removal_date):
     logger.info(f'Updated global_start_date and global_removal_date for {len(id_list)} fires')
 
 @log_this
-def detect_and_update_fire_complexes(db_conn, schema):
+def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
     """
     If two progressions have geographic intersection and date overlap, they are considered a complex
 
@@ -318,6 +318,9 @@ def detect_and_update_fire_complexes(db_conn, schema):
                 else:
                     logger.info(f"No rows left to update. Process complete after {iteration_count} iterations.")
 
+            if iteration_count > iteration_limit:
+                break
+
     except Exception as e:
         print(f"Error during complex update loop: {e}")
         raise
@@ -353,6 +356,7 @@ if __name__ == '__main__':
     chunk = 1000
     start_objectid = 0
     max_points_before_single_geom_chunk = 10000
+    complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
@@ -373,7 +377,7 @@ if __name__ == '__main__':
     update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
 
     # expand global dates that are part of complexes
-    detect_and_update_fire_complexes(conn, target_schema)
+    detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
 
     # update hosted feature layer with upload and swizzle
     hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
