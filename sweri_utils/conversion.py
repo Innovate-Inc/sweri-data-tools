@@ -83,24 +83,29 @@ def s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name,
 
     if work_dir is None:
         work_dir = os.getcwd()
+    zip_name = f'{fc_name}_archive'
+    out_dir = os.path.join(work_dir, zip_name)
+    if os.path.exists(out_dir):
+        shutil.rmtree(out_dir)
+
+    os.makedirs(out_dir)
 
     logging.info(f's3_gdb_update: exporting {schema}.{table} to GDB ({fc_name})')
     gdb_path = pg_table_to_gdb(ogr_db_conn_string, schema, table, fc_name, wkid,
-                                work_dir=work_dir, where_clause=where_clause)
+                                work_dir=out_dir, where_clause=where_clause)
 
-    logging.info(f's3_gdb_update: zipping {gdb_path}')
-    zip_path = create_zip(gdb_path, fc_name, out_dir=work_dir)
+    logging.info(f's3_gdb_update: zipping {out_dir}')
+    zip_path = create_zip(out_dir, zip_name, out_dir=work_dir)
 
     logging.info(f's3_gdb_update: uploading {zip_path} to s3://{bucket}/{s3_obj_name}')
     upload_to_s3(bucket, zip_path, s3_obj_name)
 
     # Clean up local files
-    if os.path.exists(zip_path):
-        os.remove(zip_path)
-        logging.info(f's3_gdb_update: removed local zip {zip_path}')
-    if os.path.exists(gdb_path):
-        shutil.rmtree(gdb_path)
-        logging.info(f's3_gdb_update: removed local gdb {gdb_path}')
+    for f in [zip_path, gdb_path, out_dir]:
+        if os.path.exists(f):
+            shutil.rmtree(out_dir)
+            logging.info(f's3_gdb_update: removed {f}')
+
 
 
 ########################### arcpy required for below functions ###########################
