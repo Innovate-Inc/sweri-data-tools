@@ -78,11 +78,11 @@ if __name__ == "__main__":
     ############## processing in docker ################
     try:
         # Get current day and env run day for treatment index
-        ti_run_day_index = int(os.getenv('TI_RUN_DAY_INDEX'))
-        day_of_week_index = datetime.now().isoweekday()
+        ti_run_day = os.getenv('TI_RUN_DAY')
+        day_of_week = datetime.now().strftime('%a').upper()
 
         # If today is run day
-        if ti_run_day_index == day_of_week_index:
+        if ti_run_day == day_of_week:
             treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
             run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
