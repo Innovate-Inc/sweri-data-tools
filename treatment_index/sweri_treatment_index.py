@@ -139,11 +139,11 @@ def common_attributes_twig_category(conn, schema):
             WHERE
             ti.identifier_database = 'FACTS Common Attributes'
             AND
-            ti.activity = tc.activity
+            ti.activity IS NOT DISTINCT FROM tc.activity
             AND
-            ti.method = tc.method
+            ti.method IS NOT DISTINCT FROM tc.method
             AND
-            ti.equipment = tc.equipment;
+            ti.equipment IS NOT DISTINCT FROM tc.equipment;
         ''')
 
 @log_this
@@ -161,7 +161,7 @@ def facts_nfpors_twig_category(conn, schema):
                 ti.identifier_database = 'FACTS Hazardous Fuels'
                 )     
             AND
-            ti.type = tc.type;
+            ti.type IS NOT DISTINCT FROM tc.type;
         ''')
 
 def ifprs_twig_category(conn, schema):
@@ -174,7 +174,7 @@ def ifprs_twig_category(conn, schema):
             {schema}.twig_category_lookup tc
             WHERE ti.identifier_database = 'IFPRS'
             AND
-            ti.category = tc.category;
+            ti.category IS NOT DISTINCT FROM tc.category;
         ''')
 
 def state_data_twig_category(conn, schema):
@@ -185,9 +185,9 @@ def state_data_twig_category(conn, schema):
             SET twig_category = tc.twig_category
             FROM
             {schema}.twig_category_lookup tc
-            WHERE ti.identifier_database = 'NASF'
+            WHERE ti.identifier_database in ('NASF', 'NGO')
             AND
-            ti.category = tc.category;
+            ti.category IS NOT DISTINCT FROM tc.category;
         ''')
 
 @log_this
