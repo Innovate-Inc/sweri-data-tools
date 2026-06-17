@@ -1,4 +1,4 @@
-from intersections.utils import insert_feature_into_db
+from intersections.utils import insert_feature_into_db, chunk_it
 from psycopg import OperationalError
 from sweri_utils.download import get_ids, fetch_features
 from sweri_utils.sweri_logging import log_this
@@ -19,7 +19,7 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', filename='
 
 
 @app.task(time_limit=60*60*1000, autoretry_for=(OperationalError,))
-def calculate_intersections_and_insert(schema, insert_table, source_key, target_key, source_object_ids):
+def calculate_intersections_and_insert(schema, insert_table, source_key, target_key, source_object_ids: list):
     """
     Calculate intersections between features from two sources and insert the results into a specified table.
     ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 as acre_overlap is used so we can calculate the geodesic area
@@ -29,7 +29,7 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
         insert_table (str): The name of the table to insert intersection results into.
         source_key (str): The key identifying the source features.
         target_key (str): The key identifying the target features.
-        source_object_ids (tuple): Tuple of source object IDs to process.
+        source_object_ids (list): List of source object IDs to process.
 
     Returns:
         None
@@ -37,26 +37,8 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
     logger.info(f'beginning intersections on {source_key} and {target_key} for source_object_ids: {source_object_ids}')
     _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids)
 
-def _create_chunk(source_object_ids, divide_factor=2):
-    """Yield successive chunks of `source_object_ids`.
 
-    The chunk size is computed as `max(1, len(source_object_ids) // divide_factor)`.
-
-    Args:
-        source_object_ids (tuple[int, ...]): Object IDs to chunk.
-        divide_factor (int): Factor used to reduce the chunk size when retrying.
-
-    Yields:
-        tuple[int, ...]: Chunks of object IDs.
-    """
-    # Calculate new chunk size (at least 1)
-    new_chunk_size = max(1, len(source_object_ids) // divide_factor)
-
-    # Process in smaller chunks
-    for i in range(0, len(source_object_ids), new_chunk_size):
-        yield source_object_ids[i:i + new_chunk_size]
-
-def _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids):
+def _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids: list):
     """
     Process intersection calculations with adaptive chunking.
     If a chunk fails, recursively process smaller chunks until individual IDs are processed.
@@ -80,11 +62,11 @@ def _process_intersection_chunk(schema, insert_table, source_key, target_key, so
         logger.warning(f'chunk processing failed with {len(source_object_ids)} IDs: {str(e)}')
 
 
-        for chunk in _create_chunk(source_object_ids, divide_factor=2):
+        for chunk in chunk_it(source_object_ids, divide_factor=2):
             _process_intersection_chunk(schema, insert_table, source_key, target_key, chunk)
 
 
-def _execute_intersection_query(schema, insert_table, source_key, target_key, source_object_ids):
+def _execute_intersection_query(schema, insert_table, source_key, target_key, source_object_ids: list):
     """
     Execute the intersection query against the database.
     
@@ -93,7 +75,7 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
         insert_table (str): Target table name.
         source_key (str): Source feature key.
         target_key (str): Target feature key.
-        source_object_ids (tuple): Tuple of object IDs to process.
+        source_object_ids (list): Tuple of object IDs to process.
     
     Raises:
         Exception: Any database error encountered during execution.

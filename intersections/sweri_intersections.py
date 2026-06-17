@@ -19,7 +19,7 @@ from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_t
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 from sweri_utils.conversion import s3_gdb_update
-from intersections.utils import insert_feature_into_db
+from intersections.utils import insert_feature_into_db, chunk_it
 from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 
 
@@ -101,13 +101,11 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
             del conn
             # get all object ids for the intersecting features
             if len(ids) > 0:
-                i = 0
-                while i < len(ids):
-                    # calculate intersections in chunks
-                    source_object_ids = f"({','.join(str(_id) for _id in ids[i:i + chunk_size])})"
+                # calculate intersections in chunks
+                for source_object_ids in chunk_it(ids, chunk_size):
                     t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key,
                                                                   source_object_ids))
-                    i += chunk_size
+
     conn = create_db_conn_from_envs()
     autovacuum_tables = [intersections_name, 'intersection_features']
     switch_autovacuum_and_triggers(False, conn,  schema, autovacuum_tables)
