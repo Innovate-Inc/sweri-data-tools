@@ -6,7 +6,7 @@ from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql, hosted
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
-from intersections.tasks import _create_chunk
+from intersections.utils import chunk_it
 from intersections import tasks
 
 
@@ -1146,51 +1146,51 @@ class HostedTests(TestCase):
 class IntersectionTests(TestCase):
     def test_correct_number_of_chunks_for_even_split(self):
         ids = tuple(range(10))
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         assert len(chunks) == 2
 
     def test_correct_chunk_sizes_for_even_split(self):
         ids = tuple(range(10))
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         assert all(len(c) == 5 for c in chunks)
 
     def test_all_ids_across_chunks(self):
         ids = tuple(range(10))
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         assert tuple(id_ for chunk in chunks for id_ in chunk) == ids
 
     def test_single_element_chunks_when_divide_factor_equals_length(self):
         ids = tuple(range(4))
-        chunks = list(_create_chunk(ids, divide_factor=4))
+        chunks = list(chunk_it(ids, divide_factor=4))
         assert all(len(c) == 1 for c in chunks)
 
     def test_at_least_one_chunk_for_single_element_input(self):
         ids = (42,)
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         assert len(chunks) == 1
         assert chunks[0] == (42,)
 
     def test_chunks_with_min_size_of_one_for_large_divide_factor(self):
         ids = tuple(range(3))
-        chunks = list(_create_chunk(ids, divide_factor=100))
+        chunks = list(chunk_it(ids, divide_factor=100))
         assert all(len(c) >= 1 for c in chunks)
         assert tuple(id_ for chunk in chunks for id_ in chunk) == ids
 
     def test_correct_chunks_for_odd_length_input(self):
         ids = tuple(range(7))
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         combined = tuple(id_ for chunk in chunks for id_ in chunk)
         assert combined == ids
 
     def test_more_chunks_for_higher_divide_factor(self):
         ids = tuple(range(8))
-        chunks_2 = list(_create_chunk(ids, divide_factor=2))
-        chunks_4 = list(_create_chunk(ids, divide_factor=4))
+        chunks_2 = list(chunk_it(ids, divide_factor=2))
+        chunks_4 = list(chunk_it(ids, divide_factor=4))
         assert len(chunks_4) >= len(chunks_2)
 
     def test_preserves_original_order_of_ids(self):
         ids = (5, 3, 8, 1, 9, 2)
-        chunks = list(_create_chunk(ids, divide_factor=2))
+        chunks = list(chunk_it(ids, divide_factor=2))
         combined = tuple(id_ for chunk in chunks for id_ in chunk)
         assert combined == ids
 
