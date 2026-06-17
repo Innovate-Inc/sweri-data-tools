@@ -6,6 +6,9 @@ from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql, hosted
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
+from intersections.tasks import _create_chunk
+from scripts.intersections import tasks
+
 
 class DownloadTests(TestCase):
     def setUp(self):
@@ -981,6 +984,7 @@ class SqlTests(TestCase):
         mock_conn.transaction.assert_called_once()
         mock_cursor.execute.assert_called_once_with(sql_call)
 
+
 class S3Tests(TestCase):
     def test_import_s3_csv_to_postgres_table(self):
         # Mock connection, cursor, and trasaction context
@@ -1041,6 +1045,7 @@ class S3Tests(TestCase):
 
             self.assertEqual(str(context.exception), 'Deleting test_bucket without a prefix is not allowed.')
             mock_boto_resource.assert_not_called()
+
 
 class SwizzleTests(TestCase):
     @patch('requests.get')
@@ -1114,6 +1119,7 @@ class SwizzleTests(TestCase):
         with self.assertRaises(TypeError):
             swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
 
+
 class HostedTests(TestCase):
     @patch.object(hosted, 'get_count')
     def test_verify_feature_same_count(self, mock_get_count):
@@ -1135,3 +1141,119 @@ class HostedTests(TestCase):
 
         with self.assertRaises(ValueError):
             hosted.verify_feature_count(mock_conn, 'schema', 'table', mock_fl)
+
+
+class IntersectionTests(TestCase):
+    def test_correct_number_of_chunks_for_even_split(self):
+        ids = tuple(range(10))
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        assert len(chunks) == 2
+
+    def test_correct_chunk_sizes_for_even_split(self):
+        ids = tuple(range(10))
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        assert all(len(c) == 5 for c in chunks)
+
+    def test_all_ids_across_chunks(self):
+        ids = tuple(range(10))
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        assert tuple(id_ for chunk in chunks for id_ in chunk) == ids
+
+    def test_single_element_chunks_when_divide_factor_equals_length(self):
+        ids = tuple(range(4))
+        chunks = list(_create_chunk(ids, divide_factor=4))
+        assert all(len(c) == 1 for c in chunks)
+
+    def test_at_least_one_chunk_for_single_element_input(self):
+        ids = (42,)
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        assert len(chunks) == 1
+        assert chunks[0] == (42,)
+
+    def test_chunks_with_min_size_of_one_for_large_divide_factor(self):
+        ids = tuple(range(3))
+        chunks = list(_create_chunk(ids, divide_factor=100))
+        assert all(len(c) >= 1 for c in chunks)
+        assert tuple(id_ for chunk in chunks for id_ in chunk) == ids
+
+    def test_correct_chunks_for_odd_length_input(self):
+        ids = tuple(range(7))
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        combined = tuple(id_ for chunk in chunks for id_ in chunk)
+        assert combined == ids
+
+    def test_more_chunks_for_higher_divide_factor(self):
+        ids = tuple(range(8))
+        chunks_2 = list(_create_chunk(ids, divide_factor=2))
+        chunks_4 = list(_create_chunk(ids, divide_factor=4))
+        assert len(chunks_4) >= len(chunks_2)
+
+    def test_preserves_original_order_of_ids(self):
+        ids = (5, 3, 8, 1, 9, 2)
+        chunks = list(_create_chunk(ids, divide_factor=2))
+        combined = tuple(id_ for chunk in chunks for id_ in chunk)
+        assert combined == ids
+
+    @patch.object(tasks, '_execute_intersection_query')
+    def test_processes_entire_chunk_when_query_succeeds(self, mock_execute):
+        source_ids = (1, 2, 3)
+
+        tasks._process_intersection_chunk('public', 'target', 'source_a', 'source_b', source_ids)
+
+        mock_execute.assert_called_once_with('public', 'target', 'source_a', 'source_b', source_ids)
+
+    @patch.object(tasks, '_execute_intersection_query')
+    def test_retries_with_smaller_chunks_when_initial_chunk_fails(self, mock_execute):
+        source_ids = (10, 11, 12, 13)
+
+        def side_effect(schema, insert_table, source_key, target_key, ids):
+            if ids == source_ids:
+                raise Exception('chunk failed')
+            return None
+
+        mock_execute.side_effect = side_effect
+
+        tasks._process_intersection_chunk('public', 'target', 'source_a', 'source_b', source_ids)
+
+        self.assertEqual(mock_execute.call_count, 3)
+        mock_execute.assert_has_calls([
+            call('public', 'target', 'source_a', 'source_b', source_ids),
+            call('public', 'target', 'source_a', 'source_b', (10, 11)),
+            call('public', 'target', 'source_a', 'source_b', (12, 13)),
+        ])
+
+    @patch.object(tasks.logger, 'error')
+    @patch.object(tasks, '_execute_intersection_query', side_effect=Exception('single id failed'))
+    def test_logs_and_stops_when_single_id_chunk_fails(self, _mock_execute, mock_error):
+        tasks._process_intersection_chunk('public', 'target', 'source_a', 'source_b', (99,))
+
+        self.assertEqual(mock_error.call_count, 1)
+
+    @patch.object(tasks, 'create_db_conn_from_envs')
+    def test_executes_intersection_query_and_closes_connection(self, mock_create_conn):
+        conn = MagicMock()
+        cursor = MagicMock()
+        conn.cursor.return_value = cursor
+        mock_create_conn.return_value = conn
+
+        tasks._execute_intersection_query('public', 'target', 'source_a', 'target_b', (5, 6))
+
+        self.assertEqual(cursor.execute.call_count, 1)
+        executed_query = cursor.execute.call_args[0][0]
+        assert 'a.objectid IN (5,6)' in executed_query
+        assert "b.feat_source = 'target_b'" in executed_query
+        conn.close.assert_called_once()
+
+    @patch.object(tasks, 'create_db_conn_from_envs')
+    def test_closes_connection_when_query_execution_fails(self, mock_create_conn):
+        conn = MagicMock()
+        cursor = MagicMock()
+        cursor.execute.side_effect = Exception('db failed')
+        conn.cursor.return_value = cursor
+        mock_create_conn.return_value = conn
+
+        with self.assertRaises(Exception):
+            tasks._execute_intersection_query('public', 'target', 'source_a', 'target_b', (7,))
+
+        conn.close.assert_called_once()
+

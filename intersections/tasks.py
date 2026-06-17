@@ -35,10 +35,25 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
         None
     """
     logger.info(f'beginning intersections on {source_key} and {target_key} for source_object_ids: {source_object_ids}')
-    _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids, chunk_size=len(source_object_ids))
+    _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids)
 
+def _create_chunk(source_object_ids, divide_factor=2):
+    """
+    Create a chunk from the source object IDs based on the divide factor
+    Args:
+        source_object_ids:
 
-def _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids, chunk_size=None):
+    Returns: multiple tuples based on divide_factor
+
+    """
+    # Calculate new chunk size (at least 1)
+    new_chunk_size = max(1, len(source_object_ids) // divide_factor)
+
+    # Process in smaller chunks
+    for i in range(0, len(source_object_ids), new_chunk_size):
+        yield source_object_ids[i:i + new_chunk_size]
+
+def _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids):
     """
     Process intersection calculations with adaptive chunking.
     If a chunk fails, recursively process smaller chunks until individual IDs are processed.
@@ -49,36 +64,21 @@ def _process_intersection_chunk(schema, insert_table, source_key, target_key, so
         source_key (str): Source feature key.
         target_key (str): Target feature key.
         source_object_ids (tuple): Tuple of object IDs to process.
-        chunk_size (int): Current chunk size. Defaults to length of source_object_ids.
     """
-    if chunk_size is None:
-        chunk_size = len(source_object_ids)
-    
-    # Base case: trying to process single ID
-    if chunk_size == 1:
-        for obj_id in source_object_ids:
-            try:
-                _execute_intersection_query(schema, insert_table, source_key, target_key, (obj_id,))
-                logger.info(f'processed single object_id {obj_id} for {source_key} x {target_key}')
-            except Exception as e:
-                logger.error(f'failed to process object_id {obj_id} for {source_key} x {target_key}: {str(e)}')
-                # Log and continue to next ID
-        return
-    
-    # Try processing current chunk size
+
     try:
         _execute_intersection_query(schema, insert_table, source_key, target_key, source_object_ids)
         logger.info(f'completed intersections on {source_key} and {target_key}, inserted into {schema}.{insert_table} with {len(source_object_ids)} IDs')
     except Exception as e:
-        logger.warning(f'chunk processing failed with {len(source_object_ids)} IDs (chunk_size={chunk_size}): {str(e)}. Halving chunk size.')
-        
-        # Calculate new chunk size (at least 1)
-        new_chunk_size = max(1, chunk_size // 2)
-        
-        # Process in smaller chunks
-        for i in range(0, len(source_object_ids), new_chunk_size):
-            chunk = source_object_ids[i:i + new_chunk_size]
-            _process_intersection_chunk(schema, insert_table, source_key, target_key, chunk, chunk_size=new_chunk_size)
+        if len(source_object_ids) == 1:
+            logger.error(f'failed to process individual object_id {source_object_ids[0]} for {source_key} x {target_key}: {str(e)}')
+            return
+
+        logger.warning(f'chunk processing failed with {len(source_object_ids)} IDs: {str(e)}')
+
+
+        for chunk in _create_chunk(source_object_ids, divide_factor=2):
+            _process_intersection_chunk(schema, insert_table, source_key, target_key, chunk)
 
 
 def _execute_intersection_query(schema, insert_table, source_key, target_key, source_object_ids):
@@ -99,6 +99,8 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
     try:
         with conn:
             cursor = conn.cursor()
+            # join this way in case source_object_ids only has one value so we dont end up with (1,) in the sql statement
+            object_id_where = f"({','.join([str(x) for x in source_object_ids])})"
             # snapping the collection of target features to a grid before dissolving to prevent topology errors that can arise when dissolving features with very small gaps or overlaps
             query = f"""
                     WITH intersection_data AS (
@@ -111,7 +113,7 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
                             a.objectid AS objectid,
                             ST_MakeValid(ST_SnapToGrid(b.shape, 0.000000001)) as shape
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
-                        WHERE a.objectid IN {source_object_ids} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
+                        WHERE a.objectid IN {object_id_where} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
                     ),
                     target_union AS (
                         SELECT ST_Union(shape) as shape, 
