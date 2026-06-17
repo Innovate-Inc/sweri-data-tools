@@ -84,7 +84,8 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
         "dstSRS": f'EPSG:{projection}',
         "accessMode": 'overwrite',
         "layerName": f"{schema}.{postgres_table_name}",
-        "layers": [fc_name]
+        "layers": [fc_name],
+        "geometryType": "CONVERT_TO_LINEAR"
     }
 
     if input_srs:
@@ -193,7 +194,7 @@ def create_gdb(out_name, out_dir):
     return os.path.join(out_dir, out_name_ext)
 
 @log_this
-def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
+def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, dst_srs="OGC:CRS84",
                     input_srs=None, work_dir=None, where_clause="1=1"):
     if not work_dir:
         work_dir = os.getcwd()
@@ -202,18 +203,15 @@ def pg_table_to_gdb(ogr_db_string, schema, table, fc_name, wkid,
     if os.path.exists(gdb_path):
         shutil.rmtree(gdb_path)
 
-    opts = {
-        "format": "OpenFileGDB",
-        "makeValid": True,
-        "dstSRS": f"EPSG:{wkid}",
-        "geometryType": ["PROMOTE_TO_MULTI", "MULTIPOLYGON"],
-        "layerName": fc_name,
-    }
+    opts = {"format": "OpenFileGDB",
+            "dstSRS": dst_srs,
+            "geometryType": "MULTIPOLYGON",
+            "layerName": fc_name,
+            "SQLStatement": f"SELECT * FROM {schema}.{table} WHERE {where_clause}"
+            }
 
     if input_srs:
         opts["srcSRS"] = input_srs
-
-    opts["SQLStatement"] = f"SELECT * FROM {schema}.{table} WHERE {where_clause}"
 
     options = VectorTranslateOptions(**opts)
 
