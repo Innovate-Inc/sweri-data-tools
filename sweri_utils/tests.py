@@ -7,7 +7,7 @@ from . import download, files, conversion, s3, sql, hosted
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 from intersections.tasks import _create_chunk
-from scripts.intersections import tasks
+from intersections import tasks
 
 
 class DownloadTests(TestCase):
