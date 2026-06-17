@@ -75,7 +75,7 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
         insert_table (str): Target table name.
         source_key (str): Source feature key.
         target_key (str): Target feature key.
-        source_object_ids (list): Tuple of object IDs to process.
+        source_object_ids (list[int]): Object IDs to process.
     
     Raises:
         Exception: Any database error encountered during execution.
