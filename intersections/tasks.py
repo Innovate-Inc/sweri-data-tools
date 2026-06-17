@@ -38,13 +38,16 @@ def calculate_intersections_and_insert(schema, insert_table, source_key, target_
     _process_intersection_chunk(schema, insert_table, source_key, target_key, source_object_ids)
 
 def _create_chunk(source_object_ids, divide_factor=2):
-    """
-    Create a chunk from the source object IDs based on the divide factor
+    """Yield successive chunks of `source_object_ids`.
+
+    The chunk size is computed as `max(1, len(source_object_ids) // divide_factor)`.
+
     Args:
-        source_object_ids:
+        source_object_ids (tuple[int, ...]): Object IDs to chunk.
+        divide_factor (int): Factor used to reduce the chunk size when retrying.
 
-    Returns: multiple tuples based on divide_factor
-
+    Yields:
+        tuple[int, ...]: Chunks of object IDs.
     """
     # Calculate new chunk size (at least 1)
     new_chunk_size = max(1, len(source_object_ids) // divide_factor)
