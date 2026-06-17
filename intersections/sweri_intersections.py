@@ -102,7 +102,7 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
             # get all object ids for the intersecting features
             if len(ids) > 0:
                 # calculate intersections in chunks
-                for source_object_ids in chunk_it(ids, chunk_size):
+                for source_object_ids in chunk_it(ids, chunk_size=chunk_size):
                     t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key,
                                                                   source_object_ids))
 
