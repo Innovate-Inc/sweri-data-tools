@@ -21,7 +21,7 @@ def insert_feature_into_db(conn, target_table, feature, fc_name, id_field, schem
         logging.error(f'error inserting feature: {err}, {q}')
 
 
-def chunk_it(source_object_ids: list, divide_factor=2, chunk_size=None):
+def chunk_it(source_object_ids: list, *, divide_factor=2, chunk_size=None):
     """
     Create a chunk from the source object IDs based on the divide factor
     Args:
