@@ -102,8 +102,8 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
     try:
         with conn:
             cursor = conn.cursor()
-            # join this way in case source_object_ids only has one value so we dont end up with (1,) in the sql statement
-            object_id_where = f"({','.join([str(x) for x in source_object_ids])})"
+            # Join explicitly so a single value doesn't become "(1,)" in the SQL IN clause.
+            object_id_where = f"({','.join(str(x) for x in source_object_ids)})"
             # snapping the collection of target features to a grid before dissolving to prevent topology errors that can arise when dissolving features with very small gaps or overlaps
             query = f"""
                     WITH intersection_data AS (
