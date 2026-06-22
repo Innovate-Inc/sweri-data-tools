@@ -6,7 +6,7 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import watchtower
 from arcgis.gis import GIS
 
-from sweri_utils.sql import connect_to_pg_db
+from sweri_utils.sql import connect_to_pg_db, add_column
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle
 from sweri_utils.sweri_logging import logging, log_this
@@ -39,6 +39,21 @@ def return_ids(db_conn, query):
         cursor.execute(query)
         ids_list = [row[0] for row in cursor.fetchall()]
         ids_string = ','.join(f"'{id}'" for id in ids_list)
+    return ids_string, ids_list
+
+
+def id_set_to_sql_string(ids_set):
+    if not ids_set:
+        return ""
+
+    # Handle numeric and string IDs differently
+    if all(isinstance(id, (int, float)) for id in ids_set):
+        # No quotes for numeric IDs
+        ids_string = ','.join(str(id) for id in ids_set)
+    else:
+        # Wrap string IDs in single quotes
+        ids_string = ','.join(f"'{id}'" for id in ids_set)
+
     return ids_string
 
 
@@ -55,13 +70,14 @@ def add_new_fires(schema, db_conn, start_date):
         );
         
     '''
-    add_ids = return_ids(db_conn, add_ids_query)
+    add_ids_string, add_ids_list = return_ids(db_conn, add_ids_query)
 
-    if len(add_ids) > 0:
-        insert_fires(db_conn, schema, start_date, add_ids)
-        logger.info(f'Added Fires : {add_ids}')
+    if len(add_ids_string) > 0:
+        insert_fires(db_conn, schema, start_date, add_ids_string)
+        logger.info(f'Added Fires : {add_ids_string}')
     else:
         logger.info(f'No new fires to add')
+    return add_ids_list
 
 
 @log_this
@@ -78,13 +94,15 @@ def notate_removed_fires(schema, db_conn, removal_date):
         );
         
     '''
-    removed_ids = return_ids(db_conn, removed_ids_query)
+    removed_ids_string, removed_ids_list = return_ids(db_conn, removed_ids_query)
 
-    if len(removed_ids) > 0:
-        update_removal_date(db_conn, schema, removal_date, removed_ids)
-        logger.info(f'removal_date set to {removal_date} for : {removed_ids}')
+    if len(removed_ids_string) > 0:
+        update_removal_date(db_conn, schema, removal_date, removed_ids_string)
+        logger.info(f'removal_date set to {removal_date} for : {removed_ids_string}')
     else:
         logger.info(f'No fire removals to notate')
+
+    return removed_ids_list
 
 
 @log_this
@@ -101,14 +119,16 @@ def update_modified_fires(schema, db_conn, start_date, removal_date):
         cf.attr_modifiedondatetime_dt > dp.attr_modifiedondatetime_dt
         
     '''
-    modified_ids = return_ids(db_conn, modified_ids_query)
+    modified_ids_string, modified_ids_list = return_ids(db_conn, modified_ids_query)
 
-    if len(modified_ids) > 0:
-        update_removal_date(db_conn, schema, removal_date, modified_ids)
-        insert_fires(db_conn, schema, start_date, modified_ids)
-        logger.info(f'Modified fires {modified_ids}')
+    if len(modified_ids_string) > 0:
+        update_removal_date(db_conn, schema, removal_date, modified_ids_string)
+        insert_fires(db_conn, schema, start_date, modified_ids_string)
+        logger.info(f'Modified fires {modified_ids_string}')
     else:
         logger.info(f'No fires modified since last run')
+
+    return modified_ids_list
 
 
 @log_this
@@ -186,10 +206,129 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
     
         ''')
 
+@log_this
+def update_global_date_values(db_conn, schema, id_list, today_removal_date):
+    # Updates global_start_date and global_removal_date of all fire progressions in the provided id list
+    # Since progressions with null removal_dates are still active, global_removal_date for such fires is set to today
+    if len(id_list) > 0:
+        cursor = db_conn.cursor()
+        with db_conn.transaction():
+            cursor.execute(f'''
+            
+                WITH global_dates AS (
+                    SELECT poly_irwinid,
+                           MIN(start_date) AS global_start_date,
+                           MAX(COALESCE(removal_date,'{today_removal_date}'))
+                AS global_removal_date
+                    FROM {schema}.daily_progression
+                    GROUP BY poly_irwinid
+                )
+                UPDATE {schema}.daily_progression w
+                SET global_start_date = g.global_start_date,
+                    global_removal_date = g.global_removal_date
+                FROM global_dates g
+                WHERE w.poly_irwinid = g.poly_irwinid
+                  AND w.poly_irwinid IN ({id_list});
+      
+        ''')
+    logger.info(f'Updated global_start_date and global_removal_date for {len(id_list)} fires')
 
-if __name__ == '__main__':
-    load_dotenv()
+@log_this
+def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
+    """
+    If two progressions have geographic intersection and date overlap, they are considered a complex
 
+    If two or more progressions are part of the same complex, the global_start_date is set to the earliest start date
+    in the complex and the global_removal_date is set to the latest removal date in the complex.
+    """
+
+    # Select query looks for a single row that needs dates updated
+    select_query = f"""
+    
+        WITH complex_dates AS (
+            SELECT -- Find all progressions that intersect geographically, and have overlapping date ranges
+                a.poly_irwinid AS wildfire_id,                                 
+                MIN(b.global_start_date) AS new_start_date,                   
+                MAX(b.global_removal_date) AS new_removal_date                
+            FROM {schema}.daily_progression a
+            JOIN {schema}.daily_progression b
+              ON ST_Intersects(a.shape, b.shape)                             
+             AND a.global_start_date <= b.global_removal_date                
+             AND b.global_start_date <= a.global_removal_date
+            GROUP BY a.poly_irwinid                                          
+        )
+        SELECT * -- Find if any of the intersecting progressions                                                              
+        FROM {schema}.daily_progression w
+        INNER JOIN complex_dates c
+          ON w.poly_irwinid = c.wildfire_id                                  
+        WHERE (w.global_start_date != c.new_start_date                       
+               OR w.global_removal_date != c.new_removal_date)
+        LIMIT 1;    
+                                                                 
+    """
+
+    # update_query expands global_start_date and global_end_date of fires in all complexes
+    update_query = f"""
+        WITH complex_dates AS (
+            SELECT -- Select all progressions that intersect geographically, and have overlapping date ranges
+                a.poly_irwinid AS wildfire_id,                                 
+                MIN(b.global_start_date) AS new_start_date,                   
+                MAX(b.global_removal_date) AS new_removal_date               
+            FROM {schema}.daily_progression a
+            JOIN {schema}.daily_progression b
+              ON ST_Intersects(a.shape, b.shape)                             
+             AND a.global_start_date <= b.global_removal_date                
+             AND b.global_start_date <= a.global_removal_date
+            GROUP BY a.poly_irwinid                                           
+        )
+        UPDATE {schema}.daily_progression w -- Expand global dates of all features to max and min of all fires in complex
+        SET 
+            global_start_date = c.new_start_date,                            
+            global_removal_date = c.new_removal_date                      
+        FROM complex_dates c
+        WHERE w.poly_irwinid = c.wildfire_id                                
+          AND (w.global_start_date != c.new_start_date                      
+               OR w.global_removal_date != c.new_removal_date);
+    """
+
+    rows_to_update = True  # Set to true to begin the loop
+    iteration_count = 0
+    cursor = db_conn.cursor()
+
+
+    try:
+        while rows_to_update:
+
+            # select query runs to see if any complexes need updating
+            logger.info(f"Checking for complex updates. Iteration {iteration_count}...")
+            with db_conn.transaction():
+                cursor.execute(select_query)
+
+                # If a single row needs to be updated, rows_to_update is set to true
+                rows_to_update = cursor.fetchone() is not None
+
+                if rows_to_update:
+                    # If rows are found, execute the update query
+                    logger.info(f"Rows found to update. Executing update query...")
+                    with db_conn.transaction():
+                        cursor.execute(update_query)
+                        rows_updated = cursor.rowcount
+                        logger.info(f"Number of rows updated in this iteration: {rows_updated}")
+                    iteration_count += 1
+                else:
+                    logger.info(f"No rows left to update. Process complete after {iteration_count} iterations.")
+
+            if iteration_count > iteration_limit:
+                break
+
+    except Exception as e:
+        print(f"Error during complex update loop: {e}")
+        raise
+
+def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
+                           gis_url, gis_user, gis_password,
+                           daily_progression_view_id, daily_progression_data_ids,
+                           run_sync_hosted_upload):
     #start date and removal date 1 second apart to prevent overlap between old and new polygons
     current_time = datetime.datetime.now()
     one_second_ago = current_time - datetime.timedelta(seconds=1)
@@ -197,6 +336,43 @@ if __name__ == '__main__':
     # Time strings
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
+
+    daily_progression_table = 'daily_progression'
+
+    chunk = 1000
+    max_points_before_single_geom_chunk = 10000
+    complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
+
+    # import current fires layer into postgres
+    import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
+    makevalid_snapshot_shapes(conn, target_schema)
+
+    # add new fires from current fires into daily progression
+    added_ids = add_new_fires(target_schema, conn, current_time_str)
+
+    # set removal date to current date for fires removed from current fires since last update
+    removed_ids = notate_removed_fires(target_schema, conn, one_second_ago_str)
+
+    # update entries modified since last run (inactivate old, add new)
+    modified_ids = update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
+
+    # update global dates on all fires modified this run
+    all_ids = set(added_ids + removed_ids + modified_ids)
+    all_ids_string = ','.join(f"'{id}'" for id in all_ids)
+    update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
+
+    # expand global dates that are part of complexes
+    detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+
+    # update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
+                              target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
+                              sync=run_sync_hosted_upload)
+    conn.close()
+
+if __name__ == '__main__':
+    load_dotenv()
 
     target_schema = os.getenv('SCHEMA')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
@@ -210,30 +386,14 @@ if __name__ == '__main__':
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
+    run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
     daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
-    daily_progression_table = 'daily_progression'
 
-    chunk = 1000
-    start_objectid = 0
-    max_points_before_single_geom_chunk = 10000
+    run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
+                           gis_url, gis_user, gis_password,
+                           daily_progression_view_id, daily_progression_data_ids,
+                           run_sync_hosted_upload)
 
-    # import current fires layer into postgres
-    import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
-    makevalid_snapshot_shapes(conn, target_schema)
 
-    # add new fires from current fires into daily progression
-    add_new_fires(target_schema, conn, current_time_str)
-
-    # set removal date to current date for fires removed from current fires since last update
-    notate_removed_fires(target_schema, conn, one_second_ago_str)
-
-    # update entries modified since last run (inactivate old, add new)
-    update_modified_fires(target_schema, conn, current_time_str, one_second_ago_str)
-
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
-
-    conn.close()

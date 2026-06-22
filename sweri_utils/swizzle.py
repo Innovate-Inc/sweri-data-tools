@@ -23,7 +23,7 @@ def get_layer_definition(root_url, id, service_name, token):
 
 
 def get_new_definition(root_url, new_service_name, token):
-    new_service_url = urljoin(root_url, f'arcgis/rest/services/Hosted/{new_service_name}/FeatureServer')
+    new_service_url = f'{root_url}/rest/services/Hosted/{new_service_name}/FeatureServer'
     based_info = requests.get(new_service_url, params={'f': 'json', 'token': token})
     based_info_json = based_info.json()
     layers = based_info_json.get('layers')
@@ -37,7 +37,7 @@ def get_new_definition(root_url, new_service_name, token):
 
 
 def get_view_admin_url(root_url, service_name):
-    return urljoin(root_url, f'arcgis/rest/admin/services/Hosted/{service_name}/FeatureServer/')
+    return f'{root_url}/rest/admin/services/Hosted/{service_name}/FeatureServer/'
 
 
 def clear_current_definition(view_url, token):
