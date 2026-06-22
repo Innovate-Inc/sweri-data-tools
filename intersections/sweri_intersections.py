@@ -19,7 +19,7 @@ from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_t
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 from sweri_utils.conversion import s3_gdb_update
-from intersections.utils import insert_feature_into_db
+from intersections.utils import insert_feature_into_db, chunk_it
 from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 
 
@@ -101,13 +101,11 @@ def calculate_intersections_from_sources(intersect_sources, intersect_targets, i
             del conn
             # get all object ids for the intersecting features
             if len(ids) > 0:
-                i = 0
-                while i < len(ids):
-                    # calculate intersections in chunks
-                    source_object_ids = f"({','.join(str(_id) for _id in ids[i:i + chunk_size])})"
+                # calculate intersections in chunks
+                for source_object_ids in chunk_it(ids, chunk_size=chunk_size):
                     t.append(calculate_intersections_and_insert.s(schema, intersections_name, source_key, target_key,
                                                                   source_object_ids))
-                    i += chunk_size
+
     conn = create_db_conn_from_envs()
     autovacuum_tables = [intersections_name, 'intersection_features']
     switch_autovacuum_and_triggers(False, conn,  schema, autovacuum_tables)
@@ -175,7 +173,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
 
 @log_this
 def run_intersections(docker_conn, docker_schema,
-                      start, wkid, intersection_source_list_url, intersection_source_view, root_url, portal, user, password,
+                      start, wkid, intersection_source_list_url, intersection_source_view, portal, user, password,
                       intersection_view, intersection_data_ids,
                       intersection_features_gdb_bucket,
                       intersection_features_gdb_s3_obj):
@@ -215,7 +213,7 @@ def run_intersections(docker_conn, docker_schema,
                   fc_name='intersection_features', wkid=wkid)
 
     ############ hosted upload ################
-    hosted_upload_and_swizzle(root_url, portal, user, password, intersection_view, intersection_data_ids, docker_schema,
+    hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, docker_schema,
                               'intersections', 0, 10000, False, [])
 
 
@@ -237,7 +235,6 @@ if __name__ == '__main__':
     # public view for fetching intersection sources
     intersection_src_view_url = os.getenv('INTERSECTION_SOURCES_VIEW_URL')
     # GIS user credentials
-    root_site_url = os.getenv('ESRI_ROOT_URL')
     portal_url = os.getenv('ESRI_PORTAL_URL')
     portal_user = os.getenv('ESRI_USER')
     portal_password = os.getenv('ESRI_PW')
@@ -257,7 +254,6 @@ if __name__ == '__main__':
     try:
         run_intersections(pg_conn, db_schema,
                           script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
-                          root_site_url,
                           portal_url,
                           portal_user,
                           portal_password, intersections_view_id, intersections_data_ids,

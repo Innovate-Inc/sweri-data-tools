@@ -1,6 +1,7 @@
 #!/bin/bash
 
-parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
-cd "$parent_path"
-cd ../docker
-docker compose run python daily_progression.py
+# Load docker image name from .env located in the docker directory
+export $(grep DOCKER_IMAGE_NAME= ../.env | xargs)
+
+# Run docker using the vars
+docker run --pull always --network host --env-file=../.env $DOCKER_IMAGE_NAME python daily_progression.py

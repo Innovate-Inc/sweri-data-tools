@@ -325,9 +325,10 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
         print(f"Error during complex update loop: {e}")
         raise
 
-if __name__ == '__main__':
-    load_dotenv()
-
+def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
+                           gis_url, gis_user, gis_password,
+                           daily_progression_view_id, daily_progression_data_ids,
+                           run_sync_hosted_upload):
     #start date and removal date 1 second apart to prevent overlap between old and new polygons
     current_time = datetime.datetime.now()
     one_second_ago = current_time - datetime.timedelta(seconds=1)
@@ -336,25 +337,9 @@ if __name__ == '__main__':
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
 
-    target_schema = os.getenv('SCHEMA')
-    wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
-    wkid = 4326
-    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
-                            os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-
-    # Hosted upload variables
-    root_url = os.getenv('ESRI_ROOT_URL')
-    gis_url = os.getenv("ESRI_PORTAL_URL")
-    gis_user = os.getenv("ESRI_USER")
-    gis_password = os.getenv("ESRI_PW")
-
-    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
-    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
     daily_progression_table = 'daily_progression'
 
     chunk = 1000
-    start_objectid = 0
     max_points_before_single_geom_chunk = 10000
     complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
 
@@ -380,7 +365,35 @@ if __name__ == '__main__':
     detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
 
     # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(root_url, gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk)
-
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
+                              target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
+                              sync=run_sync_hosted_upload)
     conn.close()
+
+if __name__ == '__main__':
+    load_dotenv()
+
+    target_schema = os.getenv('SCHEMA')
+    wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
+    wkid = 4326
+    conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+                            os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+
+    # Hosted upload variables
+    root_url = os.getenv('ESRI_ROOT_URL')
+    gis_url = os.getenv("ESRI_PORTAL_URL")
+    gis_user = os.getenv("ESRI_USER")
+    gis_password = os.getenv("ESRI_PW")
+    run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
+
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
+
+    run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
+                           gis_url, gis_user, gis_password,
+                           daily_progression_view_id, daily_progression_data_ids,
+                           run_sync_hosted_upload)
+
+

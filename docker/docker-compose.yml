@@ -13,13 +13,6 @@ services:
       celery:
         condition: service_healthy
     command: sh -c "python main.py"
-#  app_console:
-#      service:
-#    extends:
-#        app
-#    ports: !reset [ ]
-#    volumes:
-#      - ..:/code
   rabbit:
     image: rabbitmq:4.0.1-management
     ports:
