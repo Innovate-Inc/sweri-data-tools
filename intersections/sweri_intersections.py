@@ -42,6 +42,7 @@ def configure_intersection_sources(features, start):
             'name': att['name'],
             'chunk_size': int(att.get('chunk_size') or 1000),
             'processing_chunk_size': int(att.get('processing_chunk_size') or 1000),
+            'where_clause': att['where_clause'] if att['where_clause'] else '1=1'
         }
 
         # always set targets
@@ -145,8 +146,10 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
     for key, value in intersect_sources.items():
         # remove existing features
         delete_from_table(conn, schema, insert_table, f"feat_source = '{key}'")
+        # get additional filtering
+        where_clause = value['where_clause']
         if value['source_type'] == 'url':
-            ids = get_ids(value['source'], 'SHAPE IS NOT NULL', None, None)
+            ids = get_ids(value['source'], f'SHAPE IS NOT NULL AND {where_clause}', None, None)
             for params in get_query_params_chunk(ids, wkid, chunk_size=value['chunk_size'], format='geojson'):
                 tasks.append(service_chunk_to_postgres.si(value['source'], params, schema, insert_table, key, value, wkid))
 
@@ -160,7 +163,9 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
                 [value['id'], f"'{key}' as feat_source"],
                 'shape',
                 'shape',
-                wkid))
+                wkid,
+                where_clause
+            ))
 
     g = group(tasks)()
     g.get()

@@ -145,7 +145,8 @@ def insert_from_db_task(
         from_fields: list[str],
         from_shape: str = 'shape',
         to_shape: str = 'shape',
-        wkid: int = 4326):
+        wkid: int = 4326,
+        where_clause: str = '1=1'):
     with create_db_conn_from_envs() as conn:
         insert_from_db(
             conn,
@@ -156,7 +157,8 @@ def insert_from_db_task(
             from_fields,
             from_shape,
             to_shape,
-            wkid)
+            wkid,
+            where_clause)
 
 
 @app.task

@@ -70,7 +70,8 @@ def insert_from_db(
         from_fields: list[str],
         from_shape: str = 'shape',
         to_shape: str = 'shape',
-        wkid: int = 4326
+        wkid: int = 4326,
+        where_clause: str = '1=1'
 ) -> None:
     """
     Inserts records from one table into another in a PostgreSQL database.
@@ -99,7 +100,7 @@ def insert_from_db(
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > {last_id} 
+                    WHERE objectid > {last_id} AND {where_clause}
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
