@@ -432,13 +432,17 @@ def makevalid_shapes(conn, schema, table, shape_field, resolution=0.000000001):
 
         cursor.execute(f'''
 
-            UPDATE {schema}.{table}
-            SET {shape_field} =
-                            ST_MakeValid(                                   -- Repair geometries after snapping to grid
-                                ST_SnapToGrid({shape_field}, {resolution})  -- Snap to ESRI feature class grid
-                            , 'method=structure'                            -- Ensures overlaps are not interpreted as holes
-                            )
-            WHERE NOT ST_IsValid(ST_SnapToGrid({shape_field}, {resolution}));   -- Check validity using ESRI-like resolution
+            UPDATE {schema}.{table} t
+            SET {shape_field} = ST_MakeValid(s.snapped_geom, 'method=structure')   -- Repair geometries after snapping to grid
+            FROM (
+                SELECT objectid, snapped_geom
+                FROM (
+                    SELECT objectid, ST_SnapToGrid({shape_field}, {resolution}) AS snapped_geom  -- Snap to ESRI feature class grid (computed once)
+                    FROM {schema}.{table}
+                ) sub
+                WHERE NOT ST_IsValid(snapped_geom)                                 -- Check validity using ESRI-like resolution
+            ) s
+            WHERE t.objectid = s.objectid;
 
         ''')
 
