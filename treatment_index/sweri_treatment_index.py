@@ -378,7 +378,8 @@ if __name__ == "__main__":
     gis_password = os.getenv("ESRI_PW")
 
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
-    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'),
+                                os.getenv('TREATMENT_INDEX_DATA_ID_2')]
     additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'),
                                    os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID'),
                                    os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_VIEW_ID')]
