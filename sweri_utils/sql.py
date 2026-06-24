@@ -100,7 +100,7 @@ def insert_from_db(
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > {last_id} AND {where_clause}
+                    WHERE objectid > {last_id} AND ({where_clause})
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
