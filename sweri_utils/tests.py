@@ -582,7 +582,7 @@ class SqlTests(TestCase):
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > 0 AND 1=1
+                    WHERE objectid > 0 AND (1=1)
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
@@ -600,7 +600,7 @@ class SqlTests(TestCase):
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > 100 AND 1=1
+                    WHERE objectid > 100 AND (1=1)
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
