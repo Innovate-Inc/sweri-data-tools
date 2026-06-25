@@ -67,15 +67,17 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
+def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string, where=None):
+
     # IFPRS processing and insert
-    where = '''
-        (Class IN ('Actual Treatment','Estimated Treatment')) AND 
-        ((completiondate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
-        (EntityType = 'Fuels')
-    '''
+    if where is None:
+        where = '''
+            (Class IN ('Actual Treatment','Estimated Treatment')) AND 
+            ((completiondate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
+            (EntityType = 'Fuels')
+        '''
     destination_table = 'ifprs'
     header = create_update_header_from_service(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
@@ -197,8 +199,7 @@ def common_attributes_type_filter(schema, treatment_index):
         ''')
 
 # FACTS Hazardous Fuels Tasks
-def hazardous_fuels_download_and_insert(schema, treatment_index_table, wkid, hazardous_fuels_service_url, ogr_db_string):
-    where = '1=1'
+def hazardous_fuels_download_and_insert(schema, treatment_index_table, wkid, hazardous_fuels_service_url, ogr_db_string, where='1=1'):
     # FACTS Hazardous Fuels
     destination_table = 'facts_hazardous_fuels'
     header = create_update_header_from_service(schema, destination_table, wkid, hazardous_fuels_service_url, ogr_db_string, where, chunk_size=70)
