@@ -582,7 +582,7 @@ class SqlTests(TestCase):
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > 0 
+                    WHERE objectid > 0 AND (1=1)
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
@@ -592,7 +592,7 @@ class SqlTests(TestCase):
         insert_q = f'''INSERT INTO {schema}.{insert_table} (objectid, shape, {','.join(insert_fields)}) 
                 SELECT sde.next_rowid('{schema}', '{insert_table}'),ST_MakeValid(ST_TRANSFORM(shape, 4326)), {','.join(from_fields)} 
                 FROM {schema}.{from_table}
-                WHERE objectid > 0 AND objectid <= 100;'''
+                WHERE objectid > 0 AND objectid <= 100 AND (1=1);'''
 
         # 3. Second batch max id query (returns None to stop loop)
         select_max_q_2 = f"""
@@ -600,7 +600,7 @@ class SqlTests(TestCase):
                 FROM (
                     SELECT objectid 
                     FROM {schema}.{from_table} 
-                    WHERE objectid > 100 
+                    WHERE objectid > 100 AND (1=1)
                     ORDER BY objectid ASC 
                     LIMIT {batch_size}
                 ) sub
