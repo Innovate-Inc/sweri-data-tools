@@ -263,7 +263,7 @@ def clear_response_cache(cache_info):
         for prefix in prefixes:
             delete_bucket_contents(bucket_name, prefix)
 
-def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
+def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, hazardous_fuels_service_url, nfpors_service_url,
                         ifprs_service_url, state_data_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info, ti_points_table='treatment_index_points',
@@ -281,14 +281,13 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
     facts_chain = chain(
-        hazardous_fuels_download_and_insert.s(
-            haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
-            facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
-            ),
-            common_attributes_download_and_insert(
-                wkid, ogr_db_conn_string, schema, table, haz_fuels_table
-            ).set(immutable=True),
-        )
+        hazardous_fuels_download_and_insert(
+            schema, table, wkid, hazardous_fuels_service_url, ogr_db_conn_string
+        ),
+        common_attributes_download_and_insert(
+            wkid, ogr_db_conn_string, schema, table, haz_fuels_table
+        ).set(immutable=True),
+    )
 
     t.append(facts_chain)
     t.append(nfpors_download_and_insert.s(schema, table))
@@ -355,6 +354,7 @@ if __name__ == "__main__":
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
@@ -415,7 +415,7 @@ if __name__ == "__main__":
     # Set STATE_DATA_INCLUSION_FLAG to True to include state data
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG').lower() == 'true'
 
-    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
+    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, hazardous_fuels_url, nfpors_url,
                         ifprs_url, state_data_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj,
