@@ -22,7 +22,7 @@ if __name__ == "__main__":
     portal_password = os.getenv('ESRI_PW')
 
     # treatment index specific environment variables
-    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     ifprs_url = os.getenv('IFPRS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
     state_data_url = os.getenv('STATE_DATA_URL')
@@ -91,33 +91,34 @@ if __name__ == "__main__":
         if ti_run_day == day_of_week:
             treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-            run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
+            run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, hazardous_fuels_url,
                                 nfpors_url, ifprs_url, state_data_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
                                 include_state_data, s3_bucket, s3_obj_name, response_cache_info=response_cache_info)
-        # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
-        intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                                   os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-        intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
-        intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
 
-        run_intersections(intersections_pg_conn, db_schema,
-                          script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
-                          portal_url,
-                          portal_user,
-                          portal_password, intersections_view_id, intersections_data_ids,
-                          intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
-        logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
-
-        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
-                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-
-        run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
-                               portal_url, portal_user, portal_password,
-                               daily_progression_view_id, daily_progression_data_ids,
-                               run_sync_hosted_upload)
+        # # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
+        # intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+        #                            os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+        # intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
+        # intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
+        #
+        # run_intersections(intersections_pg_conn, db_schema,
+        #                   script_start, sr_wkid, intersection_src_url, intersection_src_view_url,
+        #                   portal_url,
+        #                   portal_user,
+        #                   portal_password, intersections_view_id, intersections_data_ids,
+        #                   intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
+        # logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+        #
+        # daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+        #                                          int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+        #                                          os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+        #
+        # run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
+        #                        portal_url, portal_user, portal_password,
+        #                        daily_progression_view_id, daily_progression_data_ids,
+        #                        run_sync_hosted_upload)
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
         sys.exit(1)
