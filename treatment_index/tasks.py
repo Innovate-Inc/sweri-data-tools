@@ -218,10 +218,25 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
 @app.task()
 def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_string):
     conn = create_db_conn_from_envs()
-    parquet_filename = 'state_data.parquet'
-    gdb_filename = 'state_data.gdb'
+    zip_file = f'state_data.zip'
     # State Data
-    # download_file_from_url(state_data_url, 'state_data.parquet')
+    logging.info(f'Downloading {state_data_url}')
+    download_file_from_url(state_data_url, zip_file)
+
+    logging.info(f'Extracting {zip_file}')
+    extract_and_remove_zip_file(zip_file)
+
+    # Find the GDB directory with the prefix
+    gdb_prefix = "nft-poly-sweri-state-only-prod"
+    extracted_dirs = [d for d in os.listdir() if d.startswith(gdb_prefix) and os.path.isdir(d)]
+
+    if not extracted_dirs:
+        raise FileNotFoundError(f"No .gdb directory found with prefix '{gdb_prefix}' in the extracted contents.")
+
+    # Get the first matching .gdb directory
+    gdb_filename = extracted_dirs[0]
+    logging.info(f"Found GDB directory: {gdb_filename}")
+
     gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
                     schema, ogr_db_string, wkid)
     # update_state_data(parquet_filename, wkid, schema, ogr_db_string)
