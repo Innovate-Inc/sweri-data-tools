@@ -22,7 +22,7 @@ if __name__ == "__main__":
     portal_password = os.getenv('ESRI_PW')
 
     # treatment index specific environment variables
-    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     ifprs_url = os.getenv('IFPRS_URL')
     nfpors_url = os.getenv('NFPORS_URL')
     state_data_url = os.getenv('STATE_DATA_URL')
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         if ti_run_day == day_of_week:
             treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-            run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
+            run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, hazardous_fuels_url,
                                 nfpors_url, ifprs_url, state_data_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
