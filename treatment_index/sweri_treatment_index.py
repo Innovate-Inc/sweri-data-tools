@@ -139,11 +139,11 @@ def common_attributes_twig_category(conn, schema):
             WHERE
             ti.identifier_database = 'FACTS Common Attributes'
             AND
-            ti.activity = tc.activity
+            ti.activity IS NOT DISTINCT FROM tc.activity
             AND
-            ti.method = tc.method
+            ti.method IS NOT DISTINCT FROM tc.method
             AND
-            ti.equipment = tc.equipment;
+            ti.equipment IS NOT DISTINCT FROM tc.equipment;
         ''')
 
 @log_this
@@ -161,7 +161,7 @@ def facts_nfpors_twig_category(conn, schema):
                 ti.identifier_database = 'FACTS Hazardous Fuels'
                 )     
             AND
-            ti.type = tc.type;
+            ti.type IS NOT DISTINCT FROM tc.type;
         ''')
 
 def ifprs_twig_category(conn, schema):
@@ -174,7 +174,7 @@ def ifprs_twig_category(conn, schema):
             {schema}.twig_category_lookup tc
             WHERE ti.identifier_database = 'IFPRS'
             AND
-            ti.category = tc.category;
+            ti.category IS NOT DISTINCT FROM tc.category;
         ''')
 
 def state_data_twig_category(conn, schema):
@@ -185,9 +185,9 @@ def state_data_twig_category(conn, schema):
             SET twig_category = tc.twig_category
             FROM
             {schema}.twig_category_lookup tc
-            WHERE ti.identifier_database = 'NASF'
+            WHERE ti.identifier_database in ('NASF', 'NGO')
             AND
-            ti.category = tc.category;
+            ti.category IS NOT DISTINCT FROM tc.category;
         ''')
 
 @log_this
@@ -250,10 +250,10 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
         ''')
 
 @log_this
-def swizzle_view(esri_root_url, esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
+def swizzle_view(esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
     gis_con = refresh_gis(esri_gis_url, esri_gis_user, esri_gis_password)
     token = gis_con.session.auth.token
-    swizzle_service(esri_root_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
+    swizzle_service(esri_gis_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
 
 
 @log_this
@@ -263,8 +263,8 @@ def clear_response_cache(cache_info):
         for prefix in prefixes:
             delete_bucket_contents(bucket_name, prefix)
 
-def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz_fuels_gdb_url, nfpors_service_url,
-                        ifprs_service_url, state_data_url, gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, hazardous_fuels_service_url, nfpors_service_url,
+                        ifprs_service_url, state_data_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
                         additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
@@ -281,14 +281,13 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
     facts_chain = chain(
-        hazardous_fuels_download_and_insert.s(
-            haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
-            facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
-            ),
-            common_attributes_download_and_insert(
-                wkid, ogr_db_conn_string, schema, table, haz_fuels_table
-            ).set(immutable=True),
-        )
+        hazardous_fuels_download_and_insert(
+            schema, table, wkid, hazardous_fuels_service_url, ogr_db_conn_string
+        ),
+        common_attributes_download_and_insert(
+            wkid, ogr_db_conn_string, schema, table, haz_fuels_table
+        ).set(immutable=True),
+    )
 
     t.append(facts_chain)
     t.append(nfpors_download_and_insert.s(schema, table))
@@ -320,24 +319,24 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # update treatment points
     update_treatment_points(conn, schema, table)
-    # # treatment index
-    # treatment_index_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
-    #                                            ti_data_ids, schema,
-    #                                            table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_poly_view_ids:
-    #     for polygon_view_id in additional_poly_view_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
-    #
-    # # treatment index points
-    # treatment_index_points_data_source = hosted_upload_and_swizzle(gis_root_url, api_gis_url, api_gis_user, api_gis_password,
-    #                                                   ti_points_view_id, ti_points_data_ids,
-    #                                                   schema,
-    #                                                   ti_points_table, max_poly_size_before_simplify, chunk_size)
-    #
-    # if additional_point_views_ids:
-    #     for point_view_id in additional_point_views_ids:
-    #         swizzle_view(gis_root_url, api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+    # treatment index
+    treatment_index_data_source = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+                                               ti_data_ids, schema,
+                                               table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_poly_view_ids:
+        for polygon_view_id in additional_poly_view_ids:
+            swizzle_view(api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+
+    # treatment index points
+    treatment_index_points_data_source = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password,
+                                                      ti_points_view_id, ti_points_data_ids,
+                                                      schema,
+                                                      ti_points_table, max_poly_size_before_simplify, chunk_size)
+
+    if additional_point_views_ids:
+        for point_view_id in additional_point_views_ids:
+            swizzle_view(api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
 
     s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
                   where_clause="identifier_database NOT IN ('NASF', 'NGO')")
@@ -355,6 +354,7 @@ if __name__ == "__main__":
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
@@ -378,12 +378,18 @@ if __name__ == "__main__":
     gis_password = os.getenv("ESRI_PW")
 
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
-    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'), os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
+    treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'),
+                                os.getenv('TREATMENT_INDEX_DATA_ID_2')]
+    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'),
+                                   os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID'),
+                                   os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_VIEW_ID')]
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
-    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'), os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
+                                       os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),
+                                 os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID'),
+                                 os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_POINTS_VIEW_ID')]
 
     treatment_index_points_table = 'treatment_index_points'
 
@@ -409,8 +415,8 @@ if __name__ == "__main__":
     # Set STATE_DATA_INCLUSION_FLAG to True to include state data
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG').lower() == 'true'
 
-    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
-                        ifprs_url, state_data_url,  root_url, gis_url, gis_user, gis_password, treatment_index_view_id,
+    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, hazardous_fuels_url, nfpors_url,
+                        ifprs_url, state_data_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj,
                         response_cache_info=response_cache_info)

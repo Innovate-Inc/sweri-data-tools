@@ -36,26 +36,6 @@ def service_chunk_to_postgres(url, params, schema, destination_table, ogr_db_str
 # NFPORS Tasks
 
 @app.task()
-def update_nfpors(nfpors_url, schema, wkid, ogr_db_string, chunk_size=40):
-    # This function is not currently used since NFPORS is down for an indefinite amount of time
-    where = create_nfpors_where_clause()
-    destination_table = 'nfpors'
-    out_fields = ['*']
-
-    prep_buffer_table(schema, destination_table)
-    try:
-        ids = get_ids(nfpors_url, where=where)
-        header = []
-        for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
-            header.append(service_chunk_to_postgres.s(nfpors_url, params, schema, destination_table, ogr_db_string))
-
-    except Exception as e:
-        logger.error(f'Error downloading NFPORS: {e}... continuing')
-        pass
-
-    return header, destination_table
-
-@app.task()
 def nfpors_download_and_insert(schema, insert_table):
     # This function no longer downloads from NFPORS since NFPORS is down and will not be coming back up
     conn = create_db_conn_from_envs()
@@ -67,35 +47,38 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
+def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string, where=None):
+
     # IFPRS processing and insert
-    where = '''
-        (Class IN ('Actual Treatment','Estimated Treatment')) AND 
-        ((completiondate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
-        (EntityType = 'Fuels')
-    '''
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
+    if where is None:
+        where = '''
+            (Class IN ('Actual Treatment','Estimated Treatment')) AND 
+            ((completiondate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
+            (EntityType = 'Fuels')
+        '''
+    destination_table = 'ifprs'
+    header = create_update_header_from_service(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
 @app.task()
-def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70):
-    destination_table = 'ifprs'
+def create_update_header_from_service(schema, destination_table, wkid, service_url, ogr_db_string, where, chunk_size=70):
     out_fields = ['*']
-
+    header = []
     prep_buffer_table(schema, destination_table)
     try:
         ids = get_ids(service_url, where=where)
-        header = []
+        logger.info(f'Downloading {len(ids)} {destination_table} records')
+
         for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
             header.append(service_chunk_to_postgres.s(service_url, params, schema, destination_table, ogr_db_string))
 
     except Exception as e:
         logger.error(f'Error downloading IFPRS: {e}... continuing')
         pass
-    return header, destination_table
+    return header
 
 @app.task()
 def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
@@ -195,25 +178,19 @@ def common_attributes_type_filter(schema, treatment_index):
         ''')
 
 # FACTS Hazardous Fuels Tasks
+def hazardous_fuels_download_and_insert(schema, treatment_index_table, wkid, hazardous_fuels_service_url, ogr_db_string, where='1=1'):
+    # FACTS Hazardous Fuels
+    destination_table = 'facts_hazardous_fuels'
+    header = create_update_header_from_service(schema, destination_table, wkid, hazardous_fuels_service_url, ogr_db_string, where, chunk_size=70)
+    return chord(header, hazardous_fuels_finalize_task.si(schema, treatment_index_table, destination_table, hazardous_fuels_service_url, where))
 
 @app.task()
-def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url, facts_haz_gdb, out_wkid, facts_haz_fc_name,
-                                        schema, insert_table, ogr_db_string):
-    # FACTS Hazardous Fuels
+def hazardous_fuels_finalize_task(schema, treatment_index_table, hazardous_fuels_table, service_url, where):
     conn = create_db_conn_from_envs()
-    hazardous_fuels_zip_file = f'{hazardous_fuels_table}.zip'
-    download_file_from_url(facts_haz_gdb_url, hazardous_fuels_zip_file)
-    extract_and_remove_zip_file(hazardous_fuels_zip_file)
 
-    # special input srs for common attributes
-    # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
-    # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
-    input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
-                    schema, ogr_db_string, input_srs)
+    swap_buffer_table(schema, hazardous_fuels_table, service_url, where)
     hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
-    hazardous_fuels_insert(conn, schema, insert_table, hazardous_fuels_table)
-    remove_wildfire_non_treatment(conn, schema, insert_table)
+    hazardous_fuels_insert(conn, schema, treatment_index_table, hazardous_fuels_table)
 
 @app.task()
 def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_string):
