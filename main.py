@@ -96,7 +96,6 @@ if __name__ == "__main__":
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
                                 include_state_data, s3_bucket, s3_obj_name, response_cache_info=response_cache_info)
-
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
         intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                    os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
