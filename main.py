@@ -24,7 +24,6 @@ if __name__ == "__main__":
     # treatment index specific environment variables
     hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     ifprs_url = os.getenv('IFPRS_URL')
-    nfpors_url = os.getenv('NFPORS_URL')
     state_data_url = os.getenv('STATE_DATA_URL')
 
 
@@ -39,13 +38,15 @@ if __name__ == "__main__":
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
     additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'),
-                                   os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID')]
+                                   os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID'),
+                                   os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_VIEW_ID')]
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
-    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),
-                                 os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID')]
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
+    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),
+                                 os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID'),
+                                 os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_POINTS_VIEW_ID')]
 
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG')
 
@@ -92,7 +93,7 @@ if __name__ == "__main__":
             treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
             run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, hazardous_fuels_url,
-                                nfpors_url, ifprs_url, state_data_url, portal_url, portal_user, portal_password,
+                                ifprs_url, state_data_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
                                 treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
                                 include_state_data, s3_bucket, s3_obj_name, response_cache_info=response_cache_info)

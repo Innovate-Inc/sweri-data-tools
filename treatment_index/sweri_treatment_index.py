@@ -263,13 +263,13 @@ def clear_response_cache(cache_info):
         for prefix in prefixes:
             delete_bucket_contents(bucket_name, prefix)
 
-def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, hazardous_fuels_service_url, nfpors_service_url,
+def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, hazardous_fuels_service_url,
                         ifprs_service_url, state_data_url, api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                         ti_data_ids, additional_poly_view_ids, ti_points_view_id, ti_points_data_ids,
-                        additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info, ti_points_table='treatment_index_points',
-                        facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
-                        facts_haz_gdb_path='Actv_HazFuelTrt_PL.gdb', fields_for_cleanup=['type', 'fund_source'],
-                        max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
+                        additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info,
+                        ti_points_table='treatment_index_points', haz_fuels_table='facts_hazardous_fuels',
+                        fields_for_cleanup=['type', 'fund_source'], max_poly_size_before_simplify=10000,
+                        simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
 
     # Truncate the table before inserting new data
     pg_cursor = conn.cursor()
@@ -350,32 +350,13 @@ if __name__ == "__main__":
 
     out_wkid = 4326
 
-    target_schema = os.getenv('SCHEMA')
-    exluded_ids = os.getenv('EXCLUSION_IDS')
-    facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
-    ifprs_url = os.getenv('IFPRS_URL')
-    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
-    facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
-    facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
-    hazardous_fuels_table = 'facts_hazardous_fuels'
-    nfpors_url = os.getenv('NFPORS_URL')
-    state_data_url = os.getenv('STATE_DATA_URL')
-
-    #This is the final table
-    insert_table = 'treatment_index'
-    points_table = 'treatment_index_points'
-    fields_to_clean = ['type', 'fund_source']
-
-    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
-                                 os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-
-    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-
-    # Hosted upload variables
-    root_url = os.getenv('ESRI_ROOT_URL')
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
+
+    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
+    ifprs_url = os.getenv('IFPRS_URL')
+    state_data_url = os.getenv('STATE_DATA_URL')
 
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'),
@@ -391,7 +372,11 @@ if __name__ == "__main__":
                                  os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID'),
                                  os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_POINTS_VIEW_ID')]
 
-    treatment_index_points_table = 'treatment_index_points'
+    include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG')
+
+    # s3 details for filegdb export
+    s3_bucket = os.getenv('S3_BUCKET')
+    s3_obj = os.getenv('S3_OBJ_NAME')
 
     response_cache_bucket_name = os.getenv('RESPONSE_CACHE_BUCKET_NAME')
     response_cache_info = None
@@ -403,19 +388,14 @@ if __name__ == "__main__":
             ]
         }
 
-    chunk = 500
-    max_points_before_simplify = 10000
-    simplify_tolerance = 0.000009  # ESPG:4326 degrees
-    fc_resolution = 0.000000001 # ESPG:4326 degrees
-    start_objectid = 0
+    target_schema = os.getenv('SCHEMA')
 
-    s3_bucket = os.getenv('S3_BUCKET')
-    s3_obj = os.getenv('S3_OBJ_NAME')
+    ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
+    insert_table = 'treatment_index'
+    pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), os.getenv('DB_PORT'), os.getenv('DB_NAME'),
+                                 os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
 
-    # Set STATE_DATA_INCLUSION_FLAG to True to include state data
-    include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG').lower() == 'true'
-
-    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, hazardous_fuels_url, nfpors_url,
+    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, hazardous_fuels_url,
                         ifprs_url, state_data_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj,
