@@ -160,6 +160,8 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
 
+    return f'common_attributes_{region_number} processed successfully.'
+
 
 @app.task()
 def common_attributes_type_filter(schema, treatment_index):
@@ -216,7 +218,6 @@ def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_s
 
     gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
                     schema, ogr_db_string, wkid)
-    # update_state_data(parquet_filename, wkid, schema, ogr_db_string)
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn,schema, table)
     null_missing_state_fund_codes(conn,schema, table)
