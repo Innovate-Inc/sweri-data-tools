@@ -354,7 +354,6 @@ if __name__ == "__main__":
     exluded_ids = os.getenv('EXCLUSION_IDS')
     facts_haz_gdb_url = os.getenv('FACTS_GDB_URL')
     ifprs_url = os.getenv('IFPRS_URL')
-    hazardous_fuels_url = os.getenv('HAZARDOUS_FUELS_URL')
     facts_haz_gdb = 'Actv_HazFuelTrt_PL.gdb'
     facts_haz_fc_name = 'Actv_HazFuelTrt_PL'
     hazardous_fuels_table = 'facts_hazardous_fuels'
@@ -415,7 +414,7 @@ if __name__ == "__main__":
     # Set STATE_DATA_INCLUSION_FLAG to True to include state data
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG').lower() == 'true'
 
-    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, hazardous_fuels_url, nfpors_url,
+    run_treatment_index(pg_conn, target_schema, insert_table, ogr_db_string, out_wkid, facts_haz_gdb_url, nfpors_url,
                         ifprs_url, state_data_url, gis_url, gis_user, gis_password, treatment_index_view_id,
                         treatment_index_data_ids, additional_polygon_view_ids, treatment_index_points_view_id,
                         treatment_index_points_data_ids, additional_point_view_ids, include_state_data, s3_bucket, s3_obj,
