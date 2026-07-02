@@ -34,27 +34,6 @@ def service_chunk_to_postgres(url, params, schema, destination_table, ogr_db_str
     del _
 
 # NFPORS Tasks
-
-@app.task()
-def update_nfpors(nfpors_url, schema, wkid, ogr_db_string, chunk_size=40):
-    # This function is not currently used since NFPORS is down for an indefinite amount of time
-    where = create_nfpors_where_clause()
-    destination_table = 'nfpors'
-    out_fields = ['*']
-
-    prep_buffer_table(schema, destination_table)
-    try:
-        ids = get_ids(nfpors_url, where=where)
-        header = []
-        for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
-            header.append(service_chunk_to_postgres.s(nfpors_url, params, schema, destination_table, ogr_db_string))
-
-    except Exception as e:
-        logger.error(f'Error downloading NFPORS: {e}... continuing')
-        pass
-
-    return header, destination_table
-
 @app.task()
 def nfpors_download_and_insert(schema, insert_table):
     # This function no longer downloads from NFPORS since NFPORS is down and will not be coming back up
