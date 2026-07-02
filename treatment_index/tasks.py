@@ -57,7 +57,7 @@ def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_stri
         (EntityType = 'Fuels')
     '''
     destination_table = 'ifprs'
-    header = create_update_header_from_service(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
+    header = update_ifprs(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
