@@ -174,6 +174,7 @@ def common_attributes_type_filter(schema, treatment_index):
         ''')
 
 # FACTS Hazardous Fuels Tasks
+@app.task()
 def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url, facts_haz_gdb, out_wkid, facts_haz_fc_name,
                                         schema, insert_table, ogr_db_string):
     # FACTS Hazardous Fuels
