@@ -47,34 +47,36 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
+def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string, where=None):
     # IFPRS processing and insert
-    where = '''
-        (Class IN ('Actual Treatment','Estimated Treatment')) AND 
-        ((completiondate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
-        (EntityType = 'Fuels')
-    '''
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
+    if where is None:
+        where = '''
+            (Class IN ('Actual Treatment','Estimated Treatment')) AND 
+            ((completiondate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
+            (EntityType = 'Fuels')
+        '''
+    destination_table = 'ifprs'
+
+    header = update_ifprs(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
-def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70):
-    destination_table = 'ifprs'
+def update_ifprs(schema, destination_table, wkid, service_url, ogr_db_string, where, chunk_size=70):
     out_fields = ['*']
+    header = []
 
     prep_buffer_table(schema, destination_table)
     try:
         ids = get_ids(service_url, where=where)
-        header = []
         for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
             header.append(service_chunk_to_postgres.s(service_url, params, schema, destination_table, ogr_db_string))
 
     except Exception as e:
         logger.error(f'Error downloading IFPRS: {e}... continuing')
         pass
-    return header, destination_table
+    return header
 
 @app.task()
 def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
