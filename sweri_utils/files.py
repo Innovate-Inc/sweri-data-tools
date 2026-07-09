@@ -95,6 +95,31 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
 
     gdb_path = os.path.join(os.getcwd(), gdb_name)
 
+    # Check if the file exists
+    if not os.path.exists(gdb_path):
+        logging.info(f"The geodatabase file '{gdb_path}' does not exist.")
+        return False
+
+    # Open the geodatabase using GDAL/OGR
+    driver = ogr.GetDriverByName('OpenFileGDB')
+    dataset = driver.Open(gdb_path, 0)
+
+    if not dataset:
+        logging.info(f"Failed to open the geodatabase '{gdb_path}'. It may not be valid.")
+        return False
+
+    # Check if the geodatabase contains the feature class
+    layer = dataset.GetLayerByName(fc_name)
+    if not layer:
+        logging.info(f"The feature class '{fc_name}' does not exist in the geodatabase.")
+        return False
+
+    # Verify if the layer contains features
+    if layer.GetFeatureCount() == 0:
+        logging.info(f"The feature class '{fc_name}' in the geodatabase '{gdb_path}' contains no features.")
+        return False
+
+
     # Upload fc to postgres
     _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
     del _
@@ -107,6 +132,8 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
             logging.info(f'{gdb_path} gdb deleted')
         except OSError as e:
             logging.error(f'Error deleting {gdb_path}: {e}')
+
+    return True
 
 def get_wkid_from_geoparquet(parquet_file):
     ds = ogr.Open(parquet_file)

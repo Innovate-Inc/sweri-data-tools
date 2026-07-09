@@ -135,26 +135,26 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
 
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
+    upload_success = gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
 
-    add_fields_and_indexes(conn, schema, ca_table_name, region_number)
+    if upload_success:
+        add_fields_and_indexes(conn, schema, ca_table_name, region_number)
+        common_attributes_date_filtering(conn, schema, ca_table_name)
+        exclude_by_acreage(conn, schema, ca_table_name)
+        exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
 
-    common_attributes_date_filtering(conn, schema, ca_table_name)
-    exclude_by_acreage(conn, schema, ca_table_name)
-    exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
+        fields_to_trim = ['activity', 'method', 'equipment']
 
-    fields_to_trim = ['activity', 'method', 'equipment']
+        for field in fields_to_trim:
+            trim_whitespace(conn, schema, ca_table_name, field)
 
-    for field in fields_to_trim:
-        trim_whitespace(conn, schema, ca_table_name, field)
+        include_logging_activities(conn, schema, ca_table_name)
+        include_fire_activites(conn, schema, ca_table_name)
+        include_fuel_activities(conn, schema, ca_table_name)
+        activity_filter(conn, schema, ca_table_name)
+        include_other_activites(conn, schema, ca_table_name)
 
-    include_logging_activities(conn, schema, ca_table_name)
-    include_fire_activites(conn, schema, ca_table_name)
-    include_fuel_activities(conn, schema, ca_table_name)
-    activity_filter(conn, schema, ca_table_name)
-    include_other_activites(conn, schema, ca_table_name)
-
-    set_included(conn, schema, ca_table_name)
+        set_included(conn, schema, ca_table_name)
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
 
