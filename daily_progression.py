@@ -339,8 +339,8 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     daily_progression_table = 'daily_progression'
 
-    chunk = 1000
-    max_points_before_single_geom_chunk = 10000
+    chunk = int(os.getenv('DAILY_PROG_CHUNK', 1000))
+    max_points_before_single_geom_chunk = int(os.getenv('DAILY_PROG_UPLOAD_VERTEX_THRESHOLD', 10000))
     complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
 
     # import current fires layer into postgres
