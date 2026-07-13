@@ -226,9 +226,13 @@ def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_s
     # Get the first matching .gdb directory
     gdb_filename = extracted_dirs[0]
     logging.info(f"Found GDB directory: {gdb_filename}")
+    try:
+        gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
+                        schema, ogr_db_string)
 
-    gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
-                    schema, ogr_db_string, wkid)
+    except Exception as e:
+        logging.info(f"Failed to process geodatabase: {e}")
+
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn,schema, table)
     null_missing_state_fund_codes(conn,schema, table)
