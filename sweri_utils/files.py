@@ -114,31 +114,23 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
         if validate_gdb(gdb_path, fc_name):
             logging.info("Geodatabase validation successful")
 
-    except GdbNotFound as e:
-        logging.warning(f"GdbNotFound: {e}")
-        return False
-    except GdbWontOpen as e:
-        logging.warning(f"GdbWontOpen: {e}")
-        return False
-    except FeatureClassNotFound as e:
-        logging.warning(f"FeatureClassNotFound: {e}")
-        return False
-    except EmptyFeatureClass as e:
-        logging.warning(f"EmptyFeatureClass: {e}")
-        return False
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
+        logging.warning(f"{e.__class__.__name__}: {e}")
+        raise
+
     except Exception as e:
         logging.error(f"An unexpected error occurred: {e}")
-        return False
+        raise
 
     options_inputs = {
-        "format": 'PostgreSQL',
-        "makeValid": True,
-        "dstSRS": f'EPSG:{projection}',
-        "accessMode": 'overwrite',
-        "layerName": f"{schema}.{postgres_table_name}",
-        "layers": [fc_name],
-        "geometryType": "CONVERT_TO_LINEAR"
-    }
+            "format": 'PostgreSQL',
+            "makeValid": True,
+            "dstSRS": f'EPSG:{projection}',
+            "accessMode": 'overwrite',
+            "layerName": f"{schema}.{postgres_table_name}",
+            "layers": [fc_name],
+            "geometryType": "CONVERT_TO_LINEAR"
+        }
 
     if input_srs:
         options_inputs['srcSRS'] = input_srs
@@ -157,9 +149,6 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
             logging.info(f'{gdb_path} gdb deleted')
         except OSError as e:
             logging.error(f'Error deleting {gdb_path}: {e}')
-
-    # If we get to the end without any exceptions, return true
-    return True
 
 def get_wkid_from_geoparquet(parquet_file):
     ds = ogr.Open(parquet_file)
