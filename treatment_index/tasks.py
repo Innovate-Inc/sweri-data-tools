@@ -135,9 +135,9 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
 
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    upload_success = gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
+    try:
+        gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
 
-    if upload_success:
         add_fields_and_indexes(conn, schema, ca_table_name, region_number)
         common_attributes_date_filtering(conn, schema, ca_table_name)
         exclude_by_acreage(conn, schema, ca_table_name)
@@ -155,6 +155,9 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
         include_other_activites(conn, schema, ca_table_name)
 
         set_included(conn, schema, ca_table_name)
+
+    except Exception as e:
+        logging.info(f"Failed to process geodatabase: {e}")
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
 
@@ -189,9 +192,14 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
     # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    try:
+        gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
                     schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
+        hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
+
+    except Exception as e:
+        logging.info(f"Failed to process geodatabase: {e}")
+
     hazardous_fuels_insert(conn, schema, insert_table, hazardous_fuels_table)
     remove_wildfire_non_treatment(conn, schema, insert_table)
 
