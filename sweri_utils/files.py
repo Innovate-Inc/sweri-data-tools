@@ -77,7 +77,10 @@ def extract_and_remove_zip_file(zip_filepath):
 def validate_gdb(gdb_path, fc_name):
     # Check if the file exists
     if not os.path.exists(gdb_path):
-        raise GdbNotFound(f"The geodatabase file '{gdb_path}' does not exist.")
+        raise GdbNotFound(
+            gdb_path=gdb_path,
+            message=f"The geodatabase file '{gdb_path}' does not exist."
+        )
 
 
     # Open the geodatabase using GDAL/OGR
@@ -85,22 +88,31 @@ def validate_gdb(gdb_path, fc_name):
     dataset = driver.Open(gdb_path, 0)
 
     if not dataset:
-        raise GdbWontOpen(f"Failed to open the geodatabase '{gdb_path}'. It may not be valid.")
+        raise GdbWontOpen(
+            gdb_path=gdb_path,
+            message=f"Failed to open the geodatabase '{gdb_path}'. It may not be valid."
+        )
 
 
     # Check if the geodatabase contains the feature class
     layer = dataset.GetLayerByName(fc_name)
     if not layer:
-        raise FeatureClassNotFound(f"The feature class '{fc_name}' does not exist in the geodatabase.")
+        raise FeatureClassNotFound(
+            gdb_path=gdb_path,
+            fc_name=fc_name,
+            message=f"The feature class '{fc_name}' does not exist in the geodatabase {gdb_path}."
+        )
 
     # Verify if the layer contains features
     if layer.GetFeatureCount() == 0:
-        raise EmptyFeatureClass(f"The feature class '{fc_name}' in the geodatabase '{gdb_path}' contains no features.")
+        raise EmptyFeatureClass(
+            gdb_path=gdb_path,
+            fc_name=fc_name,
+            message=f"The feature class '{fc_name}' in the geodatabase '{gdb_path}' contains no features."
+        )
 
     # If no exceptions are raised, validation is successful
     logging.info(f"Validation passed for geodatabase '{gdb_path}' and feature class '{fc_name}'.")
-
-    return True
 
 
 @log_this
@@ -111,8 +123,8 @@ def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, sch
 
     # Check gdb for validity, return False if gdb is invalid
     try:
-        if validate_gdb(gdb_path, fc_name):
-            logging.info("Geodatabase validation successful")
+        validate_gdb(gdb_path, fc_name)
+        logging.info("Geodatabase validation successful")
 
     except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
         logging.warning(f"{e.__class__.__name__}: {e}")

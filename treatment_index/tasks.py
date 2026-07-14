@@ -5,6 +5,7 @@ import json
 import logging
 import re
 
+from sweri_utils.exceptions import EmptyFeatureClass, FeatureClassNotFound, GdbWontOpen, GdbNotFound
 from treatment_index.processing import add_fields_and_indexes, common_attributes_date_filtering, exclude_by_acreage, \
     exclude_facts_hazardous_fuels, include_logging_activities, include_fire_activites, include_fuel_activities, \
     activity_filter, include_other_activites, set_included, common_attributes_insert, nfpors_insert, nfpors_fund_code, \
@@ -156,7 +157,7 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
 
         set_included(conn, schema, ca_table_name)
 
-    except Exception as e:
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
         logging.info(f"Failed to process geodatabase: {e}")
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
@@ -197,7 +198,7 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
                     schema, ogr_db_string, input_srs)
         hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
 
-    except Exception as e:
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
         logging.info(f"Failed to process geodatabase: {e}")
 
     hazardous_fuels_insert(conn, schema, insert_table, hazardous_fuels_table)

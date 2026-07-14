@@ -1,6 +1,5 @@
 class GdbNotFound(Exception):
-    def __init__(self, fc_name, gdb_path, message="Geodatabase does not exist"):
-        self.fc_name= fc_name
+    def __init__(self, gdb_path, message="Geodatabase does not exist"):
         self.gdb_path= gdb_path
         self.message = message
 
@@ -17,9 +16,9 @@ class GdbWontOpen(Exception):
 
 
 class FeatureClassNotFound(Exception):
-    def __init__(self, fc_name, gdb_path, message="Feature class not found"):
-        self.fc_name = fc_name
+    def __init__(self, gdb_path, fc_name, message="Feature class not found"):
         self.gdb_path = gdb_path
+        self.fc_name = fc_name
         self.message = message
 
         # Pass message to base Exception class
@@ -27,9 +26,9 @@ class FeatureClassNotFound(Exception):
 
 
 class EmptyFeatureClass(Exception):
-    def __init__(self, fc_name, gdb_path, message="Feature class has 0 features"):
-        self.fc_name = fc_name
+    def __init__(self, gdb_path, fc_name, message="Feature class has 0 features"):
         self.gdb_path = gdb_path
+        self.fc_name = fc_name
         self.message = message
 
         # Pass message to base Exception class
