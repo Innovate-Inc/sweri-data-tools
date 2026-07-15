@@ -219,7 +219,7 @@ def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_s
 
     # Find the GDB directory with the prefix
     gdb_prefix = "nft-poly-sweri-state-only-prod"
-    extracted_dirs = [d for d in os.listdir() if d.startswith(gdb_prefix) and os.path.isdir(d)]
+    extracted_dirs = [d for d in os.listdir() if d.startswith(gdb_prefix) and os.path.isdir(d) and d.endswith('.gdb')]
 
     if not extracted_dirs:
         raise FileNotFoundError(f"No .gdb directory found with prefix '{gdb_prefix}' in the extracted contents.")
@@ -231,7 +231,8 @@ def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_s
         gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
                         schema, ogr_db_string)
 
-    except Exception as e:
+
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
         logging.info(f"Failed to process geodatabase: {e}")
 
     state_data_insert(conn, schema, table)
