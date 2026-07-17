@@ -95,6 +95,7 @@ def verify_feature_count(conn,schema, table, new_source_feature_layer):
     threshold = 0.01  # 1 percent difference allowed
     if percent_diff > threshold:
         raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
+    logging.info(f"Data source count verified. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
 
 @log_this
 def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
@@ -145,6 +146,45 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     swizzle_service(gis_url, view_item.name, new_source_item.name, token)
 
     return new_source_item.name
+
+@log_this
+def hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_id, schema, table, max_points_before_single_geom_chunk, chunk_size, where='1=1', shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
+    # setup new layer connection
+    conn = create_db_conn_from_envs()
+
+    # Collect arguments for processing so we can choose execution method
+    tasks_args = []
+
+    if not shape:
+        # attribute only table, no geometry
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f"{where}", chunk_size):
+            tasks_args.append((chunk_ids, False))
+    else:
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f"{where} AND ST_NPoints(shape) > {max_points_before_single_geom_chunk}", 1):
+            tasks_args.append((chunk_ids, shape))
+
+        for chunk_ids in get_object_id_chunks(conn, schema, table, f"{where} AND ST_NPoints(shape) <= {max_points_before_single_geom_chunk}", chunk_size):
+            tasks_args.append((chunk_ids, shape))
+
+    if sync:
+        logging.info("Executing upload tasks synchronously (Celery bypassed)")
+        for chunk_ids, has_shape_arg in tasks_args:
+            # Calling the decorated function directly runs it synchronously in the main process
+            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_id, schema, table,
+                                          chunk_ids, has_shape_arg, drop_cols)
+    else:
+        # Create Celery signatures and grouped task
+        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, feature_layer_id, schema, table,
+                                             chunk_ids, has_shape_arg, drop_cols) for chunk_ids, has_shape_arg in tasks_args]
+        g = group(t)()
+        g.get()
+
+@log_this
+def delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where):
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
+    response = feature_layer.delete_features(where=where)
+    logging.info(f"Deleted {len(response['deleteResults'])} features from hosted layer")
+    return response
 
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
     gis_con = refresh_gis(gis_url, gis_user, gis_password)

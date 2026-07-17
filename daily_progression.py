@@ -8,7 +8,8 @@ from arcgis.gis import GIS
 
 from sweri_utils.sql import connect_to_pg_db, add_column
 from sweri_utils.download import service_to_postgres
-from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.hosted import hosted_upload_and_swizzle, hosted_upload_from_postgres, \
+    delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count
 from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -325,9 +326,25 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
         print(f"Error during complex update loop: {e}")
         raise
 
+def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+                                   target_schema, daily_progression_table,
+                                   max_points_before_single_geom_chunk, chunk, conn):
+
+    # Delete all progressions that were updated
+    delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where)
+    # Add updated progressions
+    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_id, target_schema,
+                                daily_progression_table,
+                                max_points_before_single_geom_chunk, chunk, where=where)
+
+    # Verify Count
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
+    verify_feature_count(conn, target_schema, daily_progression_table, feature_layer)
+
+
 def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
                            gis_url, gis_user, gis_password,
-                           daily_progression_view_id, daily_progression_data_ids,
+                           daily_progression_view_id, feature_layer_id,
                            run_sync_hosted_upload):
     #start date and removal date 1 second apart to prevent overlap between old and new polygons
     current_time = datetime.datetime.now()
@@ -359,16 +376,18 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     # update global dates on all fires modified this run
     all_ids = set(added_ids + removed_ids + modified_ids)
     all_ids_string = ','.join(f"'{id}'" for id in all_ids)
-    update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
 
-    # expand global dates that are part of complexes
-    detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+    if len(all_ids) > 0:
+        update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
 
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
-                              target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
-                              sync=run_sync_hosted_upload)
+        # expand global dates that are part of complexes
+        detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+
+        where = f"poly_irwinid IN ({all_ids_string})"
+
+        update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+                                       target_schema, daily_progression_table,
+                                       max_points_before_single_geom_chunk, chunk, conn)
     conn.close()
 
 if __name__ == '__main__':
@@ -388,7 +407,7 @@ if __name__ == '__main__':
     gis_password = os.getenv("ESRI_PW")
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
-    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_data_ids = os.getenv('DAILY_PROG_TEST_ID')
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
 
     run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
