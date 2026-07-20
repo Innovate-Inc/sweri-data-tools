@@ -32,3 +32,6 @@ app = Celery(
     } if os.environ.get('CELERY_BROKER_AWS_ACCESS_KEY_ID') and os.environ.get('CELERY_BROKER_AWS_SECRET_ACCESS_KEY') else {},
     include=['intersections.tasks', 'sweri_utils.hosted', 'treatment_index.tasks']
 )
+# since we have tasks that have a large variability in run time
+# only prefetch 1 to ensure more balance in worker utilization
+app.conf.worker_prefetch_multiplier = 1
