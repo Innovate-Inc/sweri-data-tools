@@ -294,6 +294,7 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
 
     rows_to_update = True  # Set to true to begin the loop
     iteration_count = 0
+    updated_ids = []
     cursor = db_conn.cursor()
 
 
@@ -313,6 +314,8 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
                     logger.info(f"Rows found to update. Executing update query...")
                     with db_conn.transaction():
                         cursor.execute(update_query)
+                        iteration_ids = [row[0] for row in cursor.fetchall()]
+                        updated_ids.extend(iteration_ids)
                         rows_updated = cursor.rowcount
                         logger.info(f"Number of rows updated in this iteration: {rows_updated}")
                     iteration_count += 1
@@ -322,6 +325,7 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
             if iteration_count > iteration_limit:
                 break
 
+        return updated_ids
     except Exception as e:
         print(f"Error during complex update loop: {e}")
         raise
@@ -380,8 +384,11 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     if len(all_ids) > 0:
         update_global_date_values(conn, target_schema, all_ids_string, one_second_ago_str)
 
-        # expand global dates that are part of complexes
-        detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+        # expand global dates that are part of complexes, return ids of
+        updated_complex_ids = detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+
+        all_ids.update(updated_complex_ids)
+        all_ids_string = ','.join(f"'{id}'" for id in all_ids)
 
         where = f"poly_irwinid IN ({all_ids_string})"
 
