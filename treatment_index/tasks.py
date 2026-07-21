@@ -5,6 +5,7 @@ import json
 import logging
 import re
 
+from sweri_utils.exceptions import EmptyFeatureClass, FeatureClassNotFound, GdbWontOpen, GdbNotFound
 from treatment_index.processing import add_fields_and_indexes, common_attributes_date_filtering, exclude_by_acreage, \
     exclude_facts_hazardous_fuels, include_logging_activities, include_fire_activites, include_fuel_activities, \
     activity_filter, include_other_activites, set_included, common_attributes_insert, nfpors_insert, nfpors_fund_code, \
@@ -36,26 +37,6 @@ def service_chunk_to_postgres(url, params, schema, destination_table, ogr_db_str
 # NFPORS Tasks
 
 @app.task()
-def update_nfpors(nfpors_url, schema, wkid, ogr_db_string, chunk_size=40):
-    # This function is not currently used since NFPORS is down for an indefinite amount of time
-    where = create_nfpors_where_clause()
-    destination_table = 'nfpors'
-    out_fields = ['*']
-
-    prep_buffer_table(schema, destination_table)
-    try:
-        ids = get_ids(nfpors_url, where=where)
-        header = []
-        for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
-            header.append(service_chunk_to_postgres.s(nfpors_url, params, schema, destination_table, ogr_db_string))
-
-    except Exception as e:
-        logger.error(f'Error downloading NFPORS: {e}... continuing')
-        pass
-
-    return header, destination_table
-
-@app.task()
 def nfpors_download_and_insert(schema, insert_table):
     # This function no longer downloads from NFPORS since NFPORS is down and will not be coming back up
     conn = create_db_conn_from_envs()
@@ -67,35 +48,36 @@ def nfpors_download_and_insert(schema, insert_table):
 
 #IFPRS Tasks
 
-def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string):
+def ifprs_download_and_insert(schema, insert_table, wkid, ifprs_url, ogr_db_string, where=None):
     # IFPRS processing and insert
-    where = '''
-        (Class IN ('Actual Treatment','Estimated Treatment')) AND 
-        ((completiondate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
-        OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
-        (EntityType = 'Fuels')
-    '''
-    header, destination_table = update_ifprs(schema, wkid, ifprs_url, ogr_db_string, where)
+    if where is None:
+        where = '''
+            (Class IN ('Actual Treatment','Estimated Treatment')) AND 
+            ((completiondate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate > DATE '1984-01-01 00:00:00')
+            OR (completiondate IS NULL AND initiationdate IS NULL AND createdondate > DATE '1984-01-01 00:00:00')) AND
+            (EntityType = 'Fuels')
+        '''
+    destination_table = 'ifprs'
+
+    header = update_ifprs(schema, destination_table, wkid, ifprs_url, ogr_db_string, where)
     return chord(header, ifprs_finalize_task.si(schema, insert_table, destination_table, ifprs_url, where))
 
 
-@app.task()
-def update_ifprs(schema, wkid, service_url, ogr_db_string, where, chunk_size=70):
-    destination_table = 'ifprs'
+def update_ifprs(schema, destination_table, wkid, service_url, ogr_db_string, where, chunk_size=70):
     out_fields = ['*']
+    header = []
 
     prep_buffer_table(schema, destination_table)
     try:
         ids = get_ids(service_url, where=where)
-        header = []
         for params in get_query_params_chunk(ids, wkid, out_fields, chunk_size):
             header.append(service_chunk_to_postgres.s(service_url, params, schema, destination_table, ogr_db_string))
 
     except Exception as e:
         logger.error(f'Error downloading IFPRS: {e}... continuing')
         pass
-    return header, destination_table
+    return header
 
 @app.task()
 def ifprs_finalize_task(schema, insert_table, destination_table, ifprs_url, where):
@@ -154,28 +136,33 @@ def common_attributes_processing(url, projection, common_attributes_fc_name, sch
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
 
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
+    try:
+        gdb_to_postgres(gdb, projection, common_attributes_fc_name, ca_table_name, schema, ogr_db_string, input_srs)
 
-    add_fields_and_indexes(conn, schema, ca_table_name, region_number)
+        add_fields_and_indexes(conn, schema, ca_table_name, region_number)
+        common_attributes_date_filtering(conn, schema, ca_table_name)
+        exclude_by_acreage(conn, schema, ca_table_name)
+        exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
 
-    common_attributes_date_filtering(conn, schema, ca_table_name)
-    exclude_by_acreage(conn, schema, ca_table_name)
-    exclude_facts_hazardous_fuels(conn, schema, ca_table_name, facts_haz_table)
+        fields_to_trim = ['activity', 'method', 'equipment']
 
-    fields_to_trim = ['activity', 'method', 'equipment']
+        for field in fields_to_trim:
+            trim_whitespace(conn, schema, ca_table_name, field)
 
-    for field in fields_to_trim:
-        trim_whitespace(conn, schema, ca_table_name, field)
+        include_logging_activities(conn, schema, ca_table_name)
+        include_fire_activites(conn, schema, ca_table_name)
+        include_fuel_activities(conn, schema, ca_table_name)
+        activity_filter(conn, schema, ca_table_name)
+        include_other_activites(conn, schema, ca_table_name)
 
-    include_logging_activities(conn, schema, ca_table_name)
-    include_fire_activites(conn, schema, ca_table_name)
-    include_fuel_activities(conn, schema, ca_table_name)
-    activity_filter(conn, schema, ca_table_name)
-    include_other_activites(conn, schema, ca_table_name)
+        set_included(conn, schema, ca_table_name)
 
-    set_included(conn, schema, ca_table_name)
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
+        logging.info(f"Failed to process geodatabase: {e}")
 
     common_attributes_insert(conn, schema, ca_table_name, treatment_index)
+
+    return f'common_attributes_{region_number} processed successfully.'
 
 
 @app.task()
@@ -195,7 +182,6 @@ def common_attributes_type_filter(schema, treatment_index):
         ''')
 
 # FACTS Hazardous Fuels Tasks
-
 @app.task()
 def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url, facts_haz_gdb, out_wkid, facts_haz_fc_name,
                                         schema, insert_table, ogr_db_string):
@@ -209,19 +195,46 @@ def hazardous_fuels_download_and_insert(hazardous_fuels_table, facts_haz_gdb_url
     # https://gis.stackexchange.com/questions/112198/proj4-postgis-transformations-between-wgs84-and-nad83-transformations-in-alask
     # without modifying the proj4 srs with the towgs84 values, the data is not in the "correct" location
     input_srs = '+proj=longlat +datum=NAD83 +no_defs +type=crs +towgs84=-0.9956,1.9013,0.5215,0.025915,0.009426,0.011599,-0.00062'
-    gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
+    try:
+        gdb_to_postgres(facts_haz_gdb, out_wkid, facts_haz_fc_name, hazardous_fuels_table,
                     schema, ogr_db_string, input_srs)
-    hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
+        hazardous_fuels_date_filtering(conn, schema, hazardous_fuels_table)
+
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
+        logging.info(f"Failed to process geodatabase: {e}")
+
     hazardous_fuels_insert(conn, schema, insert_table, hazardous_fuels_table)
     remove_wildfire_non_treatment(conn, schema, insert_table)
 
 @app.task()
 def state_data_download_and_insert(state_data_url, wkid, schema, table, ogr_db_string):
     conn = create_db_conn_from_envs()
-    parquet_filename = 'state_data.parquet'
+    zip_file = f'state_data.zip'
     # State Data
-    download_file_from_url(state_data_url, 'state_data.parquet')
-    update_state_data(parquet_filename, wkid, schema, ogr_db_string)
+    logging.info(f'Downloading {state_data_url}')
+    download_file_from_url(state_data_url, zip_file)
+
+    logging.info(f'Extracting {zip_file}')
+    extract_and_remove_zip_file(zip_file)
+
+    # Find the GDB directory with the prefix
+    gdb_prefix = "nft-poly-sweri-state-only-prod"
+    extracted_dirs = [d for d in os.listdir() if d.startswith(gdb_prefix) and os.path.isdir(d) and d.endswith('.gdb')]
+
+    if not extracted_dirs:
+        raise FileNotFoundError(f"No .gdb directory found with prefix '{gdb_prefix}' in the extracted contents.")
+
+    # Get the first matching .gdb directory
+    gdb_filename = extracted_dirs[0]
+    logging.info(f"Found GDB directory: {gdb_filename}")
+    try:
+        gdb_to_postgres(gdb_filename, wkid, 'Treatments', 'state_data',
+                        schema, ogr_db_string)
+
+
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
+        logging.info(f"Failed to process geodatabase: {e}")
+
     state_data_insert(conn, schema, table)
     null_missing_state_categories(conn,schema, table)
     null_missing_state_fund_codes(conn,schema, table)
