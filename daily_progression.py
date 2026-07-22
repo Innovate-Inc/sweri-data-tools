@@ -310,12 +310,13 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
                 rows_to_update = cursor.fetchone() is not None
 
                 if rows_to_update:
+                    iteration_ids = [row[0] for row in cursor.fetchall()]
+                    updated_ids.extend(iteration_ids)
                     # If rows are found, execute the update query
                     logger.info(f"Rows found to update. Executing update query...")
                     with db_conn.transaction():
                         cursor.execute(update_query)
-                        iteration_ids = [row[0] for row in cursor.fetchall()]
-                        updated_ids.extend(iteration_ids)
+
                         rows_updated = cursor.rowcount
                         logger.info(f"Number of rows updated in this iteration: {rows_updated}")
                     iteration_count += 1
