@@ -278,10 +278,14 @@ can target that schema and populate the treatment_index feature class.
 
 # Citing the Treatment Index
 
+
 We appreciate citations for TWIG, the Treatment Index, and this software because it lets us find out what people have
-been doing with them and motivates further grant funding.
-A forthcoming _Data Descriptor_ paper will include a DOI and it is recommended that users cite this paper when it
-becomes available.
+been doing with them and motivates further grant funding. If you use this project, please cite the associated publication:
+
+>Call, A., Tomczyk, N., Withnall, K.A. et al. A new geodatabase of fuel treatments across federal lands in the USA. Sci Data 12, 1485 (2025). https://doi.org/10.1038/s41597-025-05859-z
+
+DOI: https://doi.org/10.1038/s41597-025-05859-z
+
 Please [contact us](aidan-franko@nau.edu) for more information.
 
 # Open Code & Reproducible Science
