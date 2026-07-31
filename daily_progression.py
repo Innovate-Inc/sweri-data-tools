@@ -331,6 +331,27 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
         print(f"Error during complex update loop: {e}")
         raise
 
+def return_time_window_ids(db_conn, schema, current_time_str, upload_cutoff_date_str):
+    cursor = db_conn.cursor()
+
+    # Return ids for all features where any date is within the time window
+    query = f"""
+    SELECT poly_irwinid
+    FROM {schema}.daily_progression
+    WHERE 
+        start_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR removal_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR global_start_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR global_removal_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}';
+    """
+
+    with db_conn.transaction():
+        cursor.execute(query)
+        time_window_ids = [row[0] for row in cursor.fetchall()]
+
+    return time_window_ids
+
+
 def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
                                    target_schema, daily_progression_table,
                                    max_points_before_single_geom_chunk, chunk, conn):
@@ -355,13 +376,19 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     current_time = datetime.datetime.now()
     one_second_ago = current_time - datetime.timedelta(seconds=1)
 
+    # Upload window days specify the number of days prior to the current date
+    # for which data will be updated from the PostgreSQL database to the feature layer.
+    upload_window_days = int(os.getenv('DAILY_PROG_UPLOAD_WINDOW_DAYS'))
+    upload_cutoff_date = current_time - datetime.timedelta(days=upload_window_days)
+
     # Time strings
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
+    upload_cutoff_date_str = upload_cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
 
     daily_progression_table = 'daily_progression'
 
-    chunk = 1000
+    chunk = 50
     max_points_before_single_geom_chunk = 10000
     complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
 
@@ -389,6 +416,12 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
         updated_complex_ids = detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
 
         all_ids.update(updated_complex_ids)
+
+    if upload_window_days > 0:
+        time_window_ids = return_time_window_ids(conn, target_schema, current_time_str, upload_cutoff_date_str)
+        all_ids.update(time_window_ids)
+
+    if len(all_ids) > 0:
         all_ids_string = ','.join(f"'{id}'" for id in all_ids)
 
         where = f"poly_irwinid IN ({all_ids_string})"
