@@ -448,7 +448,7 @@ if __name__ == '__main__':
     gis_password = os.getenv("ESRI_PW")
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
-    daily_progression_data_ids = os.getenv('DAILY_PROG_TEST_ID')
+    daily_progression_data_ids = os.getenv('DAILY_PROGRESSION_DATA_ID_1')
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
 
     run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
