@@ -378,7 +378,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     # Upload window days specify the number of days prior to the current date
     # for which data will be updated from the PostgreSQL database to the feature layer.
-    upload_window_days = int(os.getenv('DAILY_PROG_UPLOAD_WINDOW_DAYS'))
+    upload_window_days = int(os.getenv('DAILY_PROG_UPLOAD_WINDOW_DAYS', 14))
     upload_cutoff_date = current_time - datetime.timedelta(days=upload_window_days)
 
     # Time strings
