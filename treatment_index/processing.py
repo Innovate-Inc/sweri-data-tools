@@ -515,6 +515,7 @@ def update_state_data(parquet_file, out_wkid, schema,  ogr_db_string):
     geoparquet_to_postgres(parquet_file, out_wkid, destination_table, schema, ogr_db_string, where, in_wkid)
     # service_to_postgres(service_url, where, wkid, ogr_db_string, schema, destination_table, conn, 40)
 
+@log_this
 def state_data_insert(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -541,15 +542,16 @@ def state_data_insert(conn, schema, treatment_index):
             federalfundingamount as total_cost, 'Completed' as status, 
             CASE WHEN sourcegeometrytype = 'Point' THEN 'BUFFERED_POINT' 
             WHEN sourcegeometrytype = 'Line' THEN 'BUFFERED_LINE' 
-            END AS error, geometry as shape
+            END AS error, shape as shape
             
         FROM {schema}.state_data
-        WHERE {schema}.state_data.geometry IS NOT NULL
+        WHERE {schema}.state_data.shape IS NOT NULL
         and
         {schema}.state_data.actualcompletiondate IS NOT NULL;
 
         ''')
 
+@log_this
 def null_missing_state_fund_codes(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():
@@ -564,6 +566,7 @@ def null_missing_state_fund_codes(conn, schema, table):
 
         ''')
 
+@log_this
 def null_missing_state_categories(conn, schema, table):
     cursor = conn.cursor()
     with conn.transaction():

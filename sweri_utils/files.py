@@ -6,6 +6,7 @@ import shutil
 
 
 from .sweri_logging import log_this
+from .exceptions import GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass
 
 try:
     from osgeo import ogr
@@ -72,28 +73,81 @@ def extract_and_remove_zip_file(zip_filepath):
         zip_file.extractall()
     os.remove(zip_filepath)
 
+@log_this
+def validate_gdb(gdb_path, fc_name):
+    # Check if the file exists
+    if not os.path.exists(gdb_path):
+        raise GdbNotFound(
+            gdb_path=gdb_path,
+            message=f"The geodatabase file '{gdb_path}' does not exist."
+        )
+
+
+    # Open the geodatabase using GDAL/OGR
+    driver = ogr.GetDriverByName('OpenFileGDB')
+    dataset = driver.Open(gdb_path, 0)
+
+    if not dataset:
+        raise GdbWontOpen(
+            gdb_path=gdb_path,
+            message=f"Failed to open the geodatabase '{gdb_path}'. It may not be valid."
+        )
+
+
+    # Check if the geodatabase contains the feature class
+    layer = dataset.GetLayerByName(fc_name)
+    if not layer:
+        raise FeatureClassNotFound(
+            gdb_path=gdb_path,
+            fc_name=fc_name,
+            message=f"The feature class '{fc_name}' does not exist in the geodatabase {gdb_path}."
+        )
+
+    # Verify if the layer contains features
+    if layer.GetFeatureCount() == 0:
+        raise EmptyFeatureClass(
+            gdb_path=gdb_path,
+            fc_name=fc_name,
+            message=f"The feature class '{fc_name}' in the geodatabase '{gdb_path}' contains no features."
+        )
+
+    # If no exceptions are raised, validation is successful
+    logging.info(f"Validation passed for geodatabase '{gdb_path}' and feature class '{fc_name}'.")
 
 
 @log_this
 def gdb_to_postgres(gdb_name, projection: int, fc_name, postgres_table_name, schema, ogr_db_string, input_srs=None):
     os.environ['OGR_ORGANIZE_POLYGONS'] = 'SKIP'
 
+    gdb_path = os.path.join(os.getcwd(), gdb_name)
+
+    # Check gdb for validity, return False if gdb is invalid
+    try:
+        validate_gdb(gdb_path, fc_name)
+        logging.info("Geodatabase validation successful")
+
+    except (GdbNotFound, GdbWontOpen, FeatureClassNotFound, EmptyFeatureClass) as e:
+        logging.warning(f"{e.__class__.__name__}: {e}")
+        raise
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
+        raise
+
     options_inputs = {
-        "format": 'PostgreSQL',
-        "makeValid": True,
-        "dstSRS": f'EPSG:{projection}',
-        "accessMode": 'overwrite',
-        "layerName": f"{schema}.{postgres_table_name}",
-        "layers": [fc_name],
-        "geometryType": "CONVERT_TO_LINEAR"
-    }
+            "format": 'PostgreSQL',
+            "makeValid": True,
+            "dstSRS": f'EPSG:{projection}',
+            "accessMode": 'overwrite',
+            "layerName": f"{schema}.{postgres_table_name}",
+            "layers": [fc_name],
+            "geometryType": "CONVERT_TO_LINEAR"
+        }
 
     if input_srs:
         options_inputs['srcSRS'] = input_srs
 
     options = VectorTranslateOptions(**options_inputs)
-
-    gdb_path = os.path.join(os.getcwd(), gdb_name)
 
     # Upload fc to postgres
     _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=gdb_path, options=options)
@@ -146,8 +200,9 @@ def geoparquet_to_postgres(file_name, projection: int, postgres_table_name, sche
 
     # Upload fc to postgres
     _ = VectorTranslate(destNameOrDestDS=ogr_db_string, srcDS=file_name, options=options)
+
     del _
-    logging.info(f'{postgres_table_name} now in geodatabase')
+    logging.info(f'{postgres_table_name} now in database')
 
     if os.path.exists(file_name):
         os.remove(file_name)

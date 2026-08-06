@@ -23,8 +23,6 @@ services:
   celery:
     platform: linux/arm64
     command: celery -A worker worker --loglevel=info --concurrency=16
-    ports:
-      - "5555:5555"
     logging:
       driver: awslogs
       options:
@@ -42,3 +40,13 @@ services:
         awslogs-group: /data-processing/prod
         awslogs-create-group: "true"
         awslogs-stream: redis
+
+  flower:
+    platform: linux/arm64
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-west-2
+        awslogs-group: /data-processing/prod
+        awslogs-create-group: "true"
+        awslogs-stream: flower
