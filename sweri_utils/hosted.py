@@ -1,7 +1,12 @@
 import geopandas
+import json
 import math
+import os
+import time
 
 import pandas as pd
+import redis
+import requests
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
@@ -10,6 +15,72 @@ from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from worker import app
 from arcgis.gis import GIS
+
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+_TOKEN_CACHE_PREFIX = 'gis_token:'
+_TOKEN_EXPIRY_BUFFER_SECONDS = 60
+
+
+def _get_redis_client():
+    return redis.from_url(REDIS_URL)
+
+
+def get_token(gis_url: str, gis_user: str, gis_password: str) -> str:
+    """
+    Returns a valid ArcGIS token string.
+
+    The full token response is cached in Redis under the key
+    ``gis_token:{gis_url}:{gis_user}``.  On every call the cached token is
+    checked for expiry; if it is still valid (with a 60-second safety buffer)
+    it is returned immediately.  Otherwise a fresh token is requested from the
+    ArcGIS ``generateToken`` endpoint, stored in the cache (with a TTL that
+    matches its expiry) and returned.
+
+    Args:
+        gis_url:    Base URL of the ArcGIS Portal / Server (e.g. ``https://arcgis.example.com``).
+        gis_user:   Portal username.
+        gis_password: Portal password.
+        expiration: Requested token lifetime in minutes (default 60).
+
+    Returns:
+        A valid ArcGIS token string.
+
+    Raises:
+        requests.HTTPError: If the token endpoint returns a non-2xx status.
+        Exception: If the token endpoint returns an error payload.
+    """
+    cache_key = f"{_TOKEN_CACHE_PREFIX}{gis_url}:{gis_user}"
+    r = _get_redis_client()
+
+    cached = r.get(cache_key)
+    if cached:
+        token_response = json.loads(cached)
+        # ArcGIS returns `expires` in milliseconds since the Unix epoch
+        expires_s = token_response.get('expires', 0) / 1000
+        if time.time() < expires_s - _TOKEN_EXPIRY_BUFFER_SECONDS:
+            return token_response['token']
+
+    # Request a fresh token from the ArcGIS REST generateToken endpoint
+    token_url = f"{gis_url.rstrip('/')}/sharing/rest/generateToken"
+    payload = {
+        'username': gis_user,
+        'password': gis_password,
+        'client': 'requestip',
+        'f': 'json',
+    }
+    response = requests.post(token_url, data=payload)
+    response.raise_for_status()
+    token_response = response.json()
+
+    if 'error' in token_response:
+        raise Exception(f"Failed to obtain ArcGIS token: {token_response['error']}")
+
+    # Persist with a TTL so Redis auto-expires the entry
+    expires_s = token_response.get('expires', 0) / 1000
+    ttl_seconds = max(int(expires_s - time.time() - _TOKEN_EXPIRY_BUFFER_SECONDS), 1)
+    r.set(cache_key, json.dumps(token_response), ex=ttl_seconds)
+
+    return token_response['token']
 
 global_engine = None
 
@@ -174,14 +245,14 @@ def get_object_ids(conn, schema, table, where = '1=1'):
 
 
 @app.task()
-def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids, has_shape, drop_cols):
+def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_url, schema, table, object_ids, has_shape, drop_cols):
 
     global global_engine
     if global_engine is None:
         global_engine = get_sql_alchemy_engine_from_envs()
 
     try:
-        feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
+        token = get_token(gis_url, gis_user, gis_password)
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
 
         with global_engine.connect() as engine_conn:
@@ -193,8 +264,9 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
-        response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
-
+        # response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
+        # test this line and see if it works, if not, you probably need to urlencode the body b/c python requests clobbers nested json objects in the body when using data= instead of json=
+        response = requests.post(feature_layer_url, data={'adds': json.dumps([f.as_dict for f in features]), 'rollbackOnFailure': False, 'f': 'json', 'token': token})
         for index, feature in enumerate(response['addResults']):
             att = features[index].attributes
 
