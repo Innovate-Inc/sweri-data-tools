@@ -208,7 +208,7 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
         ''')
 
 @log_this
-def update_global_date_values(db_conn, schema, id_list, today_removal_date):
+def update_global_date_values(db_conn, schema, id_list, today_start_date):
     # Updates global_start_date and global_removal_date of all fire progressions in the provided id list
     # Since progressions with null removal_dates are still active, global_removal_date for such fires is set to today
     if len(id_list) > 0:
@@ -219,7 +219,7 @@ def update_global_date_values(db_conn, schema, id_list, today_removal_date):
                 WITH global_dates AS (
                     SELECT poly_irwinid,
                            MIN(start_date) AS global_start_date,
-                           MAX(COALESCE(removal_date,'{today_removal_date}'))
+                           MAX(COALESCE(removal_date,'{today_start_date}'))
                 AS global_removal_date
                     FROM {schema}.daily_progression
                     GROUP BY poly_irwinid
