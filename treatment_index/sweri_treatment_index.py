@@ -2,8 +2,6 @@ import os
 import shutil
 
 from sweri_utils.s3 import upload_to_s3, delete_bucket_contents
-from sweri_utils.swizzle import swizzle_service
-
 
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"]="1"
 from dotenv import load_dotenv
@@ -14,7 +12,7 @@ from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_sh
 from sweri_utils.files import create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors, flag_large_area
 from sweri_utils.sweri_logging import logging, log_this
-from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle
+from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle, swizzle_service
 from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
     hazardous_fuels_download_and_insert, nfpors_download_and_insert, state_data_download_and_insert
 from sweri_utils.conversion import s3_gdb_update
@@ -250,13 +248,6 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
         ''')
 
 @log_this
-def swizzle_view(esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
-    gis_con = refresh_gis(esri_gis_url, esri_gis_user, esri_gis_password)
-    token = gis_con.session.auth.token
-    swizzle_service(esri_gis_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
-
-
-@log_this
 def clear_response_cache(cache_info):
     # clear cached responses in s3 bucket
     for bucket_name, prefixes in cache_info.items():
@@ -321,23 +312,23 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     # update treatment points
     update_treatment_points(conn, schema, table)
     # treatment index
-    treatment_index_data_source = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password, ti_view_id,
+    treatment_index_data_source_id = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                                                ti_data_ids, schema,
                                                table, max_poly_size_before_simplify, chunk_size)
 
     if additional_poly_view_ids:
         for polygon_view_id in additional_poly_view_ids:
-            swizzle_view(api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source)
+            swizzle_service(api_gis_url, api_gis_user, api_gis_password, polygon_view_id, treatment_index_data_source_id)
 
     # treatment index points
-    treatment_index_points_data_source = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password,
+    treatment_index_points_data_source_id = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password,
                                                       ti_points_view_id, ti_points_data_ids,
                                                       schema,
                                                       ti_points_table, max_poly_size_before_simplify, chunk_size)
 
     if additional_point_views_ids:
         for point_view_id in additional_point_views_ids:
-            swizzle_view(api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source)
+            swizzle_service(api_gis_url, api_gis_user, api_gis_password, point_view_id, treatment_index_points_data_source_id)
 
     s3_gdb_update(ogr_db_conn_string, schema, table, bucket, s3_obj_name, fc_name=table, wkid=wkid,
                   where_clause="identifier_database NOT IN ('NASF', 'NGO')")

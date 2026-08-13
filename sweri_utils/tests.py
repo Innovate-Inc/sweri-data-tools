@@ -4,8 +4,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
 from . import download, files, conversion, s3, sql, hosted
-from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
-    add_to_definition, swizzle_service
 from intersections.utils import chunk_it
 from intersections import tasks
 
@@ -1047,79 +1045,6 @@ class S3Tests(TestCase):
             mock_boto_resource.assert_not_called()
 
 
-class SwizzleTests(TestCase):
-    @patch('requests.get')
-    def test_retrieves_layer_definition_when_all_parameters_are_valid(self, mock_get):
-        mock_get.return_value.json.return_value = {"some_key": "some_value"}
-        result = get_layer_definition("any_url", 1, "any_service", "any_token")
-        assert "some_key" in result
-
-    @patch('requests.get')
-    def test_returns_empty_sets_when_service_has_no_layers_or_tables(self, mock_get):
-        mock_get.return_value.json.return_value = {'layers': [], 'tables': []}
-        result = get_new_definition("any_url", "any_service", "any_token")
-        assert result["layers"] == []
-        assert result["tables"] == []
-
-    def test_constructs_administrative_url_correctly(self):
-        result = get_view_admin_url("any_url/arcgis", "any_service")
-        assert "arcgis/rest/admin/services/Hosted/any_service/FeatureServer" in result
-
-    @patch('requests.get')
-    @patch('requests.post')
-    def test_clears_definition_when_layers_and_tables_exist(self, mock_post, mock_get):
-        mock_get.return_value.json.return_value = {"layers": [{"id": 1}], "tables": [{"id": 2}]}
-        resp = clear_current_definition("any_view_url", "any_token")
-        assert mock_post.called
-
-    @patch('requests.post')
-    def test_adds_provided_definition(self, mock_post):
-        resp = add_to_definition("any_view_url", {"layers": [], "tables": []}, "any_token")
-        assert mock_post.called
-
-    @patch('requests.get')
-    @patch('requests.post')
-    def test_swizzle_service_success(self, mock_post, mock_get):
-        mock_get.return_value.json.side_effect = [
-            {'layers': [{'id': 1}], 'tables': [{'id': 2}]},  # get_new_definition
-            {},  # get_layer_definition
-            {},  # get_layer_definition
-            {'layers': [{'id': 1}], 'tables': [{'id': 2}]}  # clear_current_definition
-        ]
-        mock_post.return_value = MagicMock()
-
-        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
-
-        self.assertTrue(mock_get.called)
-        self.assertTrue(mock_post.called)
-
-    @patch('requests.get')
-    @patch('requests.post')
-    def test_swizzle_service_no_layers_or_tables(self, mock_post, mock_get):
-        mock_get.return_value.json.side_effect = [
-            {'layers': [], 'tables': []},  # get_new_definition
-            {'layers': [], 'tables': []}  # clear_current_definition
-        ]
-        mock_post.return_value = MagicMock()
-
-        swizzle_service('http://example.com', 'view_name', 'new_service_name', 'token')
-
-        self.assertTrue(mock_get.called)
-        self.assertTrue(mock_post.called)
-
-    @patch('requests.get')
-    @patch('requests.post')
-    def test_swizzle_service_invalid_token(self, mock_post, mock_get):
-        mock_get.return_value.json.side_effect = [
-            {'error': 'Invalid token'},  # get_new_definition
-            {'error': 'Invalid token'}  # clear_current_definition
-        ]
-        mock_post.return_value = MagicMock()
-
-        with self.assertRaises(TypeError):
-            swizzle_service('http://example.com', 'view_name', 'new_service_name', 'invalid_token')
-
-
 class HostedTests(TestCase):
     @patch.object(hosted, 'get_count')
     def test_verify_feature_same_count(self, mock_get_count):
@@ -1222,6 +1147,7 @@ class IntersectionTests(TestCase):
             call('public', 'target', 'source_a', 'source_b', (12, 13)),
         ])
 
+
     @patch.object(tasks.logger, 'error')
     @patch.object(tasks, '_execute_intersection_query', side_effect=Exception('single id failed'))
     def test_logs_and_stops_when_single_id_chunk_fails(self, _mock_execute, mock_error):
@@ -1257,3 +1183,36 @@ class IntersectionTests(TestCase):
 
         conn.close.assert_called_once()
 
+    @patch('your_module.refresh_gis')  # Mock refresh_gis
+    @patch('your_module.FeatureLayerCollection')  # Mock FeatureLayerCollection
+    @patch('your_module.get_feature_layer_from_item')  # Mock get_feature_layer_from_item
+    def test_swizzle_service_success(self, mock_get_feature_layer, mock_flc, mock_refresh_gis):
+        # Arrange: Setup mocked dependencies
+        mock_gis = MagicMock()
+        mock_refresh_gis.return_value = mock_gis
+
+        mock_view_item = MagicMock()
+        mock_gis.content.get.return_value = mock_view_item
+
+        mock_flc_instance = MagicMock()
+        mock_flc.fromitem.return_value = mock_flc_instance
+
+        mock_new_feature_layer = MagicMock()
+        mock_get_feature_layer.return_value = mock_new_feature_layer
+
+        # Act: Call the function
+        swizzle_service(
+            gis_url="http://example.com",
+            gis_user="test_user",
+            gis_password="test_password",
+            view_id="view123",
+            new_service_id="service456",
+            view_layer_index=0
+        )
+
+        # Assert: Verify key behavior
+        mock_refresh_gis.assert_called_once_with("http://example.com", "test_user", "test_password")
+        mock_gis.content.get.assert_called_once_with("view123")
+        mock_flc.fromitem.assert_called_once_with(mock_gis.content.get("view123"))
+        mock_get_feature_layer.assert_called_once_with("http://example.com", "test_user", "test_password", "service456")
+        mock_flc_instance.manager.swap_view.assert_called_once_with(0, mock_new_feature_layer)

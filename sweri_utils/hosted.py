@@ -6,7 +6,6 @@ from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
-from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from worker import app
 from arcgis.gis import GIS
@@ -135,16 +134,11 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
         g = group(t)()
         g.get()
 
-    # refreshing old references before swizzle service
-    view_item = gis_con.content.get(view_id)
-    new_source_item = gis_con.content.get(new_data_source_id)
-    token = gis_con.session.auth.token
-
     verify_feature_count(conn, schema, table, new_source_feature_layer)
 
-    swizzle_service(gis_url, view_item.name, new_source_item.name, token)
+    swizzle_service(gis_url, gis_user, gis_password, view_id, new_data_source_id)
 
-    return new_source_item.name
+    return new_data_source_id
 
 def get_feature_layer_from_item(gis_url, gis_user, gis_password,  new_data_source_id):
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
@@ -204,3 +198,35 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
 
     except Exception as e:
         logging.error(f'error uploading chunk to feature layer: {e}, {schema}.{table}, ids: {object_ids}')
+
+@log_this
+def swizzle_service(gis_url, gis_user, gis_password, view_id, new_service_id, view_layer_index=0):
+    """
+    Updates a hosted view service by clearing its current definition and adding
+    a new definition from another hosted service.
+
+    Args:
+        gis_url (str): The base URL of the ArcGIS GIS instance.
+        gis_user (str): The username for authenticating with the ArcGIS GIS instance.
+        gis_password (str): The password for authenticating with the ArcGIS GIS instance.
+        view_id (str): The ID of the existing hosted view service.
+        new_service_id (str): The ID of the hosted service to copy the definition from.
+        view_layer_index (int, optional): The index of the layer in the view service to be updated.
+                                          Defaults to 0.
+
+    Returns:
+        None
+    """
+
+    try:
+        gis_con = refresh_gis(gis_url, gis_user, gis_password)
+        view_item = gis_con.content.get(view_id)
+        view_flc = FeatureLayerCollection.fromitem(view_item)
+
+        new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_service_id)
+
+        view_flc.manager.swap_view(view_layer_index, new_source_feature_layer)
+
+    except Exception as e:
+        logging.error(e)
+        raise e
