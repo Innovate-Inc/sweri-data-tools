@@ -269,7 +269,7 @@ def multipart_upload(url, data, token):
             requests.post(f"{root_url}/uploads/{item_id}/uploadPart", {"f": "json", "token": token, "file": chunk})
 
         #complete multipart upload
-        commit_r = requests.post(f"{url}/uploads/{item_id}/commit", {"f": "json", "token": token})
+        commit_r = requests.post(f"{root_url}/uploads/{item_id}/commit", {"f": "json", "token": token})
         commit_json = commit_r.json()
         if 'error' in commit_json:
             raise Exception(commit_json['error'])
