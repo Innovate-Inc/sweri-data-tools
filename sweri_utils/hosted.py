@@ -1,4 +1,5 @@
-from urllib.parse import urlencode
+
+from tempfile import NamedTemporaryFile
 
 import geopandas
 import json
@@ -250,6 +251,32 @@ def get_object_ids(conn, schema, table, where = '1=1'):
     return ids
 
 
+def multipart_upload(url, data, token):
+    root_url = url.rsplit('/', 1)[0]
+    with NamedTemporaryFile('w+', suffix='json') as f:
+        f.write(json.dumps(data))
+        f.flush()
+        f.seek(0)
+        register_r = requests.post(f"{root_url}/uploads/register", f.filename)
+        register_json = register_r.json()
+        if 'error' in register_json:
+            raise Exception(register_json['error'])
+
+        item_id = register_json['item']['itemID']
+
+        # chunk the file and post to uploadPart
+        for chunk in f.read(10485760):
+            requests.post(f"{root_url}/uploads/{item_id}/uploadPart", chunk.encode())
+
+        #complete multipart upload
+        commit_r = requests.post(f"{url}/uploads/{item_id}/commit", token)
+        commit_json = commit_r.json()
+        if 'error' in commit_json:
+            raise Exception(commit_json['error'])
+
+    return item_id
+
+
 @app.task()
 def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_url, schema, table, object_ids, has_shape, drop_cols):
 
@@ -270,10 +297,13 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
+        upload_id = multipart_upload(feature_layer_url, [{"adds": json.dumps([f.as_dict for f in features])}], token)
+
         response = requests.post(
             feature_layer_url + '/applyEdits',
             data={
-                "adds": json.dumps([f.as_dict for f in features]),
+                "editsUploadId": upload_id,
+                "editsUploadFormat": "json",
                 "rollbackOnFailure": False,
                 "f": "json",
                 "token": token
