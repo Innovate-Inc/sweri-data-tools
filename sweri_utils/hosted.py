@@ -1,3 +1,5 @@
+from urllib.parse import urlencode
+
 import geopandas
 import json
 import math
@@ -74,6 +76,9 @@ def get_token(gis_url: str, gis_user: str, gis_password: str) -> str:
 
     if 'error' in token_response:
         raise Exception(f"Failed to obtain ArcGIS token: {token_response['error']}")
+
+    # capture timestamp when generated
+    token_response['created'] = int(time.time())
 
     # Persist with a TTL so Redis auto-expires the entry
     expires_s = token_response.get('expires', 0) / 1000
@@ -177,6 +182,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
     new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
     new_source_feature_layer.manager.truncate()
+    new_source_feature_layer_url = new_source_feature_layer.url
     conn = create_db_conn_from_envs()
 
     # Collect arguments for processing so we can choose execution method
@@ -197,11 +203,11 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
         logging.info("Executing upload tasks synchronously (Celery bypassed)")
         for chunk_ids, has_shape_arg in tasks_args:
             # Calling the decorated function directly runs it synchronously in the main process
-            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                           chunk_ids, has_shape_arg, drop_cols)
     else:
         # Create Celery signatures and grouped task
-        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                              chunk_ids, has_shape_arg, drop_cols) for chunk_ids, has_shape_arg in tasks_args]
         g = group(t)()
         g.get()
@@ -264,14 +270,30 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
-        # response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
-        # test this line and see if it works, if not, you probably need to urlencode the body b/c python requests clobbers nested json objects in the body when using data= instead of json=
-        response = requests.post(feature_layer_url, data={'adds': json.dumps([f.as_dict for f in features]), 'rollbackOnFailure': False, 'f': 'json', 'token': token})
-        for index, feature in enumerate(response['addResults']):
-            att = features[index].attributes
+        response = requests.post(
+            feature_layer_url + '/applyEdits',
+            data={
+                "adds": json.dumps([f.as_dict for f in features]),
+                "rollbackOnFailure": False,
+                "f": "json",
+                "token": token
+            },
+            params={
+                "f": "json",
+                "token": token
+            }
+        )
 
+        response_data = response.json()
+        logging.info(f"{len(response.request.body):,}")
+
+        if 'error' in response_data:
+            logging.error(f'error uploading chunk to feature layer: {response_data["error"]}, {schema}.{table}, ids: {object_ids}')
+            return
+
+        for index, feature in enumerate(response_data['addResults']):
             if not feature.get("success", False):
-                logging.warning(f"This feature could not be inserted: attributes={att}")
+                logging.warning(f"This feature could not be inserted: {feature['objectId']}")
 
 
     except Exception as e:
