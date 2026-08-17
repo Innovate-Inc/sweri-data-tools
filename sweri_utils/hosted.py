@@ -257,7 +257,7 @@ def multipart_upload(url, data, token):
         f.write(json.dumps(data))
         f.flush()
         f.seek(0)
-        register_r = requests.post(f"{root_url}/uploads/register", f.filename)
+        register_r = requests.post(f"{root_url}/uploads/register", {"f": "json", "token": token, "itemName": f.name})
         register_json = register_r.json()
         if 'error' in register_json:
             raise Exception(register_json['error'])
@@ -266,10 +266,10 @@ def multipart_upload(url, data, token):
 
         # chunk the file and post to uploadPart
         for chunk in f.read(10485760):
-            requests.post(f"{root_url}/uploads/{item_id}/uploadPart", chunk.encode())
+            requests.post(f"{root_url}/uploads/{item_id}/uploadPart", {"f": "json", "token": token, "file": chunk})
 
         #complete multipart upload
-        commit_r = requests.post(f"{url}/uploads/{item_id}/commit", token)
+        commit_r = requests.post(f"{url}/uploads/{item_id}/commit", {"f": "json", "token": token})
         commit_json = commit_r.json()
         if 'error' in commit_json:
             raise Exception(commit_json['error'])
