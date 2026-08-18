@@ -1,5 +1,6 @@
 
 from tempfile import NamedTemporaryFile
+from uuid import uuid4
 
 import geopandas
 import json
@@ -253,11 +254,11 @@ def get_object_ids(conn, schema, table, where = '1=1'):
 
 def multipart_upload(url, data, token):
     root_url = url.rsplit('/', 1)[0]
-    with NamedTemporaryFile('w+', suffix='json') as f:
-        f.write(json.dumps(data))
+    with NamedTemporaryFile('wb+', suffix='json') as f:
+        f.write(json.dumps(data).encode('utf-8'))
         f.flush()
         f.seek(0)
-        register_r = requests.post(f"{root_url}/uploads/register", {"f": "json", "token": token, "itemName": f.name})
+        register_r = requests.post(f"{root_url}/uploads/register", {"f": "json", "token": token, "itemName": f"{uuid4()}.json"})
         register_json = register_r.json()
         if 'error' in register_json:
             raise Exception(register_json['error'])
@@ -265,8 +266,8 @@ def multipart_upload(url, data, token):
         item_id = register_json['item']['itemID']
 
         # chunk the file and post to uploadPart
-        for chunk in f.read(10485760):
-            requests.post(f"{root_url}/uploads/{item_id}/uploadPart", {"f": "json", "token": token, "file": chunk})
+        while chunk := f.read(10485760):
+            response = requests.post(f"{root_url}/uploads/{item_id}/uploadPart", {"f": "json", "token": token, "file": chunk})
 
         #complete multipart upload
         commit_r = requests.post(f"{root_url}/uploads/{item_id}/commit", {"f": "json", "token": token})
@@ -297,7 +298,7 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
-        upload_id = multipart_upload(feature_layer_url, [{"adds": json.dumps([f.as_dict for f in features])}], token)
+        upload_id = multipart_upload(feature_layer_url, [{"adds": [f.as_dict for f in features]}], token)
 
         response = requests.post(
             feature_layer_url + '/applyEdits',
