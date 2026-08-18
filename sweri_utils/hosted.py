@@ -1,4 +1,3 @@
-
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
@@ -254,23 +253,39 @@ def get_object_ids(conn, schema, table, where = '1=1'):
 
 def multipart_upload(url, data, token):
     root_url = url.rsplit('/', 1)[0]
-    with NamedTemporaryFile('wb+', suffix='json') as f:
+    with NamedTemporaryFile('wb+', suffix='.json') as f:
         f.write(json.dumps(data).encode('utf-8'))
         f.flush()
         f.seek(0)
-        register_r = requests.post(f"{root_url}/uploads/register", {"f": "json", "token": token, "itemName": f"{uuid4()}.json"})
+
+        register_r = requests.post(
+            f"{root_url}/uploads/register",
+            data={"f": "json", "token": token, "itemName": f"{uuid4()}.json"},
+        )
+        register_r.raise_for_status()
         register_json = register_r.json()
         if 'error' in register_json:
             raise Exception(register_json['error'])
 
         item_id = register_json['item']['itemID']
 
-        # chunk the file and post to uploadPart
+        # Upload each chunk as a multipart file part (ArcGIS expects binary file upload here)
+        part_num = 1
         while chunk := f.read(10485760):
-            response = requests.post(f"{root_url}/uploads/{item_id}/uploadPart", {"f": "json", "token": token, "file": chunk})
+            upload_part_r = requests.post(
+                f"{root_url}/uploads/{item_id}/uploadPart",
+                data={"f": "json", "token": token, "partId": part_num},
+                files={"file": (f"part-{part_num}.json", chunk, "application/octet-stream")},
+            )
+            upload_part_r.raise_for_status()
+            upload_part_json = upload_part_r.json()
+            if 'error' in upload_part_json:
+                raise Exception(upload_part_json['error'])
+            part_num += 1
 
-        #complete multipart upload
-        commit_r = requests.post(f"{root_url}/uploads/{item_id}/commit", {"f": "json", "token": token})
+        # Complete multipart upload
+        commit_r = requests.post(f"{root_url}/uploads/{item_id}/commit", data={"f": "json", "token": token})
+        commit_r.raise_for_status()
         commit_json = commit_r.json()
         if 'error' in commit_json:
             raise Exception(commit_json['error'])
