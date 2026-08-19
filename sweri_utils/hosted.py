@@ -30,9 +30,8 @@ def _get_redis_client():
 
 def get_token(gis_url: str, gis_user: str, gis_password: str) -> str:
     """
-    Returns a valid ArcGIS API KEY string.
+    Returns an ARCGIS Portal API key from .env
     """
-
     return os.getenv('PORTAL_API_KEY')
 
 global_engine = None
@@ -208,7 +207,6 @@ def multipart_upload(url, data, token):
         register_r = requests.post(
             f"{root_url}/uploads/register",
             data={"f": "json", "token": token, "itemName": f"{uuid4()}.json"},
-            params={"f": "json", "token": token}
         )
         register_r.raise_for_status()
         register_json = register_r.json()
@@ -261,7 +259,7 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
-        upload_id = multipart_upload(feature_layer_url, {"adds": [f.as_dict for f in features]}, token)
+        upload_id = multipart_upload(feature_layer_url, [{"adds": [f.as_dict for f in features]}], token)
 
         response = requests.post(
             feature_layer_url + '/applyEdits',
