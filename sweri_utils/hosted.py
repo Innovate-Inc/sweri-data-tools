@@ -5,10 +5,8 @@ import geopandas
 import json
 import math
 import os
-import time
 
 import pandas as pd
-import redis
 import requests
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
@@ -19,16 +17,7 @@ from .sweri_logging import log_this, logging
 from worker import app
 from arcgis.gis import GIS
 
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-_TOKEN_CACHE_PREFIX = 'gis_token:'
-_TOKEN_EXPIRY_BUFFER_SECONDS = 60
-
-
-def _get_redis_client():
-    return redis.from_url(REDIS_URL)
-
-
-def get_token(gis_url: str, gis_user: str, gis_password: str) -> str:
+def get_token():
     """
     Returns an ARCGIS Portal API key from .env
     """
@@ -248,7 +237,7 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer
         global_engine = get_sql_alchemy_engine_from_envs()
 
     try:
-        token = get_token(gis_url, gis_user, gis_password)
+        token = get_token()
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
 
         with global_engine.connect() as engine_conn:
