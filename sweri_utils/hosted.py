@@ -1,16 +1,16 @@
-from tempfile import NamedTemporaryFile
-from uuid import uuid4
-
 import geopandas
 import json
 import math
 import os
-
 import pandas as pd
 import requests
+
+from tempfile import NamedTemporaryFile
+from uuid import uuid4
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
+
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
