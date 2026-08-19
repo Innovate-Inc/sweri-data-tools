@@ -30,63 +30,9 @@ def _get_redis_client():
 
 def get_token(gis_url: str, gis_user: str, gis_password: str) -> str:
     """
-    Returns a valid ArcGIS token string.
-
-    The full token response is cached in Redis under the key
-    ``gis_token:{gis_url}:{gis_user}``.  On every call the cached token is
-    checked for expiry; if it is still valid (with a 60-second safety buffer)
-    it is returned immediately.  Otherwise a fresh token is requested from the
-    ArcGIS ``generateToken`` endpoint, stored in the cache (with a TTL that
-    matches its expiry) and returned.
-
-    Args:
-        gis_url:    Base URL of the ArcGIS Portal / Server (e.g. ``https://arcgis.example.com``).
-        gis_user:   Portal username.
-        gis_password: Portal password.
-        expiration: Requested token lifetime in minutes (default 60).
-
-    Returns:
-        A valid ArcGIS token string.
-
-    Raises:
-        requests.HTTPError: If the token endpoint returns a non-2xx status.
-        Exception: If the token endpoint returns an error payload.
+    Returns an ARCGIS Portal API key from .env
     """
-    cache_key = f"{_TOKEN_CACHE_PREFIX}{gis_url}:{gis_user}"
-    r = _get_redis_client()
-
-    cached = r.get(cache_key)
-    if cached:
-        token_response = json.loads(cached)
-        # ArcGIS returns `expires` in milliseconds since the Unix epoch
-        expires_s = token_response.get('expires', 0) / 1000
-        if time.time() < expires_s - _TOKEN_EXPIRY_BUFFER_SECONDS:
-            return token_response['token']
-
-    # Request a fresh token from the ArcGIS REST generateToken endpoint
-    token_url = f"{gis_url.rstrip('/')}/sharing/rest/generateToken"
-    payload = {
-        'username': gis_user,
-        'password': gis_password,
-        'client': 'requestip',
-        'f': 'json',
-    }
-    response = requests.post(token_url, data=payload)
-    response.raise_for_status()
-    token_response = response.json()
-
-    if 'error' in token_response:
-        raise Exception(f"Failed to obtain ArcGIS token: {token_response['error']}")
-
-    # capture timestamp when generated
-    token_response['created'] = int(time.time())
-
-    # Persist with a TTL so Redis auto-expires the entry
-    expires_s = token_response.get('expires', 0) / 1000
-    ttl_seconds = max(int(expires_s - time.time() - _TOKEN_EXPIRY_BUFFER_SECONDS), 1)
-    r.set(cache_key, json.dumps(token_response), ex=ttl_seconds)
-
-    return token_response['token']
+    return os.getenv('PORTAL_API_KEY')
 
 global_engine = None
 
