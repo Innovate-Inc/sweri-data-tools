@@ -1,15 +1,27 @@
 import geopandas
+import json
 import math
-
+import os
 import pandas as pd
+import requests
+
+from tempfile import NamedTemporaryFile
+from uuid import uuid4
 from arcgis.features import FeatureLayerCollection, GeoAccessor
 from celery import group
 from sqlalchemy import create_engine
+
 from .sql import create_db_conn_from_envs, get_sql_alchemy_engine_from_envs, get_count
 from .swizzle import swizzle_service
 from .sweri_logging import log_this, logging
 from worker import app
 from arcgis.gis import GIS
+
+def get_token():
+    """
+    Returns an ARCGIS Portal API key from .env
+    """
+    return os.getenv('PORTAL_API_KEY')
 
 global_engine = None
 
@@ -106,6 +118,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
     new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
     new_source_feature_layer.manager.truncate()
+    new_source_feature_layer_url = new_source_feature_layer.url
     conn = create_db_conn_from_envs()
 
     # Collect arguments for processing so we can choose execution method
@@ -126,11 +139,11 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
         logging.info("Executing upload tasks synchronously (Celery bypassed)")
         for chunk_ids, has_shape_arg in tasks_args:
             # Calling the decorated function directly runs it synchronously in the main process
-            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                           chunk_ids, has_shape_arg, drop_cols)
     else:
         # Create Celery signatures and grouped task
-        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                              chunk_ids, has_shape_arg, drop_cols) for chunk_ids, has_shape_arg in tasks_args]
         g = group(t)()
         g.get()
@@ -173,15 +186,58 @@ def get_object_ids(conn, schema, table, where = '1=1'):
     return ids
 
 
+def multipart_upload(url, data, token):
+    root_url = url.rsplit('/', 1)[0]
+    with NamedTemporaryFile('wb+', suffix='.json') as f:
+        f.write(json.dumps(data).encode('utf-8'))
+        f.flush()
+        f.seek(0)
+
+        register_r = requests.post(
+            f"{root_url}/uploads/register",
+            data={"f": "json", "token": token, "itemName": f"{uuid4()}.json"},
+            params={"f": "json", "token": token}
+        )
+        register_r.raise_for_status()
+        register_json = register_r.json()
+        if 'error' in register_json:
+            raise Exception(register_json['error'])
+
+        item_id = register_json['item']['itemID']
+
+        # Upload each chunk as a multipart file part (ArcGIS expects binary file upload here)
+        part_num = 1
+        while chunk := f.read(10485760):
+            upload_part_r = requests.post(
+                f"{root_url}/uploads/{item_id}/uploadPart",
+                data={"f": "json", "token": token, "partId": part_num},
+                files={"file": (f"part-{part_num}.json", chunk, "application/octet-stream")},
+            )
+            upload_part_r.raise_for_status()
+            upload_part_json = upload_part_r.json()
+            if 'error' in upload_part_json:
+                raise Exception(upload_part_json['error'])
+            part_num += 1
+
+        # Complete multipart upload
+        commit_r = requests.post(f"{root_url}/uploads/{item_id}/commit", data={"f": "json", "token": token})
+        commit_r.raise_for_status()
+        commit_json = commit_r.json()
+        if 'error' in commit_json:
+            raise Exception(commit_json['error'])
+
+    return item_id
+
+
 @app.task()
-def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id, schema, table, object_ids, has_shape, drop_cols):
+def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_url, schema, table, object_ids, has_shape, drop_cols):
 
     global global_engine
     if global_engine is None:
         global_engine = get_sql_alchemy_engine_from_envs()
 
     try:
-        feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_source_id)
+        token = get_token()
         sql_query = build_postgis_chunk_query(schema, table, object_ids)
 
         with global_engine.connect() as engine_conn:
@@ -193,13 +249,33 @@ def upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, new_source_id
                 if isinstance(value, float) and math.isnan(value):
                     feature.attributes[key] = None
 
-        response = feature_layer.edit_features(adds=features, rollback_on_failure=False)
+        upload_id = multipart_upload(feature_layer_url, {"adds": [f.as_dict for f in features]}, token)
 
-        for index, feature in enumerate(response['addResults']):
-            att = features[index].attributes
+        response = requests.post(
+            feature_layer_url + '/applyEdits',
+            data={
+                "editsUploadId": upload_id,
+                "editsUploadFormat": "json",
+                "rollbackOnFailure": False,
+                "f": "json",
+                "token": token
+            },
+            params={
+                "f": "json",
+                "token": token
+            }
+        )
 
+        response_data = response.json()
+        logging.info(f"{len(response.request.body):,}")
+
+        if 'error' in response_data:
+            logging.error(f'error uploading chunk to feature layer: {response_data["error"]}, {schema}.{table}, ids: {object_ids}')
+            return
+
+        for index, feature in enumerate(response_data['addResults']):
             if not feature.get("success", False):
-                logging.warning(f"This feature could not be inserted: attributes={att}")
+                logging.warning(f"This feature could not be inserted: {feature['objectId']}")
 
 
     except Exception as e:
