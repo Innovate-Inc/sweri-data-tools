@@ -428,7 +428,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
         where = f"poly_irwinid IN ({all_ids_string})"
 
-        update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+        update_and_verify_progressions(gis_url, gis_user, gis_password, daily_progression_data_ids, where,
                                        target_schema, daily_progression_table,
                                        max_points_before_single_geom_chunk, chunk, conn)
     conn.close()
