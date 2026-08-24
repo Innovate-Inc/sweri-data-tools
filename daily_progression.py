@@ -207,7 +207,7 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
         ''')
 
 @log_this
-def update_global_date_values(db_conn, schema, id_list, active_fire_global_removal):
+def update_global_date_values(db_conn, schema, id_list, active_fire_global_removal_date):
     # Updates global_start_date and global_removal_date of all fire progressions in the provided id list
     # Since progressions with null removal_dates are still active, global_removal_date for such fires is set to today
     if len(id_list) > 0:
@@ -218,7 +218,7 @@ def update_global_date_values(db_conn, schema, id_list, active_fire_global_remov
                 WITH global_dates AS (
                     SELECT poly_irwinid,
                            MIN(start_date) AS global_start_date,
-                           MAX(COALESCE(removal_date,'{active_fire_global_removal}'))
+                           MAX(COALESCE(removal_date,'{active_fire_global_removal_date}'))
                 AS global_removal_date
                     FROM {schema}.daily_progression
                     GROUP BY poly_irwinid
@@ -367,11 +367,11 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     # expand global dates that are part of complexes
     detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
 
-    # # update hosted feature layer with upload and swizzle
-    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
-    #                           target_schema,
-    #                           daily_progression_table, max_points_before_single_geom_chunk, chunk,
-    #                           sync=run_sync_hosted_upload)
+    # update hosted feature layer with upload and swizzle
+    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
+                              target_schema,
+                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
+                              sync=run_sync_hosted_upload)
     conn.close()
 
 if __name__ == '__main__':
