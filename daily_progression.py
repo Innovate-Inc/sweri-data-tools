@@ -8,7 +8,8 @@ from arcgis.gis import GIS
 
 from sweri_utils.sql import connect_to_pg_db, add_column
 from sweri_utils.download import service_to_postgres
-from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.hosted import hosted_upload_and_swizzle, hosted_upload_from_postgres, \
+    delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count
 from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -293,6 +294,7 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
 
     rows_to_update = True  # Set to true to begin the loop
     iteration_count = 0
+    updated_ids = []
     cursor = db_conn.cursor()
 
 
@@ -308,10 +310,13 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
                 rows_to_update = cursor.fetchone() is not None
 
                 if rows_to_update:
+                    iteration_ids = [row[0] for row in cursor.fetchall()]
+                    updated_ids.extend(iteration_ids)
                     # If rows are found, execute the update query
                     logger.info(f"Rows found to update. Executing update query...")
                     with db_conn.transaction():
                         cursor.execute(update_query)
+
                         rows_updated = cursor.rowcount
                         logger.info(f"Number of rows updated in this iteration: {rows_updated}")
                     iteration_count += 1
@@ -321,9 +326,47 @@ def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
             if iteration_count > iteration_limit:
                 break
 
+        return updated_ids
     except Exception as e:
         print(f"Error during complex update loop: {e}")
         raise
+
+def return_time_window_ids(db_conn, schema, current_time_str, upload_cutoff_date_str):
+    cursor = db_conn.cursor()
+
+    # Return ids for all features where any date is within the time window
+    query = f"""
+    SELECT poly_irwinid
+    FROM {schema}.daily_progression
+    WHERE 
+        start_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR removal_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR global_start_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}'
+        OR global_removal_date BETWEEN '{upload_cutoff_date_str}' AND '{current_time_str}';
+    """
+
+    with db_conn.transaction():
+        cursor.execute(query)
+        time_window_ids = [row[0] for row in cursor.fetchall()]
+
+    return time_window_ids
+
+
+def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+                                   target_schema, daily_progression_table,
+                                   max_points_before_single_geom_chunk, chunk, conn):
+
+    # Delete all progressions that were updated
+    delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where)
+    # Add updated progressions
+    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_id, target_schema,
+                                daily_progression_table,
+                                max_points_before_single_geom_chunk, chunk, where=where)
+
+    # Verify Count
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
+    verify_feature_count(conn, target_schema, daily_progression_table, feature_layer)
+
 
 def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
                            gis_url, gis_user, gis_password,
@@ -334,10 +377,16 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     one_second_ago = current_time - datetime.timedelta(seconds=1)
     active_fire_global_removal_date = current_time + datetime.timedelta(days=1)
 
+    # Upload window days specify the number of days prior to the current date
+    # for which data will be updated from the PostgreSQL database to the feature layer.
+    upload_window_days = int(os.getenv('DAILY_PROG_UPLOAD_WINDOW_DAYS', 14))
+    upload_cutoff_date = current_time - datetime.timedelta(days=upload_window_days)
+
     # Time strings
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
     active_fire_global_removal_date_str = active_fire_global_removal_date.strftime('%Y-%m-%d %H:%M:%S')
+    upload_cutoff_date_str = upload_cutoff_date.strftime('%Y-%m-%d %H:%M:%S')
 
     daily_progression_table = 'daily_progression'
 
@@ -361,16 +410,27 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     # update global dates on all fires modified this run
     all_ids = set(added_ids + removed_ids + modified_ids)
     all_ids_string = ','.join(f"'{id}'" for id in all_ids)
-    update_global_date_values(conn, target_schema, all_ids_string, active_fire_global_removal_date_str)
 
-    # expand global dates that are part of complexes
-    detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+    if len(all_ids) > 0:
+        update_global_date_values(conn, target_schema, all_ids_string, active_fire_global_removal_date_str)
 
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
-                              target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
-                              sync=run_sync_hosted_upload)
+        # expand global dates that are part of complexes, return ids of
+        updated_complex_ids = detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
+
+        all_ids.update(updated_complex_ids)
+
+    if upload_window_days > 0:
+        time_window_ids = return_time_window_ids(conn, target_schema, current_time_str, upload_cutoff_date_str)
+        all_ids.update(time_window_ids)
+
+    if len(all_ids) > 0:
+        all_ids_string = ','.join(f"'{id}'" for id in all_ids)
+
+        where = f"poly_irwinid IN ({all_ids_string})"
+
+        update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+                                       target_schema, daily_progression_table,
+                                       max_points_before_single_geom_chunk, chunk, conn)
     conn.close()
 
 if __name__ == '__main__':
@@ -390,7 +450,7 @@ if __name__ == '__main__':
     gis_password = os.getenv("ESRI_PW")
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
-    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_data_ids = os.getenv('DAILY_PROGRESSION_DATA_ID_1')
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
 
     run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
