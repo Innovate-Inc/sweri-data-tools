@@ -334,7 +334,6 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     one_second_ago = current_time - datetime.timedelta(seconds=1)
     active_fire_global_removal_date = current_time + datetime.timedelta(days=1)
 
-
     # Time strings
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
