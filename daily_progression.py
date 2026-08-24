@@ -207,7 +207,7 @@ def update_removal_date(db_conn, schema, removal_date, id_list):
         ''')
 
 @log_this
-def update_global_date_values(db_conn, schema, id_list, today_start_date):
+def update_global_date_values(db_conn, schema, id_list, active_fire_global_removal):
     # Updates global_start_date and global_removal_date of all fire progressions in the provided id list
     # Since progressions with null removal_dates are still active, global_removal_date for such fires is set to today
     if len(id_list) > 0:
@@ -218,7 +218,7 @@ def update_global_date_values(db_conn, schema, id_list, today_start_date):
                 WITH global_dates AS (
                     SELECT poly_irwinid,
                            MIN(start_date) AS global_start_date,
-                           MAX(COALESCE(removal_date,'{today_start_date}'))
+                           MAX(COALESCE(removal_date,'{active_fire_global_removal}'))
                 AS global_removal_date
                     FROM {schema}.daily_progression
                     GROUP BY poly_irwinid
@@ -332,10 +332,13 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     #start date and removal date 1 second apart to prevent overlap between old and new polygons
     current_time = datetime.datetime.now()
     one_second_ago = current_time - datetime.timedelta(seconds=1)
+    active_fire_global_removal_date = current_time + datetime.timedelta(days=1)
+
 
     # Time strings
     current_time_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
     one_second_ago_str = one_second_ago.strftime('%Y-%m-%d %H:%M:%S')
+    active_fire_global_removal_date_str = active_fire_global_removal_date.strftime('%Y-%m-%d %H:%M:%S')
 
     daily_progression_table = 'daily_progression'
 
@@ -359,16 +362,16 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
     # update global dates on all fires modified this run
     all_ids = set(added_ids + removed_ids + modified_ids)
     all_ids_string = ','.join(f"'{id}'" for id in all_ids)
-    update_global_date_values(conn, target_schema, all_ids_string, current_time_str)
+    update_global_date_values(conn, target_schema, all_ids_string, active_fire_global_removal_date_str)
 
     # expand global dates that are part of complexes
     detect_and_update_fire_complexes(conn, target_schema, complex_iteration_limit)
 
-    # update hosted feature layer with upload and swizzle
-    hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
-                              target_schema,
-                              daily_progression_table, max_points_before_single_geom_chunk, chunk,
-                              sync=run_sync_hosted_upload)
+    # # update hosted feature layer with upload and swizzle
+    # hosted_upload_and_swizzle(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids,
+    #                           target_schema,
+    #                           daily_progression_table, max_points_before_single_geom_chunk, chunk,
+    #                           sync=run_sync_hosted_upload)
     conn.close()
 
 if __name__ == '__main__':
