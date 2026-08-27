@@ -113,6 +113,12 @@ if __name__ == "__main__":
                           intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
 
+    except Exception as e:
+        logging.error(f'ERROR - data processing failed: {e}')
+        sys.exit(1)
+
+
+    try:
         daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
                                                  int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
                                                  os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
@@ -123,5 +129,5 @@ if __name__ == "__main__":
                                run_sync_hosted_upload)
 
     except Exception as e:
-        logging.error(f'ERROR - data processing failed: {e}')
+        logging.error(f'ERROR - daily progression data processing failed: {e}')
         sys.exit(1)
