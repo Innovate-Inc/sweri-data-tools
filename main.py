@@ -115,7 +115,6 @@ if __name__ == "__main__":
 
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
-        sys.exit(1)
 
 
     try:
