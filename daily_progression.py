@@ -356,15 +356,16 @@ def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_laye
                                    target_schema, daily_progression_table,
                                    max_points_before_single_geom_chunk, chunk, conn):
 
+    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
+    feature_layer_url = feature_layer.url
+
     # Delete all progressions that were updated
     delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where)
     # Add updated progressions
-    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_id, target_schema,
+    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_url, target_schema,
                                 daily_progression_table,
                                 max_points_before_single_geom_chunk, chunk, where=where)
 
-    # Verify Count
-    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
     verify_feature_count(conn, target_schema, daily_progression_table, feature_layer)
 
 
@@ -390,7 +391,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     daily_progression_table = 'daily_progression'
 
-    chunk = int(os.getenv('DAILY_PROG_CHUNK', 1000))
+    chunk = int(os.getenv('DAILY_PROG_CHUNK', 100))
     max_points_before_single_geom_chunk = int(os.getenv('DAILY_PROG_UPLOAD_VERTEX_THRESHOLD', 10000))
     complex_iteration_limit = int(os.getenv('COMPLEX_ITERATION_LIMIT', 50))
 
