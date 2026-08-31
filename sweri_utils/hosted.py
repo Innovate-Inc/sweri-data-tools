@@ -122,7 +122,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_source_feature_layer_url = new_source_feature_layer.url
     conn = create_db_conn_from_envs()
 
-    hosted_upload_from_postgres(gis_url, gis_user, gis_password, new_data_source_id, schema, table,
+    hosted_upload_from_postgres(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                 max_points_before_single_geom_chunk, chunk_size, where='1=1', shape=shape,
                                 drop_cols=drop_cols, sync=sync)
 
@@ -138,7 +138,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     return new_source_item.name
 
 @log_this
-def hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_id, schema, table, max_points_before_single_geom_chunk, chunk_size, where='1=1', shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
+def hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_url, schema, table, max_points_before_single_geom_chunk, chunk_size, where='1=1', shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
     # setup new layer connection
     conn = create_db_conn_from_envs()
 
@@ -160,11 +160,11 @@ def hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_i
         logging.info("Executing upload tasks synchronously (Celery bypassed)")
         for chunk_ids, has_shape_arg in tasks_args:
             # Calling the decorated function directly runs it synchronously in the main process
-            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_id, schema, table,
+            upload_chunk_to_feature_layer(gis_url, gis_user, gis_password, feature_layer_url, schema, table,
                                           chunk_ids, has_shape_arg, drop_cols)
     else:
         # Create Celery signatures and grouped task
-        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, feature_layer_id, schema, table,
+        t = [upload_chunk_to_feature_layer.s(gis_url, gis_user, gis_password, feature_layer_url, schema, table,
                                              chunk_ids, has_shape_arg, drop_cols) for chunk_ids, has_shape_arg in tasks_args]
         g = group(t)()
         g.get()
