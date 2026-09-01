@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     # daily progressions envs
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
-    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
+    daily_progression_data_ids = os.getenv('DAILY_PROGRESSION_DATA_ID_1')
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
 
@@ -84,7 +84,21 @@ if __name__ == "__main__":
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
     insert_table = 'treatment_index'
     treatment_index_points_table = 'treatment_index_points'
+
     ############## processing in docker ################
+    try:
+        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+
+        run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
+                               portal_url, portal_user, portal_password,
+                               daily_progression_view_id, daily_progression_data_ids,
+                               run_sync_hosted_upload)
+
+    except Exception as e:
+        logging.error(f'ERROR - daily progression data processing failed: {e}')
+
     try:
         # Get current day and env run day for treatment index
         ti_run_day = os.getenv('TI_RUN_DAY')
@@ -113,14 +127,6 @@ if __name__ == "__main__":
                           intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
 
-        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
-                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
-
-        run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
-                               portal_url, portal_user, portal_password,
-                               daily_progression_view_id, daily_progression_data_ids,
-                               run_sync_hosted_upload)
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
         sys.exit(1)
