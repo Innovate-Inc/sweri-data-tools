@@ -213,13 +213,9 @@ def run_intersections(docker_conn, docker_schema,
     populate_sequence_field(docker_conn, docker_schema, 'intersections', 'objectid', 'intersection_objectid_seq')
     ############ export intersection_features to file GDB and upload to private S3 bucket ################
     ogr_db_conn_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
-
-    try:
-        s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
-                      intersection_features_gdb_bucket, intersection_features_gdb_s3_obj,
-                      fc_name='intersection_features', wkid=wkid)
-    except Exception as e:
-        logging.error(f'error exporting intersection_features to S3: {e}')
+    s3_gdb_update(ogr_db_conn_string, docker_schema, 'intersection_features',
+                  intersection_features_gdb_bucket, intersection_features_gdb_s3_obj,
+                  fc_name='intersection_features', wkid=wkid)
 
     ############ hosted upload ################
     hosted_upload_and_swizzle(portal, user, password, intersection_view, intersection_data_ids, docker_schema,
