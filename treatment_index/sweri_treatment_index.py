@@ -55,7 +55,8 @@ def fund_source_updates(conn, schema, treatment_index):
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_source = lt.fund_code
-                AND ti.identifier_database = 'IFPRS';
+                AND ti.identifier_database = 'IFPRS'
+                AND ti.fund_source IS null;
             ''')
         # Set IFPRS entries that didn't get consolidated to 'Other'
         cursor.execute(f'''
@@ -64,7 +65,8 @@ def fund_source_updates(conn, schema, treatment_index):
                 WHERE ti.identifier_database = 'IFPRS'
                 AND ti.fund_source NOT IN 
                 (SELECT lt.fund_source
-                FROM {schema}.fund_source_lookup lt);
+                FROM {schema}.fund_source_lookup lt)
+                AND ti.fund_source IS null;
             ''')
 
         cursor.execute(f'''
