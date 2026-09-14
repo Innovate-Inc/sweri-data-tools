@@ -109,14 +109,20 @@ def verify_feature_count(conn,schema, table, new_source_feature_layer):
         raise ValueError(f"Data source count mismatch after upload. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
     logging.info(f"Data source count verified. Database count: {db_count}, Feature Layer count: {fl_count}, Difference: {diff} ({percent_diff*100:.2f}%)")
 
-@log_this
-def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
+def return_unused_data_id(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids):
     # setup new layer connection
     gis_con = refresh_gis(gis_url, gis_user, gis_password)
     view_item = gis_con.content.get(view_id)
     current_data_source_id = get_view_data_source_id(view_item)
 
     new_data_source_id = next(id for id in source_feature_layer_ids if id != current_data_source_id)
+
+    return new_data_source_id
+
+@log_this
+def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids, schema, table, max_points_before_single_geom_chunk, chunk_size, shape=True, drop_cols=['objectid', 'gdb_geomattr_data'], sync=False):
+
+    new_data_source_id = return_unused_data_id(gis_url, gis_user, gis_password, view_id, source_feature_layer_ids)
     new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
     new_source_feature_layer.manager.truncate()
     new_source_feature_layer_url = new_source_feature_layer.url
@@ -127,6 +133,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
                                 drop_cols=drop_cols, sync=sync)
 
     # refreshing old references before swizzle service
+    gis_con = refresh_gis(gis_url, gis_user, gis_password)
     view_item = gis_con.content.get(view_id)
     new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token

@@ -2,6 +2,8 @@ import datetime
 from dotenv import load_dotenv
 import os
 
+from sweri_utils.swizzle import swizzle_service
+
 os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import watchtower
 from arcgis.gis import GIS
@@ -9,7 +11,8 @@ from arcgis.gis import GIS
 from sweri_utils.sql import connect_to_pg_db, add_column
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle, hosted_upload_from_postgres, \
-    delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count
+    delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count, refresh_gis, \
+    get_view_data_source_id, return_unused_data_id
 from sweri_utils.sweri_logging import logging, log_this
 
 logger = logging.getLogger(__name__)
@@ -352,22 +355,40 @@ def return_time_window_ids(db_conn, schema, current_time_str, upload_cutoff_date
     return time_window_ids
 
 
-def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_layer_id, where,
+def update_and_verify_progressions(gis_url, gis_user, gis_password, view_id, data_source_ids, where,
                                    target_schema, daily_progression_table,
                                    max_points_before_single_geom_chunk, chunk, conn):
 
-    feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, feature_layer_id)
-    feature_layer_url = feature_layer.url
+    for id in data_source_ids:
+        # Find and update the feature layer the view is not looking at
+        new_data_source_id = return_unused_data_id(gis_url, gis_user, gis_password, view_id, data_source_ids)
 
-    # Delete all progressions that were updated
-    delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where)
-    # Add updated progressions
-    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_url, target_schema,
-                                daily_progression_table,
-                                max_points_before_single_geom_chunk, chunk, where=where)
+        feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
+        feature_layer_url = feature_layer.url
 
-    verify_feature_count(conn, target_schema, daily_progression_table, feature_layer)
+        try:
+            logging.info(f"Updating and verifying progressions for data source id: {id}")
+            # Delete all progressions that were updated
+            delete_features_from_hosted_layer(gis_url, gis_user, gis_password, new_data_source_id, where)
+            # Add updated progressions
+            hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_url, target_schema,
+                                        daily_progression_table,
+                                        max_points_before_single_geom_chunk, chunk, where=where)
 
+            verify_feature_count(conn, target_schema, daily_progression_table, feature_layer)
+
+            gis_con = refresh_gis(gis_url, gis_user, gis_password)
+            token = gis_con.session.auth.token
+            view_item = gis_con.content.get(view_id)
+            new_source_item = gis_con.content.get(new_data_source_id)
+
+            # Swap to the newly updated id
+            logging.info(f"Swapping to new data source id: {new_source_item.name}")
+            swizzle_service(gis_url, view_item.name, new_source_item.name, token)
+
+        except Exception as e:
+            print(f"Error updating and verifying progressions: {e}")
+            raise
 
 def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,
                            gis_url, gis_user, gis_password,
@@ -429,7 +450,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
         where = f"poly_irwinid IN ({all_ids_string})"
 
-        update_and_verify_progressions(gis_url, gis_user, gis_password, daily_progression_data_ids, where,
+        update_and_verify_progressions(gis_url, gis_user, gis_password, daily_progression_view_id, daily_progression_data_ids, where,
                                        target_schema, daily_progression_table,
                                        max_points_before_single_geom_chunk, chunk, conn)
     conn.close()
@@ -445,13 +466,12 @@ if __name__ == '__main__':
     ogr_db_string = f"PG:dbname={os.getenv('DB_NAME')} user={os.getenv('DB_USER')} password={os.getenv('DB_PASSWORD')} port={os.getenv('DB_PORT')} host={os.getenv('DB_HOST')}"
 
     # Hosted upload variables
-    root_url = os.getenv('ESRI_ROOT_URL')
     gis_url = os.getenv("ESRI_PORTAL_URL")
     gis_user = os.getenv("ESRI_USER")
     gis_password = os.getenv("ESRI_PW")
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
 
-    daily_progression_data_ids = os.getenv('DAILY_PROGRESSION_DATA_ID_1')
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
 
     run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema,

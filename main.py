@@ -63,7 +63,7 @@ if __name__ == "__main__":
 
     # daily progressions envs
     run_sync_hosted_upload = os.getenv('DAILY_PROG_RUN_SYNC_HOSTED_UPLOAD').lower() == 'true'
-    daily_progression_data_ids = os.getenv('DAILY_PROGRESSION_DATA_ID_1')
+    daily_progression_data_ids = [os.getenv('DAILY_PROGRESSION_DATA_ID_1'), os.getenv('DAILY_PROGRESSION_DATA_ID_2')]
     daily_progression_view_id = os.getenv('DAILY_PROGRESSION_VIEW_ID')
     wfigs_current_fires_url = os.getenv('CURRENT_FIRES')
 
