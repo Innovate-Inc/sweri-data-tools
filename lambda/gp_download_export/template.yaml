@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Lambda export service for ArcGIS download queries without arcpy.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 120
+    MemorySize: 512
+    EphemeralStorage:
+      Size: 1024
+
+Parameters:
+  DownloadExportBucket:
+    Type: String
+    Description: Private S3 bucket to store generated zip exports
+  DownloadExportPrefix:
+    Type: String
+    Default: gp-download
+    Description: S3 prefix for generated exports
+
+Resources:
+  GpDownloadExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-gp-download-export'
+      Handler: lambda_function.lambda_handler
+      CodeUri: .
+      Description: Exports ArcGIS query results to zip (geojson/csv/filegdb/shapefile) and uploads to S3
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref DownloadExportBucket
+      Environment:
+        Variables:
+          DOWNLOAD_EXPORT_BUCKET: !Ref DownloadExportBucket
+          DOWNLOAD_EXPORT_PREFIX: !Ref DownloadExportPrefix
+      Events:
+        DownloadApi:
+          Type: Api
+          Properties:
+            Path: /download
+            Method: post
+
+Outputs:
+  FunctionArn:
+    Description: ARN of export lambda
+    Value: !GetAtt GpDownloadExportFunction.Arn
+  ApiUrl:
+    Description: API endpoint URL for POST /download
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/download'
+
+

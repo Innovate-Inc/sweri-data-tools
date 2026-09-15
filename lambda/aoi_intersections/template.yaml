@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: AOI intersections Lambda without arcpy using spatial Python libs.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 120
+    MemorySize: 1024
+    EphemeralStorage:
+      Size: 1024
+
+Parameters:
+  AoiIntersectionsBucket:
+    Type: String
+    Description: S3 bucket for uploading result JSON
+  AoiIntersectionsPrefix:
+    Type: String
+    Default: aoi-intersections
+    Description: S3 prefix for uploaded JSON outputs
+
+Resources:
+  AoiIntersectionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-aoi-intersections'
+      Handler: lambda_function.lambda_handler
+      CodeUri: .
+      Description: Computes AOI intersections against target sources and returns ArcGIS FeatureSet JSON
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - S3CrudPolicy:
+            BucketName: !Ref AoiIntersectionsBucket
+      Environment:
+        Variables:
+          AOI_INTERSECTIONS_BUCKET: !Ref AoiIntersectionsBucket
+          AOI_INTERSECTIONS_PREFIX: !Ref AoiIntersectionsPrefix
+      Events:
+        IntersectionsApi:
+          Type: Api
+          Properties:
+            Path: /aoi-intersections
+            Method: post
+
+Outputs:
+  FunctionArn:
+    Description: ARN of AOI intersections lambda
+    Value: !GetAtt AoiIntersectionsFunction.Arn
+  ApiUrl:
+    Description: API endpoint URL for POST /aoi-intersections
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/aoi-intersections'
+
+

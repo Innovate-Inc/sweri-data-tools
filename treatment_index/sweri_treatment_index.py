@@ -272,58 +272,58 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
                         max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
 
     # Truncate the table before inserting new data
-    pg_cursor = conn.cursor()
-    with conn.transaction():
-        pg_cursor.execute(f'''TRUNCATE TABLE {schema}.{table}''')
-        pg_cursor.execute('COMMIT;')
+    # pg_cursor = conn.cursor()
+    # with conn.transaction():
+    #     pg_cursor.execute(f'''TRUNCATE TABLE {schema}.{table}''')
+    #     pg_cursor.execute('COMMIT;')
 
-    t = []
+    # t = []
 
-    # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
-    facts_chain = chain(
-        hazardous_fuels_download_and_insert.s(
-            haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
-            facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
-            ),
-            common_attributes_download_and_insert(
-                wkid, ogr_db_conn_string, schema, table, haz_fuels_table
-            ).set(immutable=True),
-        )
-
-    t.append(facts_chain)
-    t.append(nfpors_download_and_insert.s(schema, table))
-    t.append(ifprs_download_and_insert(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
-    if state_data_inclusion_flag:
-        t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
-    g = group(t)()
-    g.get()
-
-    # Modify treatment index in place
-    remove_blank_strings(conn, schema, table, fields_for_cleanup)
-    trim_whitespace(conn, schema, table, 'agency')
-    fund_source_updates(conn, schema, table)
-    update_total_cost(conn, schema, table)
-    correct_biomass_removal_typo(conn, schema, table)
-    add_twig_category(conn, schema)
-    update_state_abbr(conn, schema, table)
-    flag_duplicate_ids(conn, schema, table)
-    flag_high_cost(conn, schema, table)
-    flag_duplicates(conn, schema, table)
-    flag_uom_outliers(conn, schema, table)
-    flag_large_area(conn, schema, table)
-    revert_multi_to_poly(conn, schema, table)
-    simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
-    makevalid_shapes(conn, schema, table, 'shape', fc_res)
-    extract_geometry_collections(conn, schema, table, fc_res)
-    remove_zero_area_polygons(conn, schema, table)
-    flag_spatial_errors(conn, schema, table)
-
-    # update treatment points
-    update_treatment_points(conn, schema, table)
+    # # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
+    # facts_chain = chain(
+    #     hazardous_fuels_download_and_insert.s(
+    #         haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
+    #         facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
+    #         ),
+    #         common_attributes_download_and_insert(
+    #             wkid, ogr_db_conn_string, schema, table, haz_fuels_table
+    #         ).set(immutable=True),
+    #     )
+    #
+    # t.append(facts_chain)
+    # t.append(nfpors_download_and_insert.s(schema, table))
+    # t.append(ifprs_download_and_insert(schema, table, wkid, ifprs_service_url, ogr_db_conn_string))
+    # if state_data_inclusion_flag:
+    #     t.append(state_data_download_and_insert.s(state_data_url, wkid, schema, table, ogr_db_conn_string))
+    # g = group(t)()
+    # g.get()
+    #
+    # # Modify treatment index in place
+    # remove_blank_strings(conn, schema, table, fields_for_cleanup)
+    # trim_whitespace(conn, schema, table, 'agency')
+    # fund_source_updates(conn, schema, table)
+    # update_total_cost(conn, schema, table)
+    # correct_biomass_removal_typo(conn, schema, table)
+    # add_twig_category(conn, schema)
+    # update_state_abbr(conn, schema, table)
+    # flag_duplicate_ids(conn, schema, table)
+    # flag_high_cost(conn, schema, table)
+    # flag_duplicates(conn, schema, table)
+    # flag_uom_outliers(conn, schema, table)
+    # flag_large_area(conn, schema, table)
+    # revert_multi_to_poly(conn, schema, table)
+    # simplify_large_polygons(conn, schema, table, max_poly_size_before_simplify, simplify_tol, fc_res)
+    # makevalid_shapes(conn, schema, table, 'shape', fc_res)
+    # extract_geometry_collections(conn, schema, table, fc_res)
+    # remove_zero_area_polygons(conn, schema, table)
+    # flag_spatial_errors(conn, schema, table)
+    #
+    # # update treatment points
+    # update_treatment_points(conn, schema, table)
     # treatment index
     treatment_index_data_source = hosted_upload_and_swizzle(api_gis_url, api_gis_user, api_gis_password, ti_view_id,
                                                ti_data_ids, schema,
-                                               table, max_poly_size_before_simplify, chunk_size)
+                                               table, max_poly_size_before_simplify, chunk_size, sync=True)
 
     if additional_poly_view_ids:
         for polygon_view_id in additional_poly_view_ids:
