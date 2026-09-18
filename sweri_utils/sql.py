@@ -638,3 +638,36 @@ def get_count(conn, schema, table, where='1=1'):
         cursor.execute(f'SELECT COUNT(*) FROM {schema}.{table} WHERE {where};')
         count = cursor.fetchone()[0]
     return count
+
+@log_this
+def null_problem_dates(conn, schema, table, columns=None):
+    cursor = conn.cursor()
+    with conn.transaction():
+
+        if not columns:
+            # Find all datetime columns
+            cursor.execute(f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = '{table}'
+                  AND table_schema = '{schema}'
+                  AND data_type IN ('timestamp without time zone', 'timestamp with time zone');
+            """)
+
+            columns = [row[0] for row in cursor.fetchall()]
+
+        if columns:
+            for column in columns:
+                cursor.execute(f"""
+                    UPDATE {schema}.{table}
+                    SET '{column}' = null
+                    WHERE
+                    '{column}' IS NOT NULL AND
+                    '{column}' < '1970-01-01 00:00:00'
+                    RETURNING *;
+                    """
+                )
+                updated_rows = cursor.fetchall()
+
+                for row in updated_rows:
+                    logging.warning(f'Problem date set to null for column {column} in row \n {row}')

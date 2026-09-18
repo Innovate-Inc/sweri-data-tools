@@ -6,7 +6,7 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import watchtower
 from arcgis.gis import GIS
 
-from sweri_utils.sql import connect_to_pg_db, add_column
+from sweri_utils.sql import connect_to_pg_db, add_column, null_problem_dates
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle, hosted_upload_from_postgres, \
     delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count
@@ -397,6 +397,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
+    null_problem_dates(conn, target_schema, 'current_fries_snapshot')
     makevalid_snapshot_shapes(conn, target_schema)
 
     # add new fires from current fires into daily progression
