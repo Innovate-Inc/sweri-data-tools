@@ -397,7 +397,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
-    null_problem_dates(conn, target_schema, 'current_fries_snapshot')
+    null_problem_dates(conn, target_schema, 'current_fires_snapshot', 'poly_irwinid')
     makevalid_snapshot_shapes(conn, target_schema)
 
     # add new fires from current fires into daily progression

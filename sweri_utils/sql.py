@@ -640,7 +640,7 @@ def get_count(conn, schema, table, where='1=1'):
     return count
 
 @log_this
-def null_problem_dates(conn, schema, table, columns=None):
+def null_problem_dates(conn, schema, table, id_field, columns=None):
     cursor = conn.cursor()
     with conn.transaction():
 
@@ -660,14 +660,14 @@ def null_problem_dates(conn, schema, table, columns=None):
             for column in columns:
                 cursor.execute(f"""
                     UPDATE {schema}.{table}
-                    SET '{column}' = null
+                    SET {column} = null
                     WHERE
-                    '{column}' IS NOT NULL AND
-                    '{column}' < '1970-01-01 00:00:00'
-                    RETURNING *;
+                    {column} IS NOT NULL AND
+                    {column} < '1970-01-01 00:00:00'
+                    RETURNING {id_field};
                     """
                 )
                 updated_rows = cursor.fetchall()
 
                 for row in updated_rows:
-                    logging.warning(f'Problem date set to null for column {column} in row \n {row}')
+                    logging.warning(f'Problem date set to null for column {column} in row with {id_field} : {row}')
