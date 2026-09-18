@@ -641,6 +641,22 @@ def get_count(conn, schema, table, where='1=1'):
 
 @log_this
 def null_problem_dates(conn, schema, table, id_field, columns=None):
+    """
+    WARNING : This function has the ability to alter data tables
+    Do not use on sensitive data tables
+    Do not use on tables with dates expected before 1970
+
+    Sets the specified date columns in a PostgreSQL table to NULL where the date is < '1970-01-01 00:00:00'
+    This is the cutoff fo negaitve epoch time
+
+    Params:
+        :param conn: The database connection object.
+        :param schema: The schema where the table is located.
+        :param table: The name of the table to count records from.
+        :param id_field: The name of the ID field to log.
+        :param columns: The name of the date columns to null.
+        columns:
+    """
     cursor = conn.cursor()
     with conn.transaction():
 
