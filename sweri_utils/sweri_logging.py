@@ -28,8 +28,8 @@ def log_this(func):
 
 
 class ProcessingStatusLogger:
-    def __init__(self, feature_service_url: str, slack_channel_id: str, steps: dict[str, str], esri_token: str,
-                 slack_token: str, environment: str):
+    def __init__(self, slack_channel_id: str, steps: dict[str, str],
+                 slack_token: str, environment: str, esri_token: str = '', feature_service_url: str = ''):
         if not slack_channel_id or not slack_token:
             logger.info("Slack channel ID or token is not provided. Skipping Slack logging.")
             self.slack_client = None
