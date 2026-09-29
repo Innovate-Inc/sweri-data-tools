@@ -192,21 +192,24 @@ def state_data_twig_category(conn, schema):
             ti.category IS NOT DISTINCT FROM tc.category;
         ''')
 
-def add_kendra_fallon_category(conn, schema, field_name='kendra_fallon_category'):
+@log_this
+def add_fallon_category(conn, schema, field_name='fallon_category'):
     fields_used = ['category', 'type', 'activity', 'method', 'equipment']
     for field in fields_used:
         trim_whitespace(conn, schema, 'treatment_index', field)
 
-    ifprs_nfpors_kendra_fallon_category(conn, schema, field_name)
-    facts_kendra_fallon_category(conn, schema, field_name)
+    ifprs_nfpors_fallon_category(conn, schema, field_name)
+    facts_fallon_category(conn, schema, field_name)
+    fallon_category_cleanup(conn, schema, field_name)
 
-def ifprs_nfpors_kendra_fallon_category(conn, schema, field_name):
+@log_this
+def ifprs_nfpors_fallon_category(conn, schema, field_name):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.treatment_index ti
             SET {field_name} = lt.functional_treatment_type
-            FROM {schema}.kendra_fallon_lookup lt
+            FROM {schema}.fallon_category_lookup lt
             WHERE ti.identifier_database IN ('IFPRS', 'NFPORS')
               AND ti.category = lt.value
               AND lt.field = 'DOI Category'
@@ -216,20 +219,21 @@ def ifprs_nfpors_kendra_fallon_category(conn, schema, field_name):
         cursor.execute(f'''
             UPDATE {schema}.treatment_index ti
             SET {field_name} = lt.functional_treatment_type
-            FROM {schema}.kendra_fallon_lookup lt
+            FROM {schema}.fallon_category_lookup lt
             WHERE ti.identifier_database IN ('IFPRS', 'NFPORS')
               AND ti.type = lt.value
               AND lt.field = 'DOI Type'
               AND (ti.{field_name} IS NULL OR ti.{field_name} = 'TBD');  
         ''')
 
-def facts_kendra_fallon_category(conn, schema, field_name):
+@log_this
+def facts_fallon_category(conn, schema, field_name):
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
             UPDATE {schema}.treatment_index ti
             SET {field_name} = lt.functional_treatment_type
-            FROM {schema}.kendra_fallon_lookup lt
+            FROM {schema}.fallon_category_lookup lt
             WHERE ti.identifier_database IN ('FACTS Hazardous Fuels', 'FACTS Common Attributes')
               AND ti.activity = lt.value
               AND lt.field = 'FACTS activity'
@@ -239,7 +243,7 @@ def facts_kendra_fallon_category(conn, schema, field_name):
         cursor.execute(f'''
             UPDATE {schema}.treatment_index ti
             SET {field_name} = lt.functional_treatment_type
-            FROM {schema}.kendra_fallon_lookup lt
+            FROM {schema}.fallon_category_lookup lt
             WHERE ti.identifier_database IN ('FACTS Hazardous Fuels', 'FACTS Common Attributes')
               AND ti.method = lt.value
               AND lt.field = 'FACTS method'
@@ -249,11 +253,34 @@ def facts_kendra_fallon_category(conn, schema, field_name):
         cursor.execute(f'''
             UPDATE {schema}.treatment_index ti
             SET {field_name} = lt.functional_treatment_type
-            FROM {schema}.kendra_fallon_lookup lt
+            FROM {schema}.fallon_category_lookup lt
             WHERE ti.identifier_database IN ('FACTS Hazardous Fuels', 'FACTS Common Attributes')
               AND ti.equipment = lt.value
               AND lt.field = 'FACTS equipment'
               AND (ti.{field_name} IS NULL OR ti.{field_name} = 'TBD');  
+        ''')
+
+        cursor.execute(f'''
+           UPDATE staging.treatment_index
+           SET {field_name} = 
+               CASE
+                   WHEN method = 'Manual' THEN 'Rearrangement'
+                   WHEN method = 'Mechanical' THEN 'Removal'
+                   WHEN method = 'Maintenance' THEN 'Rearrangement'
+                   ELSE {field_name}
+               END
+           WHERE ({field_name} = 'TBD' OR {field_name} IS NULL);
+        ''')
+
+@log_this
+def fallon_category_cleanup(conn, schema, field_name):
+    cursor = conn.cursor()
+    with conn.transaction():
+        cursor.execute(f'''
+            UPDATE {schema}.treatment_index ti
+            SET {field_name} = null
+            where
+            ti.{field_name} = 'TBD';
         ''')
 
 @log_this
@@ -371,7 +398,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     update_total_cost(conn, schema, table)
     correct_biomass_removal_typo(conn, schema, table)
     add_twig_category(conn, schema)
-    add_kendra_fallon_category(conn, schema)
+    add_fallon_category(conn, schema)
     update_state_abbr(conn, schema, table)
     flag_duplicate_ids(conn, schema, table)
     flag_high_cost(conn, schema, table)
