@@ -61,7 +61,7 @@ class ProcessingStatusLogger:
             response = self.slack_client.chat_postMessage(channel=channel, text=message)
             return response
         except Exception as e:
-            print(f"Error sending message to Slack: {e}")
+            logger.info(f"Error sending message to Slack: {e}")
             return None
 
     def format_esri_payload(self):
@@ -88,7 +88,6 @@ class ProcessingStatusLogger:
         }
         payload = self.format_esri_payload()
         try:
-            print(payload)
             response = requests.post(f"{self.feature_service_url}/applyEdits", json=payload, headers=headers, params={"f": "json"})
             response.raise_for_status()
             if 'error' in response.json():
@@ -96,7 +95,7 @@ class ProcessingStatusLogger:
 
             self.feature_globalid = response.json()['addResults'][0]["globalId"]
         except Exception as e:
-            print(f"Error logging status to feature service: {e}")
+            logger.info(f"Error logging status to feature service: {e}")
 
     def log_status(self):
         # not working
@@ -156,7 +155,7 @@ class ProcessingStatusLogger:
             self.steps[step_key] = step_status
             self.log_status()
         else:
-            print(f"Step key '{step_key}' not found in steps.")
+            logger.info(f"Step key '{step_key}' not found in steps.")
 
     def complete(self):
         self.status = 'Completed'
