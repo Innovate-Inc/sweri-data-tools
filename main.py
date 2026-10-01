@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from intersections.sweri_intersections import run_intersections
 from sweri_utils.sql import connect_to_pg_db
+from sweri_utils.sweri_logging import ProcessingStatusLogger
 from treatment_index.sweri_treatment_index import run_treatment_index
 from daily_progression import run_daily_progressions
 
@@ -86,19 +87,34 @@ if __name__ == "__main__":
     treatment_index_points_table = 'treatment_index_points'
 
     ############## processing in docker ################
-    try:
-        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
-                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+    status_logging = ProcessingStatusLogger(
+        # feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
+        # esri_token=os.getenv('ESRI_TOKEN', ''),
+        slack_channel_id=os.getenv('SLACK_CHANNEL_ID', ''),
+        slack_token=os.getenv('SLACK_TOKEN', ''),
+        environment=os.getenv('ENVIRONMENT', ''),
+        steps={
+            'daily_progressions': 'Not Started',
+            'treatment_index': 'Not Started',
+            'intersections': 'Not Started'
+        }
+    )
 
+    try:
+        status_logging.update_step('daily_progressions', 'Running')
+        daily_progressions_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+                                                      int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                                                      os.getenv('DB_NAME'), os.getenv('DB_USER'),
+                                                      os.getenv('DB_PASSWORD'))
         run_daily_progressions(wfigs_current_fires_url, sr_wkid, ogr_db_string, daily_progressions_pg_conn, db_schema,
                                portal_url, portal_user, portal_password,
                                daily_progression_view_id, daily_progression_data_ids,
                                run_sync_hosted_upload)
+        status_logging.update_step('daily_progressions', 'Completed')
 
     except Exception as e:
         logging.error(f'ERROR - daily progression data processing failed: {e}')
-
+        status_logging.update_step('daily_progressions', 'Failed')
     try:
         # Get current day and env run day for treatment index
         ti_run_day = os.getenv('TI_RUN_DAY')
@@ -106,16 +122,26 @@ if __name__ == "__main__":
 
         # If today is run day
         if ti_run_day == day_of_week:
-            treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                               os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+            status_logging.update_step('treatment_index', 'Running')
+            treatments_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+                                                  int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                                                  os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
             run_treatment_index(treatments_pg_conn, db_schema, insert_table, ogr_db_string, sr_wkid, facts_haz_gdb_url,
                                 nfpors_url, ifprs_url, state_data_url, portal_url, portal_user, portal_password,
                                 treatment_index_view_id, treatment_index_data_ids, additional_polygon_view_ids,
-                                treatment_index_points_view_id, treatment_index_points_data_ids, additional_point_view_ids,
+                                treatment_index_points_view_id, treatment_index_points_data_ids,
+                                additional_point_view_ids,
                                 include_state_data, s3_bucket, s3_obj_name, response_cache_info=response_cache_info)
+            status_logging.update_step('treatment_index', 'Completed')
+        else:
+            logging.info(f"Skipping treatment index processing, today is {day_of_week} and run day is {ti_run_day}")
+            status_logging.update_step('treatment_index', 'Skipped')
+
+        status_logging.update_step('intersections', 'Running')
         # reconnect to db after treatment index processing to avoid any connection issues for intersection processing
-        intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'), int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
-                                   os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
+        intersections_pg_conn = connect_to_pg_db(os.getenv('DB_HOST'),
+                                                 int(os.getenv('DB_PORT')) if os.getenv('DB_PORT') else 5432,
+                                                 os.getenv('DB_NAME'), os.getenv('DB_USER'), os.getenv('DB_PASSWORD'))
         intersection_features_gdb_bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
         intersection_features_gdb_s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
 
@@ -125,8 +151,12 @@ if __name__ == "__main__":
                           portal_user,
                           portal_password, intersections_view_id, intersections_data_ids,
                           intersection_features_gdb_bucket, intersection_features_gdb_s3_obj)
+        status_logging.update_step('intersections', 'Completed')
         logging.info(f'completed intersection processing, total runtime: {datetime.now() - script_start}')
+
+        status_logging.complete()
 
     except Exception as e:
         logging.error(f'ERROR - data processing failed: {e}')
+        status_logging.fail()
         sys.exit(1)
