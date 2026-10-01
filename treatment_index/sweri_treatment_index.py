@@ -194,10 +194,6 @@ def state_data_twig_category(conn, schema):
 
 @log_this
 def add_fallon_category(conn, schema, field_name='fallon_category'):
-    fields_used = ['category', 'type', 'activity', 'method', 'equipment']
-    for field in fields_used:
-        trim_whitespace(conn, schema, 'treatment_index', field)
-
     ifprs_nfpors_fallon_category(conn, schema, field_name)
     facts_fallon_category(conn, schema, field_name)
     fallon_category_cleanup(conn, schema, field_name)
@@ -362,6 +358,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
                         additional_point_views_ids, state_data_inclusion_flag, bucket, s3_obj_name, response_cache_info, ti_points_table='treatment_index_points',
                         facts_haz_fuels_fc_name='Actv_HazFuelTrt_PL', haz_fuels_table='facts_hazardous_fuels',
                         facts_haz_gdb_path='Actv_HazFuelTrt_PL.gdb', fields_for_cleanup=['type', 'fund_source'],
+                        trim_whitespace_fields=['agency','category', 'type', 'activity', 'method', 'equipment'],
                         max_poly_size_before_simplify=10000, simplify_tol=0.000009, fc_res=0.000000001, chunk_size=500):
 
     # Truncate the table before inserting new data
@@ -393,7 +390,8 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
 
     # Modify treatment index in place
     remove_blank_strings(conn, schema, table, fields_for_cleanup)
-    trim_whitespace(conn, schema, table, 'agency')
+    for field in trim_whitespace_fields:
+        trim_whitespace(conn, schema, table, field)
     fund_source_updates(conn, schema, table)
     update_total_cost(conn, schema, table)
     correct_biomass_removal_typo(conn, schema, table)
