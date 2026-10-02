@@ -88,8 +88,8 @@ if __name__ == "__main__":
 
     ############## processing in docker ################
     status_logging = ProcessingStatusLogger(
-        # feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
-        # esri_token=os.getenv('ESRI_TOKEN', ''),
+        feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
+        esri_token=os.getenv('PORTAL_API_KEY', ''),
         slack_channel_id=os.getenv('SLACK_CHANNEL_ID', ''),
         slack_token=os.getenv('SLACK_TOKEN', ''),
         environment=os.getenv('ENVIRONMENT', ''),
