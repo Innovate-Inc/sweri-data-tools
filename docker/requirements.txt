@@ -11,3 +11,4 @@ celery[redis,sqs,dynamodb]==5.6.2
 pytest
 pytest-cov
 flower
+slack-sdk==3.44.1
