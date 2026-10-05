@@ -31,6 +31,17 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+from sweri_utils.sweri_logging import ProcessingStatusLogger
+
+status_logging = ProcessingStatusLogger(
+    process='Intersections FGDB Sync',
+    steps={
+        'download': 'Not Started',
+        'extract': 'Not Started',
+        'repair': 'Not Started'
+    }
+)
+
 try:
     import arcpy
     ARCPY_AVAILABLE = True
@@ -69,15 +80,20 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         tmp_zip_path = tmp_zip.name
 
     try:
+        status_logging.update_step('download', 'Running')
         logger.info(f'Downloading s3://{bucket}/{s3_obj} → {tmp_zip_path}')
         s3.download_file(bucket, s3_obj, tmp_zip_path)
         logger.info('Download complete')
+        status_logging.update_step('download', 'Completed')
 
+        status_logging.update_step('extract', 'Running')
         logger.info(f'Extracting {tmp_zip_path} → {tmp_extract_dir}')
         tmp_extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_zip_path, 'r') as zf:
             zf.extractall(tmp_extract_dir)
+        status_logging.update_step('extract', 'Completed')
 
+        status_logging.update_step('repair', 'Running')
         # Find the .gdb directory inside the extracted content
         extracted_gdbs = list(tmp_extract_dir.glob('*.gdb'))
         if not extracted_gdbs:
@@ -87,6 +103,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         # run Repair Geometry before going live
         logger.info(f'Running Repair Geometry on {extracted_gdb}/intersection_features')
         arcpy.management.RepairGeometry(os.path.join(extracted_gdb, 'intersection_features'), 'DELETE_NULL', 'ESRI')
+        status_logging.update_step('repair', 'Completed')
 
         # Atomically replace the old GDB: rename old → backup, new → final, remove backup
         backup_path = local_dir_path / f"intersection_features.gdb.bak"
@@ -98,11 +115,13 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
         shutil.move(str(extracted_gdb), str(final_gdb_path))
         logger.info(f'GDB updated at {final_gdb_path}')
-
+        status_logging.complete()
     except ClientError as e:
+        status_logging.fail()
         logger.error(f'S3 download failed: {e}')
         raise
     except Exception as e:
+        status_logging.fail()
         logger.error(f'GDB sync failed: {e}')
         raise
     finally:
@@ -113,6 +132,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
 
 def main():
+    status_logging.start()
     bucket = os.getenv('INTERSECTION_FEATURES_GDB_BUCKET')
     s3_obj = os.getenv('INTERSECTION_FEATURES_GDB_S3_OBJ')
     local_dir = os.getenv('INTERSECTION_FEATURES_GDB_LOCAL_DIR')
