@@ -638,3 +638,52 @@ def get_count(conn, schema, table, where='1=1'):
         cursor.execute(f'SELECT COUNT(*) FROM {schema}.{table} WHERE {where};')
         count = cursor.fetchone()[0]
     return count
+
+@log_this
+def null_problem_dates(conn, schema, table, id_field, columns=None):
+    """
+    WARNING : This function has the ability to alter data tables
+    Do not use on sensitive data tables
+    Do not use on tables with dates expected before 1970
+
+    Sets the specified date columns in a PostgreSQL table to NULL where the date is < '1970-01-01 00:00:00'
+    This is the cutoff fo negaitve epoch time
+
+    Params:
+        :param conn: The database connection object.
+        :param schema: The schema where the table is located.
+        :param table: The name of the table to count records from.
+        :param id_field: The name of the ID field to log.
+        :param columns: The name of the date columns to null.
+        columns:
+    """
+    cursor = conn.cursor()
+    with conn.transaction():
+
+        if not columns:
+            # Find all datetime columns
+            cursor.execute(f"""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = '{table}'
+                  AND table_schema = '{schema}'
+                  AND data_type IN ('timestamp without time zone', 'timestamp with time zone');
+            """)
+
+            columns = [row[0] for row in cursor.fetchall()]
+
+        if columns:
+            for column in columns:
+                cursor.execute(f"""
+                    UPDATE {schema}.{table}
+                    SET {column} = null
+                    WHERE
+                    {column} IS NOT NULL AND
+                    {column} < '1970-01-01 00:00:00'
+                    RETURNING {id_field};
+                    """
+                )
+                updated_rows = cursor.fetchall()
+
+                for row in updated_rows:
+                    logging.warning(f'Problem date set to null for column {column} in row with {id_field} : {row}')
