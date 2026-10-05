@@ -52,6 +52,7 @@ class ProcessingStatusLogger:
             self.feature_service_url = feature_service_url
             self.esri_token = esri_token
             self.feature_globalid = None
+            self.feature_objectid = None
 
         self.stop = None
         self.log_status()
@@ -65,18 +66,21 @@ class ProcessingStatusLogger:
             return None
 
     def format_esri_payload(self):
-        payload = {"attributes": {
+        feature = {"attributes": {
             "status": self.status,
             "details": json.dumps(self.steps),
             "start": self.start.timestamp(),
             "environment": self.environment
         }}
         if self.stop:
-            payload["stop"] = self.stop.timestamp()
+            feature["attributes"]["stop"] = self.stop.timestamp()
         if self.feature_globalid:
-            payload["globalid"] = self.feature_globalid
+            feature["attributes"]["globalid"] = self.feature_globalid
+        if self.feature_objectid:
+            feature["attributes"]["objectid"] = self.feature_objectid
 
-        return {"adds": [payload], "f": "json"} if self.feature_globalid is None else {"updates": [payload], "f": "json"}
+        edit_type = "adds" if self.feature_globalid is None else "updates"
+        return {edit_type: json.dumps([feature])}
 
     def log_status_to_feature_service(self):
         if not self.feature_service_url or not self.esri_token:
@@ -88,18 +92,20 @@ class ProcessingStatusLogger:
         }
         payload = self.format_esri_payload()
         try:
-            response = requests.post(f"{self.feature_service_url}/applyEdits", json=payload, headers=headers, params={"f": "json"})
+            response = requests.post(f"{self.feature_service_url}/applyEdits", data=payload, headers=headers, params={"f": "json"})
             response.raise_for_status()
             if 'error' in response.json():
                 raise Exception(response.json()['error'])
 
-            self.feature_globalid = response.json()['addResults'][0]["globalId"]
+            if self.feature_globalid is None:
+                self.feature_globalid = response.json()['addResults'][0]["globalId"]
+            if self.feature_objectid is None:
+                self.feature_objectid = response.json()['addResults'][0]["objectId"]
         except Exception as e:
             logger.info(f"Error logging status to feature service: {e}")
 
     def log_status(self):
-        # not working
-        # self.log_status_to_feature_service()
+        self.log_status_to_feature_service()
         self.log_status_to_slack()
 
     def format_slack_message(self):
