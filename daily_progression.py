@@ -360,13 +360,12 @@ def update_and_verify_progressions(gis_url, gis_user, gis_password, view_id, dat
                                    max_points_before_single_geom_chunk, chunk, conn):
 
     for id in data_source_ids:
-        # Find and update the feature layer the view is not looking at
-        new_data_source_id = return_unused_data_id(gis_url, gis_user, gis_password, view_id, data_source_ids)
-
-        feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
-        feature_layer_url = feature_layer.url
-
         try:
+            # Find and update the feature layer the view is not looking at
+            new_data_source_id = return_unused_data_id(gis_url, gis_user, gis_password, view_id, data_source_ids)
+
+            feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
+            feature_layer_url = feature_layer.url
             logging.info(f"Updating and verifying progressions for data source id: {id}")
             # Delete all progressions that were updated
             delete_features_from_hosted_layer(gis_url, gis_user, gis_password, new_data_source_id, where)
@@ -478,5 +477,3 @@ if __name__ == '__main__':
                            gis_url, gis_user, gis_password,
                            daily_progression_view_id, daily_progression_data_ids,
                            run_sync_hosted_upload)
-
-
