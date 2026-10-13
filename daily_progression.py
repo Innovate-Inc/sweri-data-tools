@@ -235,6 +235,31 @@ def update_global_date_values(db_conn, schema, id_list, active_fire_global_remov
     logger.info(f'Updated global_start_date and global_removal_date for {len(id_list)} fires')
 
 @log_this
+def update_is_final_perimeter_field(db_conn, schema, where_clause):
+    try:
+        cursor = db_conn.cursor()
+        with db_conn.transaction():
+            cursor.execute(f'''
+    
+                UPDATE {schema}.daily_progression
+                SET is_final_perimeter = CASE
+                    WHEN removal_date IS NULL OR removal_date = global_removal_date THEN 1
+                    ELSE 0
+                END
+                WHERE {where_clause};
+    
+        ''')
+        # Get the number of rows that were updated
+        rows_updated = cursor.rowcount
+
+        logger.info(f'Updated is_final_perimeter field value for {rows_updated} fires')
+
+    except Exception as e:
+        logger.error(f"Failed to update is_final_perimeter: {e}")
+        raise
+
+
+@log_this
 def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
     """
     If two progressions have geographic intersection and date overlap, they are considered a complex
@@ -428,6 +453,8 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
         all_ids_string = ','.join(f"'{id}'" for id in all_ids)
 
         where = f"poly_irwinid IN ({all_ids_string})"
+
+        update_is_final_perimeter_field(conn, target_schema, where)
 
         update_and_verify_progressions(gis_url, gis_user, gis_password, daily_progression_data_ids, where,
                                        target_schema, daily_progression_table,
