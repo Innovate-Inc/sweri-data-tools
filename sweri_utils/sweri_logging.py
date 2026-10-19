@@ -3,7 +3,7 @@ import sys
 import json
 from urllib.parse import urlencode
 
-from slack_sdk import WebClient
+
 import requests
 from datetime import datetime
 
@@ -15,6 +15,11 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='
 #     logger.addHandler(watchtower.CloudWatchLogHandler())
 # except Exception as e:
 #     logger.warning(f'watchtower not available: {e}')
+
+try:
+    from slack_sdk import WebClient
+except ImportError:
+    logger.warning("slack_sdk not available. Slack logging will be disabled.")
 
 stream_handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(stream_handler)
@@ -69,11 +74,11 @@ class ProcessingStatusLogger:
         feature = {"attributes": {
             "status": self.status,
             "details": json.dumps(self.steps),
-            "start": self.start.timestamp(),
+            "start": self.start.timestamp() * 1000,  # Convert to milliseconds
             "environment": self.environment
         }}
         if self.stop:
-            feature["attributes"]["stop"] = self.stop.timestamp()
+            feature["attributes"]["stop"] = self.stop.timestamp() * 1000  # Convert to milliseconds
         if self.feature_globalid:
             feature["attributes"]["globalid"] = self.feature_globalid
         if self.feature_objectid:

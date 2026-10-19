@@ -31,6 +31,8 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
+from sweri_utils.sweri_logging import ProcessingStatusLogger
+
 try:
     import arcpy
     ARCPY_AVAILABLE = True
@@ -64,15 +66,31 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
     tmp_extract_dir = local_dir_path / f"intersection_features_tmp_{dt.now().strftime('%Y%m%d%H%M%S')}"
 
     s3 = boto3.client('s3')
+    status = ProcessingStatusLogger(
+        feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
+        esri_token=os.getenv('PORTAL_API_KEY', ''),
+        slack_channel_id=os.getenv('SLACK_CHANNEL_ID', ''),
+        slack_token=os.getenv('SLACK_TOKEN', ''),
+        environment=os.getenv('ENVIRONMENT', ''),
+        steps={
+            'download': 'Not Started',
+            'extract': 'Not Started',
+            'repair_geometry': 'Not Started',
+                        'replace': 'Not Started'
+        },
+    )
 
     with tempfile.NamedTemporaryFile(suffix='.zip', delete=False) as tmp_zip:
         tmp_zip_path = tmp_zip.name
 
     try:
+        status.update_step('download', 'In Progress')
         logger.info(f'Downloading s3://{bucket}/{s3_obj} → {tmp_zip_path}')
         s3.download_file(bucket, s3_obj, tmp_zip_path)
         logger.info('Download complete')
+        status.update_step('download', 'Completed')
 
+        status.update_step('extract', 'In Progress')
         logger.info(f'Extracting {tmp_zip_path} → {tmp_extract_dir}')
         tmp_extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_zip_path, 'r') as zf:
@@ -84,10 +102,13 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
             raise FileNotFoundError(f'No .gdb directory found after extracting {tmp_zip_path}')
         extracted_gdb = extracted_gdbs[0]
 
+        status.update_step('extract', 'Completed')
+        status.update_step('repair_geometry', 'In Progress')
         # run Repair Geometry before going live
         logger.info(f'Running Repair Geometry on {extracted_gdb}/intersection_features')
         arcpy.management.RepairGeometry(os.path.join(extracted_gdb, 'intersection_features'), 'DELETE_NULL', 'ESRI')
-
+        status.update_step('repair_geometry', 'Completed')
+        status.update_step('replace', 'In Progress')
         # Atomically replace the old GDB: rename old → backup, new → final, remove backup
         backup_path = local_dir_path / f"intersection_features.gdb.bak"
         if final_gdb_path.exists():
@@ -98,12 +119,16 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
         shutil.move(str(extracted_gdb), str(final_gdb_path))
         logger.info(f'GDB updated at {final_gdb_path}')
+        status.update_step('replace', 'Completed')
+        status.complete()
 
     except ClientError as e:
         logger.error(f'S3 download failed: {e}')
+        status.fail()
         raise
     except Exception as e:
         logger.error(f'GDB sync failed: {e}')
+        status.fail()
         raise
     finally:
         if os.path.exists(tmp_zip_path):
