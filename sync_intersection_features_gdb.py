@@ -67,11 +67,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
 
     s3 = boto3.client('s3')
     status = ProcessingStatusLogger(
-        feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
-        esri_token=os.getenv('PORTAL_API_KEY', ''),
-        slack_channel_id=os.getenv('SLACK_CHANNEL_ID', ''),
-        slack_token=os.getenv('SLACK_TOKEN', ''),
-        environment=os.getenv('ENVIRONMENT', ''),
+        process='Intersection Features FGDB Sync',
         steps={
             'download': 'Not Started',
             'extract': 'Not Started',
