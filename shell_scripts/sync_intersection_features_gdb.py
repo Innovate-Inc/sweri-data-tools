@@ -76,7 +76,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         logger.info(f'Extracting {tmp_zip_path} → {tmp_extract_dir}')
         tmp_extract_dir.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(tmp_zip_path, 'r') as zf:
-            zf.extractall(tmp_extract_dir / "temp.gdb")
+            zf.extractall(tmp_extract_dir)
 
         # Find the .gdb directory inside the extracted content
         extracted_gdbs = list(tmp_extract_dir.glob('*.gdb'))
@@ -85,6 +85,7 @@ def download_and_extract_gdb(bucket: str, s3_obj: str, local_dir: str) -> None:
         extracted_gdb = extracted_gdbs[0]
 
         # run Repair Geometry before going live
+        logger.info(f'Running Repair Geometry on {extracted_gdb}/intersection_features')
         arcpy.management.RepairGeometry(os.path.join(extracted_gdb, 'intersection_features'), 'DELETE_NULL', 'ESRI')
 
         # Atomically replace the old GDB: rename old → backup, new → final, remove backup

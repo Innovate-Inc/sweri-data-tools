@@ -16,10 +16,11 @@
 export ARCGISHOME=/opt/arcgis/server
 . ~/miniconda3/etc/profile.d/conda.sh
 
-if ! conda activate sweri-python; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to activate conda environment"
-    exit 1
-fi
+# We are now using the base conda environment for ArcGIS Server, so no need to activate a separate environment.
+#if ! conda activate sweri-python; then
+#    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Failed to activate conda environment"
+#    exit 1
+#fi
 
 # Navigate to the scripts directory (parent of shell_scripts)
 parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
