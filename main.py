@@ -87,18 +87,11 @@ if __name__ == "__main__":
     treatment_index_points_table = 'treatment_index_points'
 
     ############## processing in docker ################
-    status_logging = ProcessingStatusLogger(
-        feature_service_url=os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', ''),
-        esri_token=os.getenv('PORTAL_API_KEY', ''),
-        slack_channel_id=os.getenv('SLACK_CHANNEL_ID', ''),
-        slack_token=os.getenv('SLACK_TOKEN', ''),
-        environment=os.getenv('ENVIRONMENT', ''),
-        steps={
-            'daily_progressions': 'Not Started',
-            'treatment_index': 'Not Started',
-            'intersections': 'Not Started'
-        }
-    )
+    status_logging = ProcessingStatusLogger('Core Data Processing', steps={
+        'daily_progressions': 'Not Started',
+        'treatment_index': 'Not Started',
+        'intersections': 'Not Started'
+    })
 
     try:
         status_logging.update_step('daily_progressions', 'Running')
