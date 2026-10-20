@@ -87,15 +87,18 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
             # Join explicitly so a single value doesn't become "(1,)" in the SQL IN clause.
             object_id_where = f"({','.join(str(x) for x in source_object_ids)})"
             # snapping the collection of target features to a grid before dissolving to prevent topology errors that can arise when dissolving features with very small gaps or overlaps
+            # added area of base shape for proportional calculations that cannot use the dissolved acreage (eg. for calculating total_cost per acre of a treatment that intersects multiple target features)
             query = f"""
                     WITH intersection_data AS (
                         SELECT
                             ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 AS acre_overlap,
                             a.unique_id AS id_1,
                             a.feat_source AS id_1_source,
+                            ST_AREA(ST_TRANSFORM(a.shape, 4326)::geography) * 0.000247105 AS id_1_acres,
                             b.unique_id AS id_2,
                             b.feat_source AS id_2_source,
                             a.objectid AS objectid,
+                            ST_AREA(ST_TRANSFORM(b.shape, 4326)::geography) * 0.000247105 AS id_2_acres,
                             ST_MakeValid(ST_SnapToGrid(b.shape, 0.000000001)) as shape
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
                         WHERE a.objectid IN {object_id_where} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
