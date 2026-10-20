@@ -257,7 +257,7 @@ def facts_fallon_category(conn, schema, field_name):
         ''')
 
         cursor.execute(f'''
-           UPDATE staging.treatment_index
+           UPDATE {schema}.treatment_index
            SET {field_name} = 
                CASE
                    WHEN method = 'Manual' THEN 'Rearrangement'
