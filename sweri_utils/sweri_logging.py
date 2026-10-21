@@ -2,8 +2,7 @@ import logging
 import sys
 import json
 from urllib.parse import urlencode
-
-from slack_sdk import WebClient
+import os
 import requests
 from datetime import datetime
 
@@ -15,6 +14,11 @@ logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s', encoding='
 #     logger.addHandler(watchtower.CloudWatchLogHandler())
 # except Exception as e:
 #     logger.warning(f'watchtower not available: {e}')
+
+try:
+    from slack_sdk import WebClient
+except ImportError:
+    logger.warning("slack_sdk not available. Slack logging will be disabled.")
 
 stream_handler = logging.StreamHandler(sys.stdout)
 logger.addHandler(stream_handler)
@@ -28,29 +32,34 @@ def log_this(func):
 
 
 class ProcessingStatusLogger:
-    def __init__(self, slack_channel_id: str, steps: dict[str, str],
-                 slack_token: str, environment: str, esri_token: str = '', feature_service_url: str = ''):
-        if not slack_channel_id or not slack_token:
+    def __init__(self, process: str = '', steps: dict | None = None):
+        self.feature_service_url = os.getenv('PROCESSING_STATUS_FEATURE_SERVICE_URL', '')
+        self.esri_token=os.getenv('PORTAL_API_KEY', '')
+        self.slack_channel_id = os.getenv('SLACK_CHANNEL_ID', '')
+        self.slack_token = os.getenv('SLACK_TOKEN', '')
+        self.environment = os.getenv('ENVIRONMENT', '')
+        self.steps = steps if steps is not None else {}
+        self.status = 'Starting'
+        self.start = datetime.now()
+        self.environment = self.environment
+        self.process = process
+
+        if not self.slack_channel_id or not self.slack_token:
             logger.info("Slack channel ID or token is not provided. Skipping Slack logging.")
             self.slack_client = None
             self.slack_channel_id = None
         else:
-            self.slack_channel_id = slack_channel_id
-            self.slack_client = WebClient(token=slack_token)  # Replace with your Slack bot token
+            self.slack_channel_id = self.slack_channel_id
+            self.slack_client = WebClient(token=self.slack_token)  # Replace with your Slack bot token
             self.slack_message_id = None
 
-        self.steps = steps
-        self.status = 'Starting'
-        self.start = datetime.now()
-        self.environment = environment
-
-        if not feature_service_url or not esri_token:
+        if not self.feature_service_url or not self.esri_token:
             logger.info("Feature service URL or ESRI token is not provided. Skipping feature service logging.")
             self.feature_service_url = None
             self.esri_token = None
         else:
-            self.feature_service_url = feature_service_url
-            self.esri_token = esri_token
+            self.feature_service_url = self.feature_service_url
+            self.esri_token = self.esri_token
             self.feature_globalid = None
             self.feature_objectid = None
 
@@ -69,11 +78,12 @@ class ProcessingStatusLogger:
         feature = {"attributes": {
             "status": self.status,
             "details": json.dumps(self.steps),
-            "start": self.start.timestamp(),
-            "environment": self.environment
+            "start": self.start.timestamp() * 1000,  # Convert to milliseconds
+            "environment": self.environment,
+            "process": self.process
         }}
         if self.stop:
-            feature["attributes"]["stop"] = self.stop.timestamp()
+            feature["attributes"]["stop"] = self.stop.timestamp() * 1000  # Convert to milliseconds
         if self.feature_globalid:
             feature["attributes"]["globalid"] = self.feature_globalid
         if self.feature_objectid:
@@ -122,7 +132,7 @@ class ProcessingStatusLogger:
             {
                 "type": "markdown",
                 "text": (
-                    f"# {self.environment.capitalize()} Data Processing\n"
+                    f"# {self.environment.capitalize()} {self.process}\n"
                     f"**Status**: {self.status} {status_emoji}\n"
                     f"| Step | Status |\n|---|---|\n"
                     f"| Started | {self.start.isoformat()} |\n"

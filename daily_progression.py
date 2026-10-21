@@ -6,7 +6,7 @@ os.environ["CRYPTOGRAPHY_OPENSSL_NO_LEGACY"] = "1"
 import watchtower
 from arcgis.gis import GIS
 
-from sweri_utils.sql import connect_to_pg_db, add_column
+from sweri_utils.sql import connect_to_pg_db, add_column, null_problem_dates
 from sweri_utils.download import service_to_postgres
 from sweri_utils.hosted import hosted_upload_and_swizzle, hosted_upload_from_postgres, \
     delete_features_from_hosted_layer, get_feature_layer_from_item, verify_feature_count
@@ -235,6 +235,31 @@ def update_global_date_values(db_conn, schema, id_list, active_fire_global_remov
     logger.info(f'Updated global_start_date and global_removal_date for {len(id_list)} fires')
 
 @log_this
+def update_is_final_perimeter_field(db_conn, schema, where_clause):
+    try:
+        cursor = db_conn.cursor()
+        with db_conn.transaction():
+            cursor.execute(f'''
+    
+                UPDATE {schema}.daily_progression
+                SET is_final_perimeter = CASE
+                    WHEN removal_date IS NULL OR removal_date = global_removal_date THEN 1
+                    ELSE 0
+                END
+                WHERE {where_clause};
+    
+        ''')
+        # Get the number of rows that were updated
+        rows_updated = cursor.rowcount
+
+        logger.info(f'Updated is_final_perimeter field value for {rows_updated} fires')
+
+    except Exception as e:
+        logger.error(f"Failed to update is_final_perimeter: {e}")
+        raise
+
+
+@log_this
 def detect_and_update_fire_complexes(db_conn, schema, iteration_limit):
     """
     If two progressions have geographic intersection and date overlap, they are considered a complex
@@ -397,6 +422,7 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
 
     # import current fires layer into postgres
     import_current_fires_snapshot(wfigs_current_fires_url, wkid, ogr_db_string, conn, target_schema)
+    null_problem_dates(conn, target_schema, 'current_fires_snapshot', 'poly_irwinid')
     makevalid_snapshot_shapes(conn, target_schema)
 
     # add new fires from current fires into daily progression
@@ -428,6 +454,8 @@ def run_daily_progressions(wfigs_current_fires_url, wkid, ogr_db_string, conn, t
         all_ids_string = ','.join(f"'{id}'" for id in all_ids)
 
         where = f"poly_irwinid IN ({all_ids_string})"
+
+        update_is_final_perimeter_field(conn, target_schema, where)
 
         update_and_verify_progressions(gis_url, gis_user, gis_password, daily_progression_data_ids, where,
                                        target_schema, daily_progression_table,

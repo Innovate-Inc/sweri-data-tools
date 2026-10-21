@@ -24,7 +24,7 @@ export ARCGISHOME=/opt/arcgis/server
 
 # Navigate to the scripts directory (parent of shell_scripts)
 parent_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
-cd "$parent_path"
+cd "$parent_path/../"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting intersection_features GDB sync"
 python sync_intersection_features_gdb.py

@@ -3,7 +3,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
-from . import download, files, conversion, s3, sql, hosted
+from . import download, files, conversion, s3, sql, hosted, sweri_logging
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 from intersections.utils import chunk_it
@@ -1257,3 +1257,10 @@ class IntersectionTests(TestCase):
 
         conn.close.assert_called_once()
 
+
+class SweriLoggingTests(TestCase):
+    def test_no_envs_does_not_raise(self):
+        try:
+            logger = sweri_logging.ProcessingStatusLogger()
+        except Exception as e:
+            self.fail(f"ProcessingStatusLogger raised an exception unexpectedly: {e}")
