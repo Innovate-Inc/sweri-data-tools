@@ -121,8 +121,8 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
                          WHERE a.objectid = b.objectid
                     ),
                     first_insert AS (
-                        INSERT INTO {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source)
-                        SELECT acre_overlap, id_1, id_1_source, id_2, id_2_source
+                        INSERT INTO {schema}.{insert_table} (acre_overlap, id_1, id_1_source, id_2, id_2_source, id_1_acres, id_2_acres)
+                        SELECT acre_overlap, id_1, id_1_source, id_2, id_2_source, id_1_acres, id_2_acres
                         FROM intersection_data
                         WHERE acre_overlap > 0
                     )
