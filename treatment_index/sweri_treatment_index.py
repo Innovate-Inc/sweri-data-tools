@@ -112,14 +112,15 @@ def update_treatment_points(conn, schema, treatment_index):
          f'''
             insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
             status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, twig_category, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, fallon_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
+            
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
             unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, twig_category, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, fallon_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
-            from {schema}.{treatment_index}
+            from {schema}.{treatment_index};
         ''')
 
 @log_this
@@ -370,7 +371,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     t = []
 
     # Hazardous Fuels must finish before common_attributes starts, since CA strips out Hazardous Fuels entries
-    facts_chain = chain(
+    facts_chain = chaiUn(
         hazardous_fuels_download_and_insert.s(
             haz_fuels_table, facts_haz_fuels_gdb_url, facts_haz_gdb_path, wkid,
             facts_haz_fuels_fc_name, schema, table, ogr_db_conn_string
