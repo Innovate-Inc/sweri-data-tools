@@ -1,5 +1,8 @@
+import json
 import os
 import sys
+from datetime import datetime
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest import TestCase
 from unittest.mock import patch, Mock, call, mock_open, MagicMock
@@ -7,7 +10,7 @@ from . import download, files, conversion, s3, sql, hosted, sweri_logging
 from .swizzle import get_layer_definition, get_new_definition, get_view_admin_url, clear_current_definition, \
     add_to_definition, swizzle_service
 from intersections.utils import chunk_it
-from intersections import tasks
+from intersections import tasks, sweri_intersections
 
 
 class DownloadTests(TestCase):
@@ -1256,6 +1259,89 @@ class IntersectionTests(TestCase):
             tasks._execute_intersection_query('public', 'target', 'source_a', 'target_b', (7,))
 
         conn.close.assert_called_once()
+
+    @patch('requests.post')
+    def test_updates_only_matching_target_sources(self, mock_post):
+        mock_response = Mock()
+        mock_response.json.return_value = {'updateResults': [{'success': True}]}
+        mock_post.return_value = mock_response
+
+        start_time = datetime(2024, 2, 1, 12, 30, 0)
+        features = [
+            {'attributes': {'objectid': 11, 'id_source': 'source_a'}},
+            {'attributes': {'objectid': 22, 'id_source': 'source_b'}}
+        ]
+        intersection_targets = {'source_b': {'name': 'source_b'}}
+
+        sweri_intersections.update_last_run(
+            features,
+            start_time,
+            'https://example.com/arcgis/rest/services',
+            7,
+            intersection_targets
+        )
+
+        sent_features = json.loads(mock_post.call_args.kwargs['params']['features'])
+        self.assertEqual(sent_features, [
+            {'attributes': {'objectid': 22, 'last_run': start_time.timestamp() * 1000}},
+        ])
+        mock_post.assert_called_once()
+
+    @patch('requests.post')
+    def test_omits_all_updates_when_no_target_matches(self, mock_post):
+        mock_response = Mock()
+        mock_response.json.return_value = {'updateResults': [{'success': True}]}
+        mock_post.return_value = mock_response
+
+        start_time = datetime(2024, 2, 1, 12, 30, 0)
+        features = [
+            {'attributes': {'objectid': 11, 'id_source': 'source_a'}},
+            {'attributes': {'objectid': 22, 'id_source': 'source_c'}},
+        ]
+        intersection_targets = {'source_b': {'name': 'source_b'}}
+
+        sweri_intersections.update_last_run(
+            features,
+            start_time,
+            'https://example.com/arcgis/rest/services',
+            7,
+            intersection_targets
+        )
+
+        sent_features = json.loads(mock_post.call_args.kwargs['params']['features'])
+        self.assertEqual(sent_features, [])
+        mock_post.assert_called_once()
+
+    @patch('requests.post')
+    @patch('arcgis.GIS')
+    def test_raises_value_error_when_update_results_include_failed_records(self, mock_gis, mock_post):
+        mock_gis.return_value.session.auth.token = 'token'
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'updateResults': [
+                {'success': True},
+                {'success': False, 'error': {'message': 'failed'}}
+            ]
+        }
+        mock_post.return_value = mock_response
+
+        start_time = datetime(2024, 2, 1, 12, 30, 0)
+        features = [
+            {'attributes': {'objectid': 11, 'id_source': 'source_a'}},
+            {'attributes': {'objectid': 22, 'id_source': 'source_b'}},
+        ]
+
+        with self.assertRaises(ValueError):
+            sweri_intersections.update_last_run(
+                features,
+                start_time,
+                'https://example.com/arcgis/rest/services',
+                7,
+                'https://example.com/arcgis',
+                'user',
+                'pass',
+                {'source_b': {'name': 'source_b'}},
+            )
 
 
 class SweriLoggingTests(TestCase):
