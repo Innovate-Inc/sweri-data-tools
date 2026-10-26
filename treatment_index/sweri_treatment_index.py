@@ -50,14 +50,34 @@ def fund_source_updates(conn, schema, treatment_index):
 
         # Fund source consolidation from IFPRS fundsourcecategory
         # fund_source populated and overwritten since IFPRS has no fund_code
+
+        # Sometimes IFPRS has a | delimiter at the beginning of the string when there is only one value
+        # Here we remove any | from the start of the string as it should only come in between values
+        cursor.execute(f'''
+
+            UPDATE {schema}.{treatment_index}
+            SET fund_source = SUBSTRING(fund_source FROM 2)
+            WHERE identifier_database = 'IFPRS'
+              AND fund_source LIKE '|%';
+
+        ''')
+
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index}
+                SET fund_source = 'Multiple'
+                WHERE
+                identifier_database = 'IFPRS' AND 
+                position('|' in fund_source) > 0;
+        ''')
+
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_source = lt.fund_code
-                AND ti.identifier_database = 'IFPRS'
-                AND ti.fund_source IS null;
+                AND ti.identifier_database = 'IFPRS';
             ''')
+
         # Set IFPRS entries that didn't get consolidated to 'Other'
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index} ti
@@ -65,8 +85,7 @@ def fund_source_updates(conn, schema, treatment_index):
                 WHERE ti.identifier_database = 'IFPRS'
                 AND ti.fund_source NOT IN 
                 (SELECT lt.fund_source
-                FROM {schema}.fund_source_lookup lt)
-                AND ti.fund_source IS null;
+                FROM {schema}.fund_source_lookup lt);
             ''')
 
         cursor.execute(f'''
