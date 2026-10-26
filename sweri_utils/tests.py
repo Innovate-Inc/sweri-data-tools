@@ -1313,9 +1313,7 @@ class IntersectionTests(TestCase):
         mock_post.assert_called_once()
 
     @patch('requests.post')
-    @patch('arcgis.GIS')
-    def test_raises_value_error_when_update_results_include_failed_records(self, mock_gis, mock_post):
-        mock_gis.return_value.session.auth.token = 'token'
+    def test_raises_value_error_when_update_results_include_failed_records(self, mock_post):
         mock_response = Mock()
         mock_response.json.return_value = {
             'updateResults': [
@@ -1337,10 +1335,8 @@ class IntersectionTests(TestCase):
                 start_time,
                 'https://example.com/arcgis/rest/services',
                 7,
-                'https://example.com/arcgis',
-                'user',
-                'pass',
-                {'source_b': {'name': 'source_b'}},
+
+                {'source_b': {'name': 'source_b'}}
             )
 
 
