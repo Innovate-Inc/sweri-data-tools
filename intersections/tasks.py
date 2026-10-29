@@ -2,7 +2,7 @@ from intersections.utils import insert_feature_into_db, chunk_it
 from psycopg import OperationalError
 from sweri_utils.download import get_ids, fetch_features
 from sweri_utils.sweri_logging import log_this
-from sweri_utils.sql import delete_from_table, insert_from_db, create_db_conn_from_envs
+from sweri_utils.sql import delete_from_table, insert_from_db, create_db_conn_from_envs, calculate_geodesic_area
 from worker import app
 import logging
 
@@ -94,11 +94,11 @@ def _execute_intersection_query(schema, insert_table, source_key, target_key, so
                             ST_AREA(ST_TRANSFORM(ST_INTERSECTION(a.shape, b.shape),4326)::geography) * 0.000247105 AS acre_overlap,
                             a.unique_id AS id_1,
                             a.feat_source AS id_1_source,
-                            ST_AREA(ST_TRANSFORM(a.shape, 4326)::geography) * 0.000247105 AS id_1_acres,
+                            a.feat_acres AS id_1_acres,
                             b.unique_id AS id_2,
                             b.feat_source AS id_2_source,
+                            b.feat_acres AS id_2_acres,
                             a.objectid AS objectid,
-                            ST_AREA(ST_TRANSFORM(b.shape, 4326)::geography) * 0.000247105 AS id_2_acres,
                             ST_MakeValid(ST_SnapToGrid(b.shape, 0.000000001)) as shape
                         FROM {schema}.intersection_features a, {schema}.intersection_features b
                         WHERE a.objectid IN {object_id_where} AND b.feat_source = '{target_key}' and ST_INTERSECTS(a.shape, b.shape)
@@ -163,11 +163,21 @@ def insert_from_db_task(
             wkid,
             where_clause)
 
-
 @app.task
 def service_chunk_to_postgres(url, params, schema, destination_table, key, value, wkid):
     conn = create_db_conn_from_envs()
     logger.info(f'fetching geojson features from {value["source"]}')
     r = fetch_features(url + '/query', params, return_full_response=True)
-    for f in r['features']:
-        insert_feature_into_db(conn, destination_table, f, key, value['id'], schema, wkid)
+    try:
+        for f in r['features']:
+            insert_feature_into_db(conn, destination_table, f, key, value['id'], schema, wkid)
+    finally:
+        conn.close()
+        del conn
+
+    unique_ids = ",".join([f"'{f['properties'][value['id']]}'" for f in r['features']])
+    calculate_geodesic_area(schema, destination_table, f"feat_source = '{key}' AND unique_id in ({unique_ids})")
+
+@app.task
+def calculate_geodesic_area_task(schema, table, where):
+    calculate_geodesic_area(schema, table, where)
