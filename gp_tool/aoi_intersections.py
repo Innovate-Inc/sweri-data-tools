@@ -37,7 +37,7 @@ def configure_intersection_sources(intersections_source_list):
 
 
 def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_name):
-    # update existing fields with new id column names
+    # update existing fields with new id column names. The id_1 fields are from the AOI
     arcpy.management.AlterField(intersect_result, 'unique_id', 'id_1', 'id_1')
     arcpy.management.AlterField(intersect_result, 'unique_id_1', 'id_2', 'id_2')
     arcpy.management.AlterField(intersect_result, 'feat_source', 'id_1_source', 'id_1_source')
@@ -45,7 +45,9 @@ def update_schema_for_intersections_insert(intersect_result, fc_1_name, fc_2_nam
     # add field names
     arcpy.management.CalculateField(intersect_result, 'id_1_source', "'{}'".format(fc_1_name), 'PYTHON3')
     arcpy.management.CalculateField(intersect_result, 'id_2_source', "'{}'".format(fc_2_name), 'PYTHON3')
-
+    # add geodesic area field to intersect result for calculating overlap
+    arcpy.management.AlterField(intersect_result, 'feat_acres', 'id_1_acres')
+    arcpy.management.AlterField(intersect_result, 'feat_acres_1', 'id_2_acres')
 
 def format_message(progress, buffer, label):
     data = {
@@ -61,11 +63,20 @@ if __name__ == '__main__':
     treatment_intersections = arcpy.GetParameterAsText(1) # Treatment Intersections
     intersection_features = arcpy.GetParameterAsText(2)
     intersections_source_list = arcpy.GetParameterAsText(3)
+
+    if arcpy.Describe(aoi).shapeType == 'Polygon':
+        # add geodesic area to aoi for calculating overlap
+        arcpy.AddMessage('Calculating AOI area')
+        arcpy.management.AddField(aoi, 'feat_acres', 'DOUBLE')
+        arcpy.management.CalculateGeometryAttributes(aoi, [['feat_acres', 'AREA_GEODESIC']],
+                                                     area_unit='ACRES_US')
+
     progress = 0
     buffer = 2
     label = "Configuring data sources"
     arcpy.AddMessage(format_message(progress, buffer, label))
     target_table = CreateTable(arcpy.env.scratchGDB, 'intersections', template=treatment_intersections)
+
 
     source_feature = {'source_key': 'custom', 'source_value': aoi}
     _, intersect_targets = configure_intersection_sources(intersections_source_list)

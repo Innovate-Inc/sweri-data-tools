@@ -20,8 +20,8 @@ from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle
 from sweri_utils.conversion import s3_gdb_update
 from intersections.utils import insert_feature_into_db, chunk_it
-from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
-
+from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres, \
+    calculate_geodesic_area_task
 
 logger = logging.getLogger(__name__)
 
@@ -165,7 +165,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
                 'shape',
                 wkid,
                 where_clause
-            ))
+            ) | calculate_geodesic_area_task.si(schema, insert_table, f"feat_source = '{key}'"))
 
     g = group(tasks)()
     g.get()
