@@ -199,7 +199,7 @@ def run_intersections(docker_conn, docker_schema,
     # # refresh the spatial index
     refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
     # calculate area for each feature that does not currently have it
-    calculate_geodesic_area(docker_schema, 'intersection_features', "feat_area is null")
+    calculate_geodesic_area(docker_schema, 'intersection_features', "feat_acres is null")
     # # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     # ############## calculate intersections ################
