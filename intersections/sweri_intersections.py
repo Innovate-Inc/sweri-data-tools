@@ -15,14 +15,12 @@ from dotenv import load_dotenv
 from sweri_utils.download import fetch_features, get_ids, get_all_features, get_query_params_chunk
 from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_to_pg_db, delete_from_table, \
     create_db_conn_from_envs, truncate_and_insert, switch_autovacuum_and_triggers, delete_duplicate_records, \
-    populate_sequence_field, makevalid_shapes
+    populate_sequence_field, makevalid_shapes, calculate_geodesic_area
 from sweri_utils.sweri_logging import log_this
 from sweri_utils.hosted import hosted_upload_and_swizzle, get_token
 from sweri_utils.conversion import s3_gdb_update
 from intersections.utils import insert_feature_into_db, chunk_it
-from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres, \
-    calculate_geodesic_area_task
-
+from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
 logger = logging.getLogger(__name__)
 
 
@@ -164,7 +162,7 @@ def fetch_features_to_intersect(intersect_sources, conn, schema, insert_table, w
                 'shape',
                 wkid,
                 where_clause
-            ) | calculate_geodesic_area_task.si(schema, insert_table, f"feat_source = '{key}'"))
+            ))
 
     g = group(tasks)()
     g.get()
@@ -200,7 +198,8 @@ def run_intersections(docker_conn, docker_schema,
     makevalid_shapes(docker_conn, docker_schema, 'intersection_features', 'shape')
     # # refresh the spatial index
     refresh_spatial_index(docker_conn, docker_schema, 'intersection_features')
-    #
+    # calculate area for each feature that does not currently have it
+    calculate_geodesic_area(docker_schema, 'intersection_features', "feat_area is null")
     # # run VACUUM ANALYZE to increase performance after bulk updates
     run_vacuum_analyze(docker_conn, docker_schema, 'intersection_features')
     # ############## calculate intersections ################

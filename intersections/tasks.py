@@ -175,9 +175,6 @@ def service_chunk_to_postgres(url, params, schema, destination_table, key, value
         conn.close()
         del conn
 
-    unique_ids = ",".join([f"'{f['properties'][value['id']]}'" for f in r['features']])
-    calculate_geodesic_area(schema, destination_table, f"feat_source = '{key}' AND unique_id in ({unique_ids})")
-
 @app.task
 def calculate_geodesic_area_task(schema, table, where):
     calculate_geodesic_area(schema, table, where)
