@@ -57,7 +57,7 @@ def configure_intersection_sources(features, start):
 
 
 @log_this
-def update_last_run(features, start_time, url, layer_id, intersect_targets):
+def update_last_run(features, start_time, url, layer_id, intersect_sources):
     # authenticate here as the script takes a while to run
     token = get_token()
     update_feat = json.dumps([
@@ -66,7 +66,7 @@ def update_last_run(features, start_time, url, layer_id, intersect_targets):
                 'objectid': f['attributes']['objectid'],
                 'last_run': start_time.timestamp() * 1000
             }
-        } for f in features if f['attributes']['id_source'] in intersect_targets.keys()
+        } for f in features if f['attributes']['id_source'] in intersect_sources.keys()
     ])
 
     update_r = r.post(f'{url}/{layer_id}/updateFeatures', params={'f': 'json', 'features': update_feat, 'token': token})
@@ -226,7 +226,7 @@ def run_intersections(docker_conn, docker_schema,
 
 
     # ############ update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_source_list_url, 0, intersect_targets)
+    update_last_run(intersections, start, intersection_source_list_url, 0, intersect_sources)
     # close connections
     docker_conn.close()
 
