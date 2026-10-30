@@ -3,6 +3,7 @@ name: Unit test python library
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: sweri-data-tools
+  BUILT_IMAGE_ARTIFACT: sweri-data-tools-image
 
 permissions:
   id-token: write
@@ -22,61 +23,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit_test:
+  build_image:
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-26.04-arm
-    name: unit test python lib
+    name: build app image once
+    outputs:
+      artifact_name: ${{ steps.artifact_name.outputs.artifact_name }}
     steps:
-#      - name: Install libkrb5 for Kerberos on Linux
-#        run: |
-#          sudo apt-get update
-#          sudo apt-get install libkrb5-dev
-#          pip install requests-kerberos
       - name: checkout
         uses: actions/checkout@v3
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{secrets.AWS_ECR_IAM_ARN}}
-          aws-region: us-west-2
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-        with:
-          mask-password: 'true'
-#      - uses: actions/setup-python@v5
-#        with:
-#          python-version: 3.11.8
-#      - name: install deps
-#        run: pip install -r requirements.testing.txt
-#      - name: run tests
-#        run: pytest --cov=sweri_utils ./sweri_utils/tests.py
-      - name: Build and export
-        id: build-image-backend
+
+      - name: Set artifact name
+        id: artifact_name
+        run: echo "artifact_name=${{ env.BUILT_IMAGE_ARTIFACT }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image once for tests and ECR
         uses: docker/build-push-action@v6
         with:
           file: ./docker/Dockerfile
           context: .
           load: true
-          cache-from: type=registry,ref=${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:latest
-#          outputs: type=docker,dest=${{ runner.temp }}/app.tar
+          tags: sweri-data-tools:test
+          outputs: type=docker,dest=${{ runner.temp }}/app.tar
+
+      - name: Upload built image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BUILT_IMAGE_ARTIFACT }}
+          path: ${{ runner.temp }}/app.tar
+          if-no-files-found: error
+
+  unit_test:
+    needs: build_image
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-26.04-arm
+    name: unit test python lib
+    steps:
+      - name: Download built image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.BUILT_IMAGE_ARTIFACT }}
+          path: ${{ runner.temp }}
+
+      - name: Load built image
+        run: docker load --input ${{ runner.temp }}/app.tar
+
       - name: Run backend unit tests
         run: |
-          docker run ${{ steps.build-image-backend.outputs.imageid }} \
-            sh -c "pip install -r requirements.testing.txt && pytest --cov=sweri_utils ./sweri_utils/tests.py && coverage report --format=markdown" >> $GITHUB_STEP_SUMMARY
-#      - name: Upload artifact
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: myimage
-#          path: ${{ runner.temp }}/myimage.tar
+          docker run --rm sweri-data-tools:test \
+            sh -c "pip install -r requirements.testing.txt && pytest --cov=sweri_utils ./sweri_utils/tests.py && coverage report --format=markdown" >> "$GITHUB_STEP_SUMMARY"
+
   push_image:
-    needs: unit_test
+    needs: [build_image, unit_test]
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/ecr-publish.yml
     with:
-      tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }} 
+      tag: ${{ github.ref == 'refs/heads/main' && 'latest' || 'staging' }}
       environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
+      image_artifact_name: ${{ needs.build_image.outputs.artifact_name }}
     secrets:
       AWS_ECR_IAM_ARN: ${{ secrets.AWS_ECR_IAM_ARN }}

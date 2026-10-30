@@ -11,20 +11,15 @@ on:
         required: true
         type: string
         default: staging
-#      image_temp:
-#        required: false
-#        type: string
-#        default: ''
+      image_artifact_name:
+        required: false
+        type: string
+        default: sweri-data-tools-image
 
     secrets:
       AWS_ECR_IAM_ARN:
         required: true
-# push:
-#   branches:
-#     - main
-#  pull_request:
-#    branches:
-#      - main
+
   workflow_dispatch:
 
 env:
@@ -56,22 +51,14 @@ jobs:
         with:
           mask-password: 'true'
 
-#      - name: Download artifact
-#        if: inputs.image_temp != ''
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: myimage
-#          path: ${{ inputs.image_temp }}
-#
-#      - name: Load image
-#        if: inputs.image_tar != ''
-#        run: |
-#          docker load --input ${{ runner.temp }}/app.tar
-#          docker image ls -a
+      - name: Download built image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.image_artifact_name }}
+          path: ${{ runner.temp }}
 
-      - name: Set up Docker Build
-#        if: inputs.image_temp == ''
-        uses: docker/setup-buildx-action@v3
+      - name: Load image from artifact
+        run: docker load --input ${{ runner.temp }}/app.tar
 
       - name: Get tags for backend image
         uses: docker/metadata-action@v5
@@ -82,14 +69,9 @@ jobs:
             type=raw,value=${{ inputs.tag }}
             type=sha
 
-      - name: Build and tag image
-#        if: inputs.image_temp == ''
-        id: build-image
-        uses: docker/build-push-action@v6
-        with:
-          file: ./docker/Dockerfile
-          context: .
-          platforms: linux/arm64
-          tags: ${{ steps.metadata.outputs.tags }}
-          cache-from: type=registry,ref=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
-          push: true
+      - name: Push built image to ECR
+        run: |
+          docker tag sweri-data-tools:test ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.tag }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ inputs.tag }}
+          docker tag sweri-data-tools:test ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
