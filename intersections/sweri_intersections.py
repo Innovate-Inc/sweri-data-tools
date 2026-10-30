@@ -17,7 +17,7 @@ from sweri_utils.sql import refresh_spatial_index, run_vacuum_analyze, connect_t
     create_db_conn_from_envs, truncate_and_insert, switch_autovacuum_and_triggers, delete_duplicate_records, \
     populate_sequence_field, makevalid_shapes
 from sweri_utils.sweri_logging import log_this
-from sweri_utils.hosted import hosted_upload_and_swizzle
+from sweri_utils.hosted import hosted_upload_and_swizzle, get_token
 from sweri_utils.conversion import s3_gdb_update
 from intersections.utils import insert_feature_into_db, chunk_it
 from intersections.tasks import calculate_intersections_and_insert, insert_from_db_task, service_chunk_to_postgres
@@ -59,17 +59,16 @@ def configure_intersection_sources(features, start):
 
 
 @log_this
-def update_last_run(features, start_time, url, layer_id, portal, user, password):
+def update_last_run(features, start_time, url, layer_id, intersect_sources):
     # authenticate here as the script takes a while to run
-    gis = GIS(url=portal, username=user, password=password)
-    token = gis.session.auth.token
+    token = get_token()
     update_feat = json.dumps([
         {
             'attributes': {
                 'objectid': f['attributes']['objectid'],
                 'last_run': start_time.timestamp() * 1000
             }
-        } for f in features
+        } for f in features if f['attributes']['id_source'] in intersect_sources.keys()
     ])
 
     update_r = r.post(f'{url}/{layer_id}/updateFeatures', params={'f': 'json', 'features': update_feat, 'token': token})
@@ -228,7 +227,7 @@ def run_intersections(docker_conn, docker_schema,
 
 
     # ############ update run info on intersection sources table ################
-    update_last_run(intersections, start, intersection_source_list_url, 0, portal, user, password)
+    update_last_run(intersections, start, intersection_source_list_url, 0, intersect_sources)
     # close connections
     docker_conn.close()
 
