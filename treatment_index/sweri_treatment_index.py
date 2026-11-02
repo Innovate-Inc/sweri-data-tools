@@ -110,13 +110,13 @@ def update_treatment_points(conn, schema, treatment_index):
         cursor.execute(f'truncate table {schema}.{treatment_index}_points;')
         cursor.execute(
          f'''
-            insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
+            insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, acres_accomplished, treatment_date, 
             status, identifier_database, date_current, 
              activity_code, activity, method, equipment, category, type, twig_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
-            unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
+            unique_id, name, state, acres, acres_accomplished, treatment_date, status, identifier_database, date_current, 
              activity_code, activity, method, equipment, category, type, twig_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
             from {schema}.{treatment_index}
