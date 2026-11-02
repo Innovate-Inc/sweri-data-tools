@@ -64,10 +64,10 @@ if __name__ == '__main__':
     intersection_features = arcpy.GetParameterAsText(2)
     intersections_source_list = arcpy.GetParameterAsText(3)
 
+    arcpy.management.AddField(aoi, 'feat_acres', 'DOUBLE')
     if arcpy.Describe(aoi).shapeType == 'Polygon':
         # add geodesic area to aoi for calculating overlap
         arcpy.AddMessage('Calculating AOI area')
-        arcpy.management.AddField(aoi, 'feat_acres', 'DOUBLE')
         arcpy.management.CalculateGeometryAttributes(aoi, [['feat_acres', 'AREA_GEODESIC']],
                                                      area_unit='ACRES_US')
 
