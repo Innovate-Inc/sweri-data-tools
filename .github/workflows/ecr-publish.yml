@@ -20,8 +20,6 @@ on:
       AWS_ECR_IAM_ARN:
         required: true
 
-  workflow_dispatch:
-
 env:
   AWS_REGION: us-west-2
   ECR_REPOSITORY: sweri-data-tools
