@@ -120,7 +120,6 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_source_feature_layer = get_feature_layer_from_item(gis_url, gis_user, gis_password, new_data_source_id)
     new_source_feature_layer.manager.truncate()
     new_source_feature_layer_url = new_source_feature_layer.url
-    conn = create_db_conn_from_envs()
 
     hosted_upload_from_postgres(gis_url, gis_user, gis_password, new_source_feature_layer_url, schema, table,
                                 max_points_before_single_geom_chunk, chunk_size, where='1=1', shape=shape,
@@ -131,6 +130,7 @@ def hosted_upload_and_swizzle(gis_url, gis_user, gis_password, view_id, source_f
     new_source_item = gis_con.content.get(new_data_source_id)
     token = gis_con.session.auth.token
 
+    conn = create_db_conn_from_envs()
     verify_feature_count(conn, schema, table, new_source_feature_layer)
 
     swizzle_service(gis_url, view_item.name, new_source_item.name, token)
