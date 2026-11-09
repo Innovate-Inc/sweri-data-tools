@@ -39,12 +39,12 @@ if __name__ == "__main__":
 
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'), os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    additional_polygon_view_ids = os.getenv('TI_ADDITIONAL_POLYGONS_VIEW_IDS', '').split(',')
+    additional_polygon_view_ids = os.getenv('TI_ADDITIONAL_POLYGON_VIEW_IDS', '').split(',')
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
-    additional_point_view_ids = os.getenv('TI_ADDITIONAL_POINTS_VIEW_IDS', '').split(',')
+    additional_point_view_ids = os.getenv('TI_ADDITIONAL_POINT_VIEW_IDS', '').split(',')
 
     include_state_data = os.getenv('STATE_DATA_INCLUSION_FLAG')
 
