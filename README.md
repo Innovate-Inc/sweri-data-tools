@@ -8,7 +8,7 @@ a project of [ReSHAPE](https://reshapewildfire.org/home).
 ```
 .
 ├── .github/workflows          # Utility for unit testing pull requests
-├── analysis                   # Visualization of FACTS Activity attributes and stats scrips
+├── analysis                   # Visualization of FACTS Activity attributes and stats notebooks
 ├── docker                     # Docker compose setup
 ├── gp_tool                    # Geoprocessing utilities
 ├── load_testing               # Configure load testing with Locust
