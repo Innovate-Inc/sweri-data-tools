@@ -8,7 +8,7 @@ a project of [ReSHAPE](https://reshapewildfire.org/home).
 ```
 .
 ├── .github/workflows          # Utility for unit testing pull requests
-├── analysis                   # Visualization of FACTS Activity attributes 
+├── analysis                   # Visualization of FACTS Activity attributes and stats scrips
 ├── docker                     # Docker compose setup
 ├── gp_tool                    # Geoprocessing utilities
 ├── load_testing               # Configure load testing with Locust
@@ -21,15 +21,17 @@ a project of [ReSHAPE](https://reshapewildfire.org/home).
 ├── intersections              # Intersection processing
 ├── package_list.txt           # Create conda environment
 ├── requirements.testing.txt   # Testing utilities
-├── treatment_index.py         # Create the treatment index
+├── treatment_index            # Create the treatment index
 └── README.md                  # README file - you are here!
 ```
 
 # Main Script Summaries
 
-The SWERI Data Tools use python3, psycopg, PostgreSQL, and ArcPy to query, transform, and index geospatial records from
+The SWERI Data Tools use python3, psycopg, PostgreSQL, PostGIS, OSGeo, and ArcGIS API for Python
+to query, transform, and index geospatial records from
 multiple endpoints.
-The scripts SWERI data tools are:
+
+The SWERI data tools scripts are:
 
 ## treatment_index.py
 
@@ -42,9 +44,12 @@ Current source databases:
 - [IFPRS](https://gis.inform-fuel-post-fire.firenet.gov/server/rest/services/OpenData/IFPRS_Open_Data/FeatureServer/2)
 - [FACTS Hazardous Fuel Treatment Reduction: Polygon](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=Hazardous+Fuel+Treatment)
 - [FACTS Common Attributes](https://data.fs.usda.gov/geodata/edw/datasets.php?xmlKeyword=common+attributes)
+- [NASF GARP Hub NFT](https://nft.garphub.org/)
 
-FACTS Common attributes records are a subset of the database determined to be treatments based on a process detailed in
-the _Data Descriptor_ paper. Each run a .gdb file of the full treatment index is created and uploaded to s3. 
+FACTS Common Attributes records are a subset of the database determined to be treatments based on a process detailed in
+the _Data Descriptor_ paper. 
+
+Each run a .gdb file of the full treatment index is created and uploaded to s3. 
 
 - [Full TWIG Treatment Index Copy](https://sweri-treament-index.s3.us-west-2.amazonaws.com/treatment_index.zip)
 
@@ -52,14 +57,19 @@ the _Data Descriptor_ paper. Each run a .gdb file of the full treatment index is
 
 Finds and flags errors in treatment index records. Error codes are added to the 'error' field and separated by a
 semicolon ';'
+
 Current error codes are:
 
 - DUPLICATE_KEEP : Record has duplicates and should be used as the representative record
 - DUPLICATE_DROP : Record is a duplicate and should be dropped during analysis
+- DUPLICATE_ID : Two or more records share a unique_id
 - HIGH-COST : Cost of treatment is greater than $10,000 per acre
 - CHECK_UOM : Unit of Measure is listed as a unit that may affect cost calculations (EACH, MILES)
-- SPATIAL : Geom of treatment is outside of the state listed in state field
-- SIMPLIFIED : Geom simplified with 1m tolerance
+- SPATIAL : Geom of treatment is outside the state listed in state field
+- LARGE_AREA : The polygon covers more than 3 million acres
+- MODIFIED_SHAPE : The polygon had more than 10,000 vertices and was simplified to meet Esri geometry rules and load into the Viewer; only vertices within 0.000009° (1 m or less) of the new outline were removed
+- BUFFERED_POINT : A state or NGO record that began as a point, buffered by NFT to match its reported acres
+- BUFFERED_LINE : A state or NGO record that began as a line, buffered by NFT
 
 ## intersections
 
@@ -118,21 +128,23 @@ Contains python modules with helper utilities used by scripts throughout the swe
 
 ```
 .
-└── sweri_utils          # Utilities package
-    ├── conversion.py    # Data conversion utilities
-    ├── download.py      # Data download utilities
-    ├── files.py         # File creation and management utilities
-    ├── hosted.py        # utilities for working with hosted feature services
-    ├── s3.py            # AWS s3 utilities
-    ├── sql.py           # SQL utilities
-    ├── sweri_logging.py # general logging utilities
-    ├── swizzle.py       # Data transformation utilities for hosted views
-    └── tests.py         # Unit tests for utilities
+└── sweri_utils             # Utilities package
+    ├── conversion.py       # Data conversion utilities
+    ├── download.py         # Data download utilities
+    ├── error_flagging.py   # Updates the error field in the treatment index
+    ├── exceptions.py       # Custom exceptions
+    ├── files.py            # File creation and management utilities
+    ├── hosted.py           # utilities for working with hosted feature services
+    ├── s3.py               # AWS s3 utilities
+    ├── sql.py              # SQL utilities
+    ├── sweri_logging.py    # general logging utilities
+    ├── swizzle.py          # Data transformation utilities for hosted views
+    └── tests.py            # Unit tests for utilities
 ```
 
 ## analysis
 
-This directory contains the R scripts that Common Attributes filtering logic is based on.
+This directory contains the R scripts that Common Attributes filtering logic is based on and notebooks used to pull statistics.
 ## docker
 The docker directory contains files for running intersections in a docker container. The [Dockerfile](docker/Dockerfile) is used to create a Docker image for running the intersections script in a
 containerized environment.
@@ -230,6 +242,7 @@ COMMON_ATTRIBUTES_URL=https://apps.fs.usda.gov/arcx/rest/services/EDW/EDW_Activi
 EXCLUSION_IDS # IDs of problem polygons for exclusion from NFPORS
 INTERSECTION_SOURCES_URL # Feature service with write access for updating intersection sources and last run metrics
 INTERSECTION_SOURCES_VIEW_URL=https://gis.reshapewildfire.org/arcgis/rest/services/Hosted/Staging_Intersection_Sources_view/FeatureServer # readonly view with intersection sources
+STATE_DATA_SERVICE_URL=https://services.arcgis.com/4fG3YBzBoefRGq66/ArcGIS/rest/services/NASF_National_Fuels_Treatments_for_External_Use/FeatureServer/0
 
 AWS_DEFAULT_REGION # default AWS region for AWS services
 S3_BUCKET  # s3 bucket for treatment_index gdb upload
@@ -272,7 +285,11 @@ Create a replica using [treatment_index.py](#treatment_indexpy):
 
 The Lookup Tables and Treatment Index Schema download contains all tables and feature classes needed to run
 treatment_index.py
-on a local postgres database. Tables and Feature Classes should be uploaded to the same postgres schema. After the
+on a local postgres database.
+
+Tables and Feature Classes should be uploaded to the same postgres schema.
+
+After the
 initial setup, treatment_index.py
 can target that schema and populate the treatment_index feature class.
 
