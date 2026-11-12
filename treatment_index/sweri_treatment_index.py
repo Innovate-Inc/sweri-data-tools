@@ -50,14 +50,34 @@ def fund_source_updates(conn, schema, treatment_index):
 
         # Fund source consolidation from IFPRS fundsourcecategory
         # fund_source populated and overwritten since IFPRS has no fund_code
+
+        # Sometimes IFPRS has a | delimiter at the beginning of the string when there is only one value
+        # Here we remove any | from the start of the string as it should only come in between values
+        cursor.execute(f'''
+
+            UPDATE {schema}.{treatment_index}
+            SET fund_source = SUBSTRING(fund_source FROM 2)
+            WHERE identifier_database = 'IFPRS'
+              AND fund_source LIKE '|%';
+
+        ''')
+
+        cursor.execute(f'''
+                UPDATE {schema}.{treatment_index}
+                SET fund_source = 'Multiple'
+                WHERE
+                identifier_database = 'IFPRS' AND 
+                position('|' in fund_source) > 0;
+        ''')
+
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index} ti
                 SET fund_source = lt.fund_source
                 FROM {schema}.fund_source_lookup lt
                 WHERE ti.fund_source = lt.fund_code
-                AND ti.identifier_database = 'IFPRS'
-                AND ti.fund_source IS null;
+                AND ti.identifier_database = 'IFPRS';
             ''')
+
         # Set IFPRS entries that didn't get consolidated to 'Other'
         cursor.execute(f'''
                 UPDATE {schema}.{treatment_index} ti
@@ -65,8 +85,7 @@ def fund_source_updates(conn, schema, treatment_index):
                 WHERE ti.identifier_database = 'IFPRS'
                 AND ti.fund_source NOT IN 
                 (SELECT lt.fund_source
-                FROM {schema}.fund_source_lookup lt)
-                AND ti.fund_source IS null;
+                FROM {schema}.fund_source_lookup lt);
             ''')
 
         cursor.execute(f'''
@@ -112,14 +131,15 @@ def update_treatment_points(conn, schema, treatment_index):
          f'''
             insert into {schema}.{treatment_index}_points (shape, objectid, unique_id, name, state, acres, treatment_date, 
             status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, twig_category, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, fallon_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error)
+            
             select ST_Centroid(shape), 
             sde.next_rowid('{schema}', '{treatment_index}_points'), 
             unique_id, name, state, acres, treatment_date, status, identifier_database, date_current, 
-             activity_code, activity, method, equipment, category, type, twig_category, agency, 
+             activity_code, activity, method, equipment, category, type, twig_category, fallon_category, agency, 
             fund_source, fund_code, total_cost, cost_per_uom, uom, error
-            from {schema}.{treatment_index}
+            from {schema}.{treatment_index};
         ''')
 
 @log_this
@@ -257,7 +277,7 @@ def facts_fallon_category(conn, schema, field_name):
         ''')
 
         cursor.execute(f'''
-           UPDATE staging.treatment_index
+           UPDATE {schema}.treatment_index
            SET {field_name} = 
                CASE
                    WHEN method = 'Manual' THEN 'Rearrangement'
