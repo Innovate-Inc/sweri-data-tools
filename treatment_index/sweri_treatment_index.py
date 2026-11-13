@@ -359,10 +359,10 @@ def simplify_large_polygons(conn, schema, table, points_cutoff, tolerance, resol
         ''')
 
 @log_this
-def swizzle_view(esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_ti_points_data_source):
+def swizzle_view(esri_gis_url, esri_gis_user, esri_gis_password, esri_view_id, esri_data_source):
     gis_con = refresh_gis(esri_gis_url, esri_gis_user, esri_gis_password)
     token = gis_con.session.auth.token
-    swizzle_service(esri_gis_url, gis_con.content.get(esri_view_id).name, esri_ti_points_data_source, token)
+    swizzle_service(esri_gis_url, gis_con.content.get(esri_view_id).name, esri_data_source, token)
 
 
 @log_this
@@ -492,16 +492,12 @@ if __name__ == "__main__":
     treatment_index_view_id = os.getenv('TREATMENT_INDEX_VIEW_ID')
     treatment_index_data_ids = [os.getenv('TREATMENT_INDEX_DATA_ID_1'),
                                 os.getenv('TREATMENT_INDEX_DATA_ID_2')]
-    additional_polygon_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_VIEW_ID'),
-                                   os.getenv('TREATMENT_INDEX_CATEGORY_VIEW_ID'),
-                                   os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_VIEW_ID')]
+    additional_polygon_view_ids = os.getenv('TI_ADDITIONAL_POLYGON_VIEW_IDS', '').split(',')
 
     treatment_index_points_view_id = os.getenv('TREATMENT_INDEX_POINTS_VIEW_ID')
     treatment_index_points_data_ids = [os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_1'),
                                        os.getenv('TREATMENT_INDEX_POINTS_DATA_ID_2')]
-    additional_point_view_ids = [os.getenv('TREATMENT_INDEX_AGENCY_POINTS_VIEW_ID'),
-                                 os.getenv('TREATMENT_INDEX_CATEGORY_POINTS_VIEW_ID'),
-                                 os.getenv('TREATMENT_INDEX_IDENTIFIER_DATABASE_POINTS_VIEW_ID')]
+    additional_point_view_ids = os.getenv('TI_ADDITIONAL_POINT_VIEW_IDS', '').split(',')
 
     treatment_index_points_table = 'treatment_index_points'
 
