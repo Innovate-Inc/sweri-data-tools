@@ -387,7 +387,7 @@ def update_and_verify_progressions(gis_url, gis_user, gis_password, feature_laye
     # Delete all progressions that were updated
     delete_features_from_hosted_layer(gis_url, gis_user, gis_password, feature_layer_id, where)
     # Add updated progressions
-    hosted_upload_from_postgres(gis_url, gis_user, gis_password, feature_layer_url, target_schema,
+    hosted_upload_from_postgres(feature_layer_url, target_schema,
                                 daily_progression_table,
                                 max_points_before_single_geom_chunk, chunk, where=where)
 
