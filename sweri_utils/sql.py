@@ -122,7 +122,7 @@ def insert_from_db(
 
     logging.info(f'Completed insert into {schema}.{insert_table}')
 
-
+@log_this
 def pg_copy_to_csv(conn: psycopg.Connection, schema: str, table: str, filename: str, columns: list[str]) -> TextIO:
     """
     Copies data from a PostgreSQL table to a CSV file.
@@ -709,3 +709,349 @@ def calculate_geodesic_area(schema, table, where='1=1'):
     finally:
         conn.close()
         del conn
+
+@log_this
+def update_fallon_category_lookup_new_values(conn, schema):
+    cursor = conn.cursor()
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                CREATE TABLE IF NOT EXISTS {schema}.fallon_category_lookup_new_values
+                (
+                    activity character varying(255) COLLATE pg_catalog."default",
+                    method character varying(255) COLLATE pg_catalog."default",
+                    equipment character varying(255) COLLATE pg_catalog."default",
+                    type character varying(255) COLLATE pg_catalog."default",
+                    category character varying(255) COLLATE pg_catalog."default",
+                    identifier_database character varying(255) COLLATE pg_catalog."default",
+                    total_count bigint,
+                    insert_date date
+                );
+
+            '''
+        )
+
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+            
+                INSERT INTO {schema}.fallon_category_lookup_new_values 
+                    (activity, method, equipment, type, category, identifier_database, total_count, insert_date)
+                SELECT 
+                    activity, 
+                    method, 
+                    equipment, 
+                    type, 
+                    category, 
+                    identifier_database, 
+                    COUNT(*) AS total_count, 
+                    CURRENT_DATE AS insert_date
+                FROM 
+                    {schema}.treatment_index AS ti
+                WHERE 
+                    fallon_category IS NULL
+                    AND identifier_database IN ('FACTS Common Attributes', 'FACTS Hazardous Fuels', 'NFPORS', 'IFPRS')
+                    AND NOT EXISTS (
+                        SELECT 
+                            1
+                        FROM 
+                            {schema}.fallon_category_lookup_new_values nv
+                        WHERE 
+                            nv.activity IS NOT DISTINCT FROM ti.activity
+                            AND nv.method IS NOT DISTINCT FROM ti.method
+                            AND nv.equipment IS NOT DISTINCT FROM ti.equipment
+                            AND nv.type IS NOT DISTINCT FROM ti.type
+                            AND nv.category IS NOT DISTINCT FROM ti.category
+                            AND nv.identifier_database IS NOT DISTINCT FROM ti.identifier_database
+                    )
+                GROUP BY 
+                    activity, method, equipment, type, category, identifier_database
+                ORDER BY 
+                    insert_date DESC,
+                    total_count DESC;
+            
+            '''
+        )
+        rows_inserted = cursor.rowcount
+        logging.info(f"{rows_inserted} rows inserted into {schema}.fallon_category_lookup_new_values")
+
+        return rows_inserted
+
+
+
+@log_this
+def update_twig_category_lookup_new_values(conn, schema):
+    cursor=conn.cursor()
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                CREATE TABLE IF NOT EXISTS {schema}.twig_category_lookup_new_values
+                (
+                    activity character varying(255) COLLATE pg_catalog."default",
+                    method character varying(255) COLLATE pg_catalog."default",
+                    equipment character varying(255) COLLATE pg_catalog."default",
+                    type character varying(255) COLLATE pg_catalog."default",
+                    category character varying(255) COLLATE pg_catalog."default",
+                    identifier_database character varying(255) COLLATE pg_catalog."default",
+                    twig_category character varying(255) COLLATE pg_catalog."default",
+                    total_count bigint,
+                    insert_date date
+                );
+
+            '''
+        )
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                INSERT INTO {schema}.twig_category_lookup_new_values 
+                    (activity, method, equipment, type, category, identifier_database, twig_category, total_count, insert_date)
+                SELECT 
+                    ti.activity, 
+                    ti.method, 
+                    ti.equipment, 
+                    ti.type, 
+                    ti.category, 
+                    ti.identifier_database, 
+                    ti.twig_category, 
+                    COUNT(*) AS total_count,
+                    CURRENT_DATE as insert_date
+                FROM 
+                    {schema}.treatment_index AS ti
+                WHERE 
+                    (ti.twig_category = 'Other'
+                     OR ti.twig_category IS NULL)
+                    AND NOT EXISTS (
+                        SELECT 
+                            1
+                        FROM 
+                            {schema}.twig_category_lookup_new_values AS nv
+                        WHERE 
+                            nv.activity IS NOT DISTINCT FROM ti.activity
+                            AND nv.method IS NOT DISTINCT FROM ti.method
+                            AND nv.equipment IS NOT DISTINCT FROM ti.equipment
+                            AND nv.type IS NOT DISTINCT FROM ti.type
+                            AND nv.category IS NOT DISTINCT FROM ti.category
+                            AND nv.identifier_database IS NOT DISTINCT FROM ti.identifier_database
+                            AND nv.twig_category IS NOT DISTINCT FROM ti.twig_category
+                    )
+                GROUP BY 
+                    ti.activity, ti.method, ti.equipment, ti.type, ti.category, ti.identifier_database, ti.twig_category
+                ORDER BY 
+                    insert_date DESC,
+                    total_count DESC;
+
+            '''
+        )
+        rows_inserted = cursor.rowcount
+        logging.info(f"{rows_inserted} rows inserted into {schema}.twig_category_lookup_new_values")
+
+        return rows_inserted
+
+@log_this
+def update_fund_source_lookup_new_values(conn, schema):
+    cursor = conn.cursor()
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                CREATE TABLE IF NOT EXISTS {schema}.fund_source_lookup_new_values
+                (
+                    fund_code character varying(255) COLLATE pg_catalog."default",
+                    fund_source character varying(255) COLLATE pg_catalog."default",
+                    date_added date,
+                    identifier_database text COLLATE pg_catalog."default",
+                    total_count bigint,
+                    insert_date date
+                );
+
+            '''
+        )
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                INSERT INTO {schema}.fund_source_lookup_new_values 
+                    (identifier_database, fund_code, fund_source, total_count, insert_date)
+                SELECT 
+                    ti.identifier_database, 
+                    ti.fund_code, 
+                    ti.fund_source, 
+                    COUNT(*) AS total_count, 
+                    CURRENT_DATE AS insert_date
+                FROM 
+                    {schema}.treatment_index AS ti
+                WHERE 
+                    (ti.identifier_database IN ('FACTS Common Attributes', 'FACTS Hazardous Fuels', 'NASF')
+                     AND ti.fund_source = 'Other')
+                    AND NOT EXISTS (
+                        SELECT 
+                            1
+                        FROM 
+                            {schema}.fund_source_lookup_new_values AS nv
+                        WHERE 
+                            nv.identifier_database IS NOT DISTINCT FROM ti.identifier_database
+                            AND nv.fund_code IS NOT DISTINCT FROM ti.fund_code
+                            AND nv.fund_source IS NOT DISTINCT FROM ti.fund_source
+                    )
+                GROUP BY 
+                    ti.fund_code, ti.identifier_database, ti.fund_source
+                ORDER BY
+                    insert_date DESC,
+                    total_count DESC;
+
+            '''
+        )
+        rows_inserted = cursor.rowcount
+        total_count = rows_inserted
+        logging.info(f"{rows_inserted} FACTS/NASF rows inserted into {schema}.fund_source_lookup_new_values")
+
+        cursor.execute(
+            f'''
+
+                INSERT INTO {schema}.fund_source_lookup_new_values (identifier_database, fund_code, fund_source, total_count, insert_date)
+                SELECT 
+                    'IFPRS' AS identifier_database, 
+                    i.fundingsourcecategory AS fund_code,
+                    ti.fund_source AS fund_source, 
+                    COUNT(*) AS total_count,
+                    CURRENT_DATE as insert_date
+                FROM 
+                    {schema}.ifprs AS i
+                JOIN 
+                    {schema}.treatment_index AS ti
+                ON 
+                    i.id::TEXT = ti.unique_id
+                WHERE
+                    ti.fund_source = 'Other'
+                    AND NOT EXISTS (
+                        SELECT 
+                            1
+                        FROM 
+                            {schema}.fund_source_lookup_new_values nv
+                        WHERE 
+                            nv.identifier_database IS NOT DISTINCT FROM 'IFPRS'
+                            AND nv.fund_code IS NOT DISTINCT FROM i.fundingsourcecategory
+                            AND nv.fund_source IS NOT DISTINCT FROM ti.fund_source
+                    )
+                GROUP BY 
+                    i.fundingsourcecategory, 
+                    ti.fund_source
+                ORDER BY
+                    insert_date DESC,
+                    total_count DESC;
+
+            '''
+        )
+        rows_inserted = cursor.rowcount
+        total_count += rows_inserted
+        logging.info(f"{rows_inserted} IFPRS rows inserted into {schema}.fund_source_lookup_new_values")
+
+        return total_count
+
+@log_this
+def update_common_attributes_lookup_new_values(conn, schema):
+    regions = ['01','02','03','04','05','06','08','09','10']
+    cursor = conn.cursor()
+
+    total_count = 0
+
+    with conn.transaction():
+        cursor.execute(
+            f'''
+
+                CREATE TABLE IF NOT EXISTS {schema}.common_attributes_lookup_new_values
+                (
+                    objectid integer,
+                    value character varying(8000) COLLATE pg_catalog."default",
+                    include character varying(8000) COLLATE pg_catalog."default",
+                    activity character varying(255) COLLATE pg_catalog."default",
+                    filter character varying(255) COLLATE pg_catalog."default",
+                    date_added date,
+                    total_count bigint,
+                    insert_date date
+                );
+
+            '''
+        )
+
+    for region in regions:
+        with conn.transaction():
+            cursor.execute(
+                f'''
+
+                    INSERT INTO {schema}.common_attributes_lookup_new_values (value, filter, total_count, insert_date)
+                    SELECT 
+                        ca.method AS value,
+                        'method' AS filter,
+                        COUNT(*) AS total_count,
+                        CURRENT_DATE AS insert_date
+                    FROM 
+                        {schema}.common_attributes_{region} AS ca
+                    WHERE ca.method IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM {schema}.common_attributes_lookup AS cal
+                          WHERE cal.filter = 'method' AND cal.value = ca.method
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM {schema}.common_attributes_lookup_new_values AS nv
+                          WHERE nv.filter = 'method' AND nv.value = ca.method
+                      )
+                    GROUP BY 
+                        ca.method
+                    ORDER BY
+                        insert_date DESC,
+                        total_count DESC;
+
+                '''
+            )
+            rows_inserted = cursor.rowcount
+            total_count += rows_inserted
+            logging.info(f"{rows_inserted} method rows inserted into {schema}.common_attributes_lookup")
+
+            cursor.execute(
+                f'''
+
+                    INSERT INTO {schema}.common_attributes_lookup_new_values (value, filter, total_count, insert_date)
+                    SELECT 
+                        ca.equipment AS value,
+                        'equipment' AS filter,
+                        COUNT(*) AS total_count,
+                        CURRENT_DATE AS insert_date
+                    FROM 
+                        {schema}.common_attributes_{region} AS ca
+                    WHERE 
+                        ca.equipment IS NOT NULL
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.common_attributes_lookup AS cal
+                        WHERE cal.filter = 'equipment' AND cal.value = ca.equipment
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM {schema}.common_attributes_lookup_new_values AS nv
+                        WHERE nv.filter = 'equipment' AND nv.value = ca.equipment
+                    )
+                    GROUP BY 
+                        ca.equipment
+                    ORDER BY
+                        insert_date DESC,
+                        total_count DESC;
+
+                '''
+            )
+            rows_inserted = cursor.rowcount
+            total_count += rows_inserted
+            logging.info(f"{rows_inserted} equipment rows inserted into {schema}.common_attributes_lookup_new_values")
+
+    return total_count

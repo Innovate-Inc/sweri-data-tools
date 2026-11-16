@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 from celery import group, chain
 
 from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_shapes, \
-    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
+    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace, \
+    update_fallon_category_lookup_new_values, update_twig_category_lookup_new_values, \
+    update_fund_source_lookup_new_values, update_common_attributes_lookup_new_values, pg_copy_to_csv
 from sweri_utils.files import create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors, flag_large_area
 from sweri_utils.sweri_logging import logging, log_this
@@ -300,6 +302,31 @@ def fallon_category_cleanup(conn, schema, field_name):
         ''')
 
 @log_this
+def record_new_lookup_values(conn, schema):
+
+    # Add new lookup values from treatment_index to all lookup tables
+    counts = {
+        'fallon_category_lookup_new_values': update_fallon_category_lookup_new_values(conn, schema),
+        'twig_category_lookup_new_values': update_twig_category_lookup_new_values(conn, schema),
+        'fund_source_lookup_new_values': update_fund_source_lookup_new_values(conn, schema),
+        'common_attributes_lookup_new_values': update_common_attributes_lookup_new_values(conn, schema),
+    }
+
+    # Convert new lookup values to CSV files
+    filenames = []
+    for table, count in counts.items():
+        if count > 0:
+            filename = f'{table}.csv'
+            pg_copy_to_csv(conn, schema, table, filename, ['*'])
+            filenames.append(filename)
+
+    # Need to add code for what to do with the output
+
+    # Clean up temporary CSV files
+    for file in filenames:
+        os.remove(file)
+
+@log_this
 def update_state_abbr(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -417,6 +444,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     correct_biomass_removal_typo(conn, schema, table)
     add_twig_category(conn, schema)
     add_fallon_category(conn, schema)
+    record_new_lookup_values(conn, schema)
     update_state_abbr(conn, schema, table)
     flag_duplicate_ids(conn, schema, table)
     flag_high_cost(conn, schema, table)
