@@ -712,6 +712,11 @@ def calculate_geodesic_area(schema, table, where='1=1'):
 
 @log_this
 def update_fallon_category_lookup_new_values(conn, schema):
+    """
+    Records values used to set fallon_category for rows that have a null fallon_category.
+    Ignores previously recored values.
+    Returns number of rows updated.
+    """
     cursor = conn.cursor()
 
     with conn.transaction():
@@ -784,6 +789,11 @@ def update_fallon_category_lookup_new_values(conn, schema):
 
 @log_this
 def update_twig_category_lookup_new_values(conn, schema):
+    """
+    Records values used to set twig_category for rows that have null or 'Other' twig_category.
+    Ignores previously recored values.
+    Returns number of rows updated.
+    """
     cursor=conn.cursor()
 
     with conn.transaction():
@@ -856,9 +866,15 @@ def update_twig_category_lookup_new_values(conn, schema):
 
 @log_this
 def update_fund_source_lookup_new_values(conn, schema):
+    """
+    Records values used to set fund_source for rows that 'Other' fund_source.
+    Ignores previously recored values.
+    Returns number of rows updated.
+    """
     cursor = conn.cursor()
 
     with conn.transaction():
+        # Create new_values table if it does not exist
         cursor.execute(
             f'''
 
@@ -876,6 +892,7 @@ def update_fund_source_lookup_new_values(conn, schema):
         )
 
     with conn.transaction():
+        # FACTS and NASF new values
         cursor.execute(
             f'''
 
@@ -914,6 +931,7 @@ def update_fund_source_lookup_new_values(conn, schema):
         total_count = rows_inserted
         logging.info(f"{rows_inserted} FACTS/NASF rows inserted into {schema}.fund_source_lookup_new_values")
 
+        # IFPRS uses parent IFPRS table since values used to set fund_source are overwritten
         cursor.execute(
             f'''
 
@@ -959,6 +977,12 @@ def update_fund_source_lookup_new_values(conn, schema):
 
 @log_this
 def update_common_attributes_lookup_new_values(conn, schema):
+    """
+    Records equipment and method values not in common_attributes_lookup for each region.
+    Ignores previously recored values.
+    Returns number of rows updated.
+    """
+
     regions = ['01','02','03','04','05','06','08','09','10']
     cursor = conn.cursor()
 
@@ -985,6 +1009,7 @@ def update_common_attributes_lookup_new_values(conn, schema):
 
     for region in regions:
         with conn.transaction():
+            # Record new method values
             cursor.execute(
                 f'''
 
@@ -1017,8 +1042,9 @@ def update_common_attributes_lookup_new_values(conn, schema):
             )
             rows_inserted = cursor.rowcount
             total_count += rows_inserted
-            logging.info(f"{rows_inserted} method rows inserted into {schema}.common_attributes_lookup")
+            logging.info(f"{rows_inserted} method rows inserted from {schema}.common_attributes_{region} into {schema}.common_attributes_lookup")
 
+            # Record new equipment values
             cursor.execute(
                 f'''
 
@@ -1052,6 +1078,6 @@ def update_common_attributes_lookup_new_values(conn, schema):
             )
             rows_inserted = cursor.rowcount
             total_count += rows_inserted
-            logging.info(f"{rows_inserted} equipment rows inserted into {schema}.common_attributes_lookup_new_values")
+            logging.info(f"{rows_inserted} equipment rows inserted from {schema}.common_attributes_{region} into {schema}.common_attributes_lookup_new_values")
 
     return total_count
