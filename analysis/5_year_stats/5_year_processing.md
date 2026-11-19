@@ -1,4 +1,4 @@
----
+Creation of fy and cy tables
 
 ```sql
 DROP TABLE IF EXISTS
@@ -11,7 +11,9 @@ SELECT * FROM
 staging.treatment_index
      WHERE treatment_date BETWEEN '2020-10-01' AND '2025-09-30'
 	 and status = 'Completed'
-	 and identifier_database in ('IFPRS', 'NFPORS', 'FACTS Hazardous Fuels', 'FACTS Common Attributes');
+	 and identifier_database in ('IFPRS', 'NFPORS', 'FACTS Hazardous Fuels', 'FACTS Common Attributes')            
+	 AND (error IS NULL
+   	 OR error NOT LIKE '%DUPLICATE_DROP%');
 ```
 
 ```sql
@@ -25,7 +27,9 @@ SELECT * FROM
 staging.treatment_index
      WHERE treatment_date BETWEEN '2021-01-01' AND '2025-12-31'
 	 and status = 'Completed'
-	 and identifier_database in ('IFPRS', 'NFPORS', 'FACTS Hazardous Fuels', 'FACTS Common Attributes');
+	 and identifier_database in ('IFPRS', 'NFPORS', 'FACTS Hazardous Fuels', 'FACTS Common Attributes')	
+	 AND (error IS NULL
+   	 OR error NOT LIKE '%DUPLICATE_DROP%');
 ```
 
 IIJA Totals by Agency FY 2021-2025
