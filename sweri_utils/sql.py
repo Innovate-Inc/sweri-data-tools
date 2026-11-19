@@ -719,6 +719,7 @@ def update_fallon_category_lookup_new_values(conn, schema):
     """
     cursor = conn.cursor()
 
+    # Table creation if it does not exist
     with conn.transaction():
         cursor.execute(
             f'''
@@ -738,7 +739,7 @@ def update_fallon_category_lookup_new_values(conn, schema):
             '''
         )
 
-
+    # Table population
     with conn.transaction():
         cursor.execute(
             f'''
@@ -796,6 +797,7 @@ def update_twig_category_lookup_new_values(conn, schema):
     """
     cursor=conn.cursor()
 
+    # Table creation if it does not exist
     with conn.transaction():
         cursor.execute(
             f'''
@@ -816,6 +818,7 @@ def update_twig_category_lookup_new_values(conn, schema):
             '''
         )
 
+    # Table population
     with conn.transaction():
         cursor.execute(
             f'''
@@ -873,6 +876,7 @@ def update_fund_source_lookup_new_values(conn, schema):
     """
     cursor = conn.cursor()
 
+    # Table creation if it does not exist
     with conn.transaction():
         # Create new_values table if it does not exist
         cursor.execute(
@@ -891,6 +895,7 @@ def update_fund_source_lookup_new_values(conn, schema):
             '''
         )
 
+    # FACTS/NASF table population
     with conn.transaction():
         # FACTS and NASF new values
         cursor.execute(
@@ -931,6 +936,7 @@ def update_fund_source_lookup_new_values(conn, schema):
         total_count = rows_inserted
         logging.info(f"{rows_inserted} FACTS/NASF rows inserted into {schema}.fund_source_lookup_new_values")
 
+        # IFPRS table population
         # IFPRS uses parent IFPRS table since values used to set fund_source are overwritten
         cursor.execute(
             f'''
@@ -988,6 +994,7 @@ def update_common_attributes_lookup_new_values(conn, schema):
 
     total_count = 0
 
+    # Table creation if it does not exist
     with conn.transaction():
         cursor.execute(
             f'''
