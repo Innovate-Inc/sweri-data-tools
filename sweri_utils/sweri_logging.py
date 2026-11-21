@@ -182,3 +182,24 @@ class ProcessingStatusLogger:
         self.status = 'Failed'
         self.stop = datetime.now()
         self.log_status()
+
+def post_message_to_slack(message: str,channel_id: str=None,slack_token: str=None):
+    """
+    Dispatches a message to Slack.
+    """
+    token = slack_token or os.getenv("SLACK_TOKEN")
+    channel = channel_id or os.getenv("SLACK_CHANNEL_ID")
+
+    if not token or not channel:
+        logger.warning("Slack token or channel ID not configured. Skipping message dispatch.")
+        return None
+
+    try:
+        client = WebClient(token=token)
+        return client.chat_postMessage(
+            channel=channel,
+            text=message,
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error posting message to Slack: {e}")
+        return None

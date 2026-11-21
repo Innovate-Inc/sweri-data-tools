@@ -10,10 +10,12 @@ from dotenv import load_dotenv
 from celery import group, chain
 
 from sweri_utils.sql import connect_to_pg_db, revert_multi_to_poly, makevalid_shapes, \
-    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace
+    extract_geometry_collections, remove_zero_area_polygons, remove_blank_strings, trim_whitespace, \
+    update_fallon_category_lookup_new_values, update_twig_category_lookup_new_values, \
+    update_fund_source_lookup_new_values, update_common_attributes_lookup_new_values, pg_copy_to_csv
 from sweri_utils.files import create_zip
 from sweri_utils.error_flagging import flag_duplicates, flag_high_cost, flag_uom_outliers, flag_duplicate_ids, flag_spatial_errors, flag_large_area
-from sweri_utils.sweri_logging import logging, log_this
+from sweri_utils.sweri_logging import logging, log_this, post_message_to_slack
 from sweri_utils.hosted import refresh_gis, hosted_upload_and_swizzle
 from treatment_index.tasks import ifprs_download_and_insert, common_attributes_download_and_insert, \
     hazardous_fuels_download_and_insert, nfpors_download_and_insert, state_data_download_and_insert
@@ -300,6 +302,26 @@ def fallon_category_cleanup(conn, schema, field_name):
         ''')
 
 @log_this
+def record_and_alert_new_lookup_values(conn, schema):
+    try:
+        # Add new lookup values to new values tables, return count of new values for each table
+        update_counts = {
+            'fallon_category_lookup_new_values': update_fallon_category_lookup_new_values(conn, schema),
+            'twig_category_lookup_new_values': update_twig_category_lookup_new_values(conn, schema),
+            'fund_source_lookup_new_values': update_fund_source_lookup_new_values(conn, schema),
+            'common_attributes_lookup_new_values': update_common_attributes_lookup_new_values(conn, schema),
+        }
+
+        # Send alert when new lookup values are added to new values tables
+        for table, count in update_counts.items():
+            if count > 0:
+                message = f':rotating_light: {count} unmapped entries added to {schema}.{table} :rotating_light:'
+                post_message_to_slack(message)
+
+    except Exception as e:
+        logger.error(f"Error checking new lookup values: {e}")
+
+@log_this
 def update_state_abbr(conn, schema, treatment_index):
     cursor = conn.cursor()
     with conn.transaction():
@@ -417,6 +439,7 @@ def run_treatment_index(conn, schema, table, ogr_db_conn_string, wkid, facts_haz
     correct_biomass_removal_typo(conn, schema, table)
     add_twig_category(conn, schema)
     add_fallon_category(conn, schema)
+    record_and_alert_new_lookup_values(conn, schema)
     update_state_abbr(conn, schema, table)
     flag_duplicate_ids(conn, schema, table)
     flag_high_cost(conn, schema, table)
