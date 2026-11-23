@@ -84,6 +84,14 @@ def flag_duplicate_table(conn, schema, table_name):
                 SELECT *,
                     ROW_NUMBER() OVER (
                         PARTITION BY treatment_date, activity, shape::text
+                        ORDER BY 
+                            num_nonnulls( --top entry has most non-null fields
+                                name, state, acres, date_current, activity_code,
+                                method, equipment, category, type, twig_category,
+                                agency, fund_source, fund_code, cost_per_uom, 
+                                uom, status, total_cost, fallon_category       
+                            ) DESC, 
+                            objectid ASC -- use objectid for tiebreak
                     ) AS row_num
                 FROM {schema}.treatment_index_duplicates
             )
