@@ -687,3 +687,25 @@ def null_problem_dates(conn, schema, table, id_field, columns=None):
 
                 for row in updated_rows:
                     logging.warning(f'Problem date set to null for column {column} in row with {id_field} : {row}')
+
+def calculate_geodesic_area(schema, table, where='1=1'):
+    """
+    Calculate the geodesic area of a geometry in acres.
+    Args:
+        schema: str
+        table: str
+        where: str
+    """
+    conn = create_db_conn_from_envs()
+    try:
+        with conn.cursor() as cursor:
+            q = f"""
+                UPDATE {schema}.{table}
+                SET feat_acres = ST_AREA(ST_TRANSFORM(shape, 4326)::geography) * 0.000247105
+                WHERE {where};
+            """
+            cursor.execute(q)
+            conn.commit()
+    finally:
+        conn.close()
+        del conn
