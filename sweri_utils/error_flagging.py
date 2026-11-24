@@ -84,6 +84,14 @@ def flag_duplicate_table(conn, schema, table_name):
                 SELECT *,
                     ROW_NUMBER() OVER (
                         PARTITION BY treatment_date, activity, shape::text
+                        ORDER BY 
+                            num_nonnulls( --top entry has most non-null fields
+                                name, state, acres, date_current, activity_code,
+                                method, equipment, category, type, twig_category,
+                                agency, fund_source, fund_code, cost_per_uom, 
+                                uom, status, total_cost, fallon_category       
+                            ) DESC, 
+                            objectid ASC -- use objectid for tiebreak
                     ) AS row_num
                 FROM {schema}.treatment_index_duplicates
             )
@@ -139,23 +147,22 @@ def flag_duplicates(cursor, schema, table_name):
 @log_this
 def flag_high_cost(conn, schema, table_name):
     # Flags treatments with more than $10,000 spent per acre of treatment
-    # Different functions are needed based on the uom or Unit of Measure
-    # Current uom possibilites are acres, each, and miles
+    # 0 values are set to null to avoid division by zero errors
+    # division by null sets value to null
+
     cursor = conn.cursor()
     with conn.transaction():
         cursor.execute(f'''
+        
             UPDATE {schema}.{table_name}
             SET error =            
                 CASE
                     WHEN error IS NULL THEN 'HIGH_COST'
                     ELSE error || ';HIGH_COST'
                 END
-             WHERE (
-                (uom = 'EACH' AND acres IS NOT NULL AND cost_per_uom / acres > 10000)
-                OR
-                (uom = 'ACRES' AND acres IS NOT NULL AND cost_per_uom > 10000)
-                );
-
+            WHERE 
+                total_cost / NULLIF(acres, 0) > 10000;
+            
         ''')
 
 
